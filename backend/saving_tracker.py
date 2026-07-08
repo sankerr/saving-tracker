@@ -3397,6 +3397,23 @@ def import_data(payload: dict) -> dict:
     return {"ok": True}
 
 
+def delete_account(user_id: int, password: str) -> dict:
+    user = db.get_user_by_id(user_id)
+    if not user:
+        return {"ok": False, "error": "User not found"}
+    if not auth.verify_password(password, user["password_hash"]):
+        return {"ok": False, "error": "Incorrect password"}
+    if not db.delete_user(user_id):
+        return {"ok": False, "error": "Could not delete account"}
+    global DATA, CACHE, ACTIVE_USER_ID
+    with _user_ctx_lock:
+        if ACTIVE_USER_ID == user_id:
+            ACTIVE_USER_ID = None
+            DATA = default_data()
+            CACHE = default_cache()
+    return {"ok": True, "message": "Account deleted"}
+
+
 # ── HTTP server ──────────────────────────────────────────────────────────────
 PUBLIC_PATHS = {"/api/login", "/api/register", "/api/health", "/api/version"}
 
@@ -3580,7 +3597,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _do_mutating(self, method: str):
         parsed = urlparse(self.path)
         path = parsed.path
-        body = self._read_body() if method in ("POST", "PATCH") else {}
+        body = self._read_body() if method in ("POST", "PATCH", "DELETE") else {}
 
         if method == "POST" and path == "/api/login":
             username = (body.get("username") or "").strip()
@@ -3838,6 +3855,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     CACHE = default_cache()
                     save_cache()
                 self._json(200, {"ok": True})
+                return
+
+            if method == "DELETE" and path == "/api/account":
+                password = body.get("password") or ""
+                if not password:
+                    self._json(400, {"ok": False, "error": "Password is required"})
+                    return
+                self._json(200, delete_account(user_id, password))
                 return
 
             self.send_error(404)

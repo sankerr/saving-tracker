@@ -51,6 +51,17 @@ def init_schema() -> None:
             )
 
 
+def get_user_by_id(user_id: int) -> dict | None:
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, username, password_hash, approved FROM users WHERE id = %s",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
 def get_user_by_username(username: str) -> dict | None:
     with _conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -159,3 +170,10 @@ def upsert_state(user_id: int, data: dict, cache: dict) -> None:
                 """,
                 (user_id, json.dumps(data), json.dumps(cache)),
             )
+
+
+def delete_user(user_id: int) -> bool:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            return cur.rowcount > 0
