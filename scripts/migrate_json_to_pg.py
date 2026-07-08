@@ -57,7 +57,7 @@ def main():
         user_id = existing["id"]
         print(f"User exists: {args.username} (id={user_id})")
     else:
-        user_id = db.create_user(args.username, auth.hash_password(args.password))
+        user_id = db.create_user(args.username, auth.hash_password(args.password), approved=True)
         print(f"Created user: {args.username} (id={user_id})")
 
     db.upsert_state(user_id, data, cache)

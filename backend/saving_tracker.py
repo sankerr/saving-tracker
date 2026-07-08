@@ -145,6 +145,7 @@ def default_cache() -> dict:
 # ── Locks & in-process state ─────────────────────────────────────────────────
 _data_lock = threading.RLock()
 _cache_lock = threading.RLock()
+_user_ctx_lock = threading.RLock()
 _sync_lock = threading.Lock()
 _search_cache: dict = {}     # {query_key: (ts, [hits])}
 _sync_status = {
@@ -224,7 +225,6 @@ def save_cache():
 
 
 def bootstrap_storage() -> None:
-    global DATA, CACHE, ACTIVE_USER_ID
     if not db.DATABASE_URL:
         raise RuntimeError("DATABASE_URL is required")
     if not auth.SESSION_SECRET:
@@ -239,24 +239,38 @@ def bootstrap_storage() -> None:
             raise RuntimeError(
                 "No users in database. Set ADMIN_USERNAME and ADMIN_PASSWORD for first boot."
             )
-        user_id = db.create_user(username, auth.hash_password(password))
-        print(f"Created admin user: {username} (id={user_id})")
-    else:
-        user_id = db.sole_user_id()
-        if user_id is None:
-            raise RuntimeError("No users found in database")
+        user_id = db.create_user(username, auth.hash_password(password), approved=True)
+        print(f"Created admin user: {username} (id={user_id}, approved=true)")
 
-    ACTIVE_USER_ID = user_id
+
+def _activate_user(user_id: int) -> None:
+    global DATA, CACHE, ACTIVE_USER_ID
+    if ACTIVE_USER_ID == user_id:
+        return
     loaded_data, loaded_cache = db.load_state(user_id)
-    if loaded_data:
-        DATA = loaded_data
-    if loaded_cache:
-        CACHE = loaded_cache
-    _migrate_state_payload()
-    if not loaded_data or loaded_data == {}:
+    with _data_lock:
+        DATA = loaded_data if loaded_data else default_data()
+        CACHE = loaded_cache if loaded_cache else default_cache()
+        _migrate_state_payload()
+        ACTIVE_USER_ID = user_id
+    if not loaded_data:
         db.save_data_state(user_id, DATA)
-    if not loaded_cache or loaded_cache == {}:
+    if not loaded_cache:
         db.save_cache_state(user_id, CACHE)
+
+
+def _validate_username(username: str) -> str | None:
+    if len(username) < 3 or len(username) > 32:
+        return "Username must be 3–32 characters"
+    if not all(c.isalnum() or c == "_" for c in username):
+        return "Username may only contain letters, numbers, and underscores"
+    return None
+
+
+def _validate_password(password: str) -> str | None:
+    if len(password) < 8:
+        return "Password must be at least 8 characters"
+    return None
 
 
 # ── Date / period helpers ────────────────────────────────────────────────────
@@ -3384,7 +3398,7 @@ def import_data(payload: dict) -> dict:
 
 
 # ── HTTP server ──────────────────────────────────────────────────────────────
-PUBLIC_PATHS = {"/api/login", "/api/health", "/api/version"}
+PUBLIC_PATHS = {"/api/login", "/api/register", "/api/health", "/api/version"}
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -3419,17 +3433,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (KeyError, TypeError, ValueError):
             return None
 
-    def _require_auth(self, path: str) -> bool:
+    def _require_auth(self, path: str) -> int | None:
         if path in PUBLIC_PATHS:
-            return True
+            return 0
         user_id = self._auth_user_id()
         if user_id is None:
             self._json(401, {"ok": False, "error": "Unauthorized"})
-            return False
-        if ACTIVE_USER_ID is not None and user_id != ACTIVE_USER_ID:
-            self._json(403, {"ok": False, "error": "Forbidden"})
-            return False
-        return True
+            return None
+        return user_id
 
     def do_OPTIONS(self):
         self._write(204, "text/plain", b"", extra_headers=self._cors_headers())
@@ -3474,8 +3485,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "status": "healthy"})
             return
 
-        if not self._require_auth(path):
+        user_id = self._require_auth(path)
+        if user_id is None:
             return
+        if user_id == 0:
+            self.send_error(404)
+            return
+
+        with _user_ctx_lock:
+            _activate_user(user_id)
 
         if path == "/api/version":
             self._write(200, "application/json", json.dumps({"version": "0.0.2"}).encode())
@@ -3571,12 +3589,46 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not user or not auth.verify_password(password, user["password_hash"]):
                 self._json(401, {"ok": False, "error": "Invalid username or password"})
                 return
+            if not user.get("approved"):
+                self._json(403, {
+                    "ok": False,
+                    "error": "Account pending approval. An admin must approve your account before you can sign in.",
+                })
+                return
             token = auth.create_token(user["id"], user["username"])
             self._json(200, {"ok": True, "token": token, "username": user["username"]})
             return
 
-        if not self._require_auth(path):
+        if method == "POST" and path == "/api/register":
+            username = (body.get("username") or "").strip()
+            password = body.get("password") or ""
+            err = _validate_username(username)
+            if err:
+                self._json(400, {"ok": False, "error": err})
+                return
+            err = _validate_password(password)
+            if err:
+                self._json(400, {"ok": False, "error": err})
+                return
+            if db.get_user_by_username(username):
+                self._json(409, {"ok": False, "error": "Username already taken"})
+                return
+            db.create_user(username, auth.hash_password(password), approved=False)
+            self._json(200, {
+                "ok": True,
+                "message": "Account created. An admin must approve your account before you can sign in.",
+            })
             return
+
+        user_id = self._require_auth(path)
+        if user_id is None:
+            return
+        if user_id == 0:
+            self.send_error(404)
+            return
+
+        with _user_ctx_lock:
+            _activate_user(user_id)
 
         try:
             if method == "POST" and path == "/api/sync":

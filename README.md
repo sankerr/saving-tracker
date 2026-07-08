@@ -117,13 +117,30 @@ python3 -m http.server 3000
 
 ## API auth
 
-- `POST /api/login` — `{ "username", "password" }` → `{ "token" }`
+- `POST /api/login` — `{ "username", "password" }` → `{ "token" }` (approved users only)
+- `POST /api/register` — `{ "username", "password" }` → creates account with `approved=false`
 - All other `/api/*` routes require `Authorization: Bearer <token>`
 - `GET /api/health` — no auth (Render health checks)
 
+## User registration & approval
+
+New users can register from the login screen. Accounts are created with **`approved = false`** and cannot sign in until approved.
+
+There is **no API to approve users** — approval is DB-only by design. In the Neon SQL editor:
+
+```sql
+-- List pending users
+SELECT id, username, approved, created_at FROM users ORDER BY created_at;
+
+-- Approve a user
+UPDATE users SET approved = true WHERE username = 'their_username';
+```
+
+The first admin user (created from `ADMIN_USERNAME` / `ADMIN_PASSWORD` on first deploy) is auto-approved.
+
 ## Security
 
-- Single-user personal app — no public registration
+- No public self-approval — admin must run SQL in Neon
 - HTTPS everywhere (Render + Cloudflare)
 - Passwords stored as bcrypt hashes
 - Set a strong `ADMIN_PASSWORD` before first deploy

@@ -32,6 +32,7 @@ def init_schema() -> None:
                     id SERIAL PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
+                    approved BOOLEAN NOT NULL DEFAULT false,
                     created_at TIMESTAMPTZ DEFAULT now()
                 );
                 CREATE TABLE IF NOT EXISTS app_state (
@@ -42,25 +43,34 @@ def init_schema() -> None:
                 );
                 """
             )
+            cur.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT true
+                """
+            )
 
 
 def get_user_by_username(username: str) -> dict | None:
     with _conn() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT id, username, password_hash FROM users WHERE username = %s",
+                "SELECT id, username, password_hash, approved FROM users WHERE username = %s",
                 (username,),
             )
             row = cur.fetchone()
             return dict(row) if row else None
 
 
-def create_user(username: str, password_hash: str) -> int:
+def create_user(username: str, password_hash: str, *, approved: bool = False) -> int:
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
-                (username, password_hash),
+                """
+                INSERT INTO users (username, password_hash, approved)
+                VALUES (%s, %s, %s) RETURNING id
+                """,
+                (username, password_hash, approved),
             )
             user_id = cur.fetchone()[0]
             cur.execute(
@@ -81,6 +91,7 @@ def user_count() -> int:
 
 
 def sole_user_id() -> int | None:
+    """Deprecated helper — kept for migration scripts."""
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM users ORDER BY id LIMIT 1")

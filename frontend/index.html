@@ -677,9 +677,9 @@ h2 {
 </head>
 <body>
 <div id="login-overlay" class="login-overlay" hidden>
-  <div class="login-card">
-    <h2>Sign in</h2>
-    <p>Enter your credentials to access your portfolio.</p>
+  <div class="login-card" id="login-card">
+    <h2 id="auth-title">Sign in</h2>
+    <p id="auth-subtitle">Enter your credentials to access your portfolio.</p>
     <div class="login-field">
       <label for="login-username">Username</label>
       <input id="login-username" type="text" autocomplete="username" required>
@@ -690,7 +690,10 @@ h2 {
     </div>
     <div id="login-error" class="login-error"></div>
     <button class="btn btn--primary" id="login-btn" type="button" style="width:100%">Sign in</button>
-    <p style="margin:1rem 0 0;font-size:0.8125rem;color:var(--color-muted)">First visit after idle? The server may take 30–50 seconds to wake up.</p>
+    <p style="margin:1rem 0 0;font-size:0.875rem;text-align:center;color:var(--color-muted)">
+      <button type="button" class="btn btn--ghost btn--small" id="auth-toggle-btn">Create an account</button>
+    </p>
+    <p style="margin:0.75rem 0 0;font-size:0.8125rem;color:var(--color-muted)">First visit after idle? The server may take 30–50 seconds to wake up.</p>
   </div>
 </div>
 <main>
@@ -1168,6 +1171,35 @@ async function login(username, password) {
     return true;
   }
   document.getElementById('login-error').textContent = j.error || 'Sign in failed';
+  return false;
+}
+
+let authMode = 'login';
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isLogin = mode === 'login';
+  document.getElementById('auth-title').textContent = isLogin ? 'Sign in' : 'Create account';
+  document.getElementById('auth-subtitle').textContent = isLogin
+    ? 'Enter your credentials to access your portfolio.'
+    : 'Choose a username and password. An admin must approve new accounts.';
+  document.getElementById('login-btn').textContent = isLogin ? 'Sign in' : 'Create account';
+  document.getElementById('auth-toggle-btn').textContent = isLogin
+    ? 'Create an account'
+    : 'Already have an account? Sign in';
+  document.getElementById('login-password').autocomplete = isLogin ? 'current-password' : 'new-password';
+  document.getElementById('login-error').textContent = '';
+}
+
+async function register(username, password) {
+  const j = await api('POST', '/api/register', { username, password }, { retries: 2 });
+  if (j.ok) {
+    toast(j.message || 'Account created. An admin must approve your account before you can sign in.', 'info', 6000);
+    setAuthMode('login');
+    document.getElementById('login-password').value = '';
+    return true;
+  }
+  document.getElementById('login-error').textContent = j.error || 'Registration failed';
   return false;
 }
 
@@ -4191,15 +4223,23 @@ async function saveESPPPlan() {
 
 document.addEventListener('DOMContentLoaded', () => {
   init();
+  setAuthMode('login');
+
+  document.getElementById('auth-toggle-btn').addEventListener('click', () => {
+    setAuthMode(authMode === 'login' ? 'register' : 'login');
+  });
 
   document.getElementById('login-btn').addEventListener('click', async () => {
     const username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
     document.getElementById('login-btn').disabled = true;
     document.getElementById('login-error').textContent = '';
-    const ok = await login(username, password);
+    const mode = authMode;
+    const ok = mode === 'login'
+      ? await login(username, password)
+      : await register(username, password);
     document.getElementById('login-btn').disabled = false;
-    if (ok) startApp();
+    if (ok && mode === 'login') startApp();
   });
 
   document.getElementById('login-password').addEventListener('keydown', (e) => {
