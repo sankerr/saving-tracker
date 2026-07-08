@@ -3,7 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#FCFBF8" id="meta-theme-color">
 <title>Saving Tracker</title>
+<script>
+(function () {
+  var pref = localStorage.getItem('st_theme') || 'system';
+  var dark = pref === 'dark' || (pref !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  var meta = document.getElementById('meta-theme-color');
+  if (meta) meta.content = dark ? '#0F0F1A' : '#FCFBF8';
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -37,13 +48,14 @@
   --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', monospace;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg: #0F0F1A; --color-surface: #1A1A2E; --color-surface-2: #232340;
-    --color-text: #E8E8F0; --color-text-strong: #FFFFFF; --color-muted: #9999B0;
-    --color-border: #2A2A45; --color-success: #4ADE80; --color-warning: #F59E0B;
-    --color-danger: #F87171;
-  }
+:root[data-theme="dark"] {
+  --color-bg: #0F0F1A; --color-surface: #1A1A2E; --color-surface-2: #232340;
+  --color-text: #E8E8F0; --color-text-strong: #FFFFFF; --color-muted: #9999B0;
+  --color-border: #2A2A45; --color-success: #4ADE80; --color-warning: #F59E0B;
+  --color-danger: #F87171;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.2);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.2), 0 2px 8px rgb(0 0 0 / 0.25);
+  --shadow-lg: 0 1px 2px rgb(0 0 0 / 0.2), 0 4px 16px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.25);
 }
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -748,6 +760,7 @@ h2 {
       <span id="status-pill-text">Loading…</span>
     </div>
     <div class="status-actions">
+      <button class="btn btn--ghost btn--small" id="theme-toggle-btn" type="button" title="Toggle light/dark mode" aria-label="Toggle theme">🌙</button>
       <button class="btn btn--ghost btn--small" id="logout-btn" hidden>Sign out</button>
       <button class="btn btn--ghost btn--small" id="refresh-btn">↻ Refresh</button>
     </div>
@@ -1053,6 +1066,14 @@ h2 {
     </div>
     <div id="settings-body" hidden>
       <div class="settings-grid">
+        <div class="field">
+          <label for="setting-theme">Appearance</label>
+          <select id="setting-theme" style="width:100%;padding:0.5rem 0.75rem;font:inherit;font-size:0.875rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);">
+            <option value="system">System (match device)</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
         <div class="field field--inline">
           <input type="checkbox" id="setting-net-of-fees">
           <label for="setting-net-of-fees">Default: MONTHLY_YIELD is net of fees</label>
@@ -1147,6 +1168,57 @@ const dragSelectPlugin = {
     ctx.restore();
   },
 };
+
+// ── Theme ──
+const THEME_KEY = 'st_theme';
+
+function resolveTheme(pref) {
+  if (pref === 'dark') return 'dark';
+  if (pref === 'light') return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function getThemePreference() {
+  return localStorage.getItem(THEME_KEY) || 'system';
+}
+
+function applyTheme(pref) {
+  const resolved = resolveTheme(pref);
+  document.documentElement.dataset.theme = resolved;
+  document.documentElement.style.colorScheme = resolved;
+  const meta = document.getElementById('meta-theme-color');
+  if (meta) meta.content = resolved === 'dark' ? '#0F0F1A' : '#FCFBF8';
+  const btn = document.getElementById('theme-toggle-btn');
+  if (btn) {
+    btn.textContent = resolved === 'dark' ? '☀️' : '🌙';
+    btn.title = resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  }
+  const sel = document.getElementById('setting-theme');
+  if (sel && sel.value !== pref) sel.value = pref;
+}
+
+function setThemePreference(pref) {
+  localStorage.setItem(THEME_KEY, pref);
+  applyTheme(pref);
+  if (APP) renderAll();
+}
+
+function initTheme() {
+  const pref = getThemePreference();
+  applyTheme(pref);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getThemePreference() === 'system') applyTheme('system');
+  });
+}
+
+function chartThemeColors() {
+  const s = getComputedStyle(document.documentElement);
+  return {
+    tick: s.getPropertyValue('--color-muted').trim(),
+    grid: s.getPropertyValue('--color-border').trim(),
+    legend: s.getPropertyValue('--color-text').trim(),
+  };
+}
 
 // ── Auth & API ──
 const TOKEN_KEY = 'st_token';
@@ -1490,6 +1562,7 @@ function drawDashboardChart() {
 
   if (DASH_CHART) DASH_CHART.destroy();
   const ctx = document.getElementById('dash-chart').getContext('2d');
+  const c = chartThemeColors();
   DASH_CHART = new Chart(ctx, {
     type: 'line',
     data: {
@@ -1516,14 +1589,15 @@ function drawDashboardChart() {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { grid: { display: false }, min: xMin, max: xMax, ticks: { maxTicksLimit: 12 } },
+        x: { grid: { display: false, color: c.grid }, min: xMin, max: xMax, ticks: { maxTicksLimit: 12, color: c.tick } },
         y: {
           stacked: false,
-          ticks: { callback: (v) => fmtILS.format(v) },
+          grid: { color: c.grid },
+          ticks: { color: c.tick, callback: (v) => fmtILS.format(v) },
         },
       },
       plugins: {
-        legend: { position: 'bottom', labels: { font: { size: 11 } } },
+        legend: { position: 'bottom', labels: { font: { size: 11 }, color: c.legend } },
         tooltip: {
           callbacks: {
             label: (ctx) => `${ctx.dataset.label}: ${fmtILSPrec.format(ctx.parsed.y || 0)}`,
@@ -3332,6 +3406,14 @@ function init() {
     body.hidden = !body.hidden;
     document.getElementById('settings-toggle').textContent = body.hidden ? 'Show' : 'Hide';
   });
+  document.getElementById('setting-theme').value = getThemePreference();
+  document.getElementById('setting-theme').addEventListener('change', (e) => {
+    setThemePreference(e.target.value);
+  });
+  document.getElementById('theme-toggle-btn').addEventListener('click', () => {
+    const next = resolveTheme(getThemePreference()) === 'dark' ? 'light' : 'dark';
+    setThemePreference(next);
+  });
   document.getElementById('setting-net-of-fees').addEventListener('change', async (e) => {
     await api('POST', '/api/settings', { yield_is_net_of_fees: e.target.checked });
     fetchData();
@@ -4290,6 +4372,7 @@ async function saveESPPPlan() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   init();
   setAuthMode('login');
 
