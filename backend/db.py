@@ -1,0 +1,150 @@
+"""PostgreSQL storage for portfolio data and cache (JSONB blobs)."""
+
+import json
+import os
+from contextlib import contextmanager
+
+import psycopg2
+import psycopg2.extras
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+
+@contextmanager
+def _conn():
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def init_schema() -> None:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                CREATE TABLE IF NOT EXISTS app_state (
+                    user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    data_json JSONB NOT NULL,
+                    cache_json JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+                """
+            )
+
+
+def get_user_by_username(username: str) -> dict | None:
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, username, password_hash FROM users WHERE username = %s",
+                (username,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+def create_user(username: str, password_hash: str) -> int:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
+                (username, password_hash),
+            )
+            user_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO app_state (user_id, data_json, cache_json)
+                VALUES (%s, %s::jsonb, %s::jsonb)
+                """,
+                (user_id, "{}", "{}"),
+            )
+            return user_id
+
+
+def user_count() -> int:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM users")
+            return cur.fetchone()[0]
+
+
+def sole_user_id() -> int | None:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users ORDER BY id LIMIT 1")
+            row = cur.fetchone()
+            return row[0] if row else None
+
+
+def load_state(user_id: int) -> tuple[dict, dict]:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT data_json, cache_json FROM app_state WHERE user_id = %s",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {}, {}
+            data, cache = row
+            if isinstance(data, str):
+                data = json.loads(data)
+            if isinstance(cache, str):
+                cache = json.loads(cache)
+            return data, cache
+
+
+def save_data_state(user_id: int, data: dict) -> None:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO app_state (user_id, data_json, cache_json, updated_at)
+                VALUES (%s, %s::jsonb, (SELECT cache_json FROM app_state WHERE user_id = %s), now())
+                ON CONFLICT (user_id) DO UPDATE
+                SET data_json = EXCLUDED.data_json, updated_at = now()
+                """,
+                (user_id, json.dumps(data), user_id),
+            )
+
+
+def save_cache_state(user_id: int, cache: dict) -> None:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO app_state (user_id, data_json, cache_json, updated_at)
+                VALUES (%s, (SELECT data_json FROM app_state WHERE user_id = %s), %s::jsonb, now())
+                ON CONFLICT (user_id) DO UPDATE
+                SET cache_json = EXCLUDED.cache_json, updated_at = now()
+                """,
+                (user_id, user_id, json.dumps(cache)),
+            )
+
+
+def upsert_state(user_id: int, data: dict, cache: dict) -> None:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO app_state (user_id, data_json, cache_json, updated_at)
+                VALUES (%s, %s::jsonb, %s::jsonb, now())
+                ON CONFLICT (user_id) DO UPDATE
+                SET data_json = EXCLUDED.data_json,
+                    cache_json = EXCLUDED.cache_json,
+                    updated_at = now()
+                """,
+                (user_id, json.dumps(data), json.dumps(cache)),
+            )
