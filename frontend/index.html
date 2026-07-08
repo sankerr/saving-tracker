@@ -672,6 +672,33 @@ h2 {
   color: var(--color-danger); font-size: 0.875rem;
   margin-bottom: 1rem; min-height: 1.25rem;
 }
+
+.disclaimer-banner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.125rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--color-muted);
+  box-shadow: var(--shadow-sm);
+}
+.disclaimer-banner__title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+.disclaimer-banner ul {
+  margin: 0;
+  padding-left: 1.125rem;
+}
+.disclaimer-banner li { margin-bottom: 0.35rem; }
+.disclaimer-banner li:last-child { margin-bottom: 0; }
+.disclaimer-banner strong { color: var(--color-text); font-weight: 600; }
 </style>
 <script src="config.js"></script>
 </head>
@@ -700,8 +727,21 @@ h2 {
   <header class="hero">
     <div class="eyebrow">Cloud · Private · Password Protected</div>
     <h1>Saving Tracker</h1>
-    <p class="subtitle">Track Israeli pension/provident funds (gemelnet), RSU grants, ESPP, and cash. Informational only — not financial advice. <strong>No tax calculation</strong>: numbers shown are pre-tax / nominal.</p>
+    <p class="subtitle">A personal portfolio notebook for Israeli pension/provident funds (gemelnet), RSU grants, ESPP, and cash — built for private tracking, not professional use.</p>
   </header>
+
+  <aside class="disclaimer-banner" aria-label="Important disclaimers">
+    <p class="disclaimer-banner__title">Important — read before using</p>
+    <ul>
+      <li><strong>Personal use only.</strong> This app is a hobby tool for tracking your own savings. It is not a commercial product, regulated financial service, or substitute for a licensed advisor.</li>
+      <li><strong>Not financial, investment, tax, or legal advice.</strong> All figures, charts, and projections are informational estimates. Do not make real-world decisions based solely on this app.</li>
+      <li><strong>No tax calculation.</strong> Numbers are pre-tax and nominal. Israeli tax rules (CPI adjustment, Section 102, deposit ceilings, withholding, etc.) are not modeled — consult your fund manager, accountant, or <a href="https://www.gov.il/he/departments/israel_tax_authority" target="_blank" rel="noopener noreferrer">Israel Tax Authority</a> resources.</li>
+      <li><strong>Data may be wrong or stale.</strong> Fund yields come from data.gov.il; stock and FX prices from Yahoo Finance. Sources can be delayed, revised, or unavailable. Always verify against official statements.</li>
+      <li><strong>Projections are not promises.</strong> Past performance and assumed growth rates do not guarantee future results. What-if scenarios are simplified models, not forecasts.</li>
+      <li><strong>Use at your own risk.</strong> The authors provide no warranty and accept no liability for losses or decisions arising from use of this software.</li>
+      <li><strong>Your responsibility.</strong> You are solely responsible for the accuracy of data you enter and for keeping your login credentials secure. New accounts require admin approval before access is granted.</li>
+    </ul>
+  </aside>
 
   <div class="status-bar">
     <div class="status-pill" id="status-pill" data-state="">
@@ -1032,6 +1072,10 @@ h2 {
       <p class="chart-caption" id="cache-info" style="margin-top:0.75rem;"></p>
     </div>
   </section>
+
+  <p class="chart-caption" style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--color-border); text-align:center;">
+    Saving Tracker — personal, non-commercial software. Not affiliated with fund managers, brokers, or data providers.
+  </p>
 </main>
 
 <div class="toast-stack" id="toast-stack"></div>
