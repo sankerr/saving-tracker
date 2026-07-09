@@ -3414,6 +3414,22 @@ def delete_account(user_id: int, password: str) -> dict:
     return {"ok": True, "message": "Account deleted"}
 
 
+def change_password(user_id: int, current_password: str, new_password: str) -> dict:
+    user = db.get_user_by_id(user_id)
+    if not user:
+        return {"ok": False, "error": "User not found"}
+    if not auth.verify_password(current_password, user["password_hash"]):
+        return {"ok": False, "error": "Current password is incorrect"}
+    err = _validate_password(new_password)
+    if err:
+        return {"ok": False, "error": err}
+    if auth.verify_password(new_password, user["password_hash"]):
+        return {"ok": False, "error": "New password must be different from current password"}
+    if not db.update_password_hash(user_id, auth.hash_password(new_password)):
+        return {"ok": False, "error": "Could not update password"}
+    return {"ok": True, "message": "Password updated"}
+
+
 # ── HTTP server ──────────────────────────────────────────────────────────────
 PUBLIC_PATHS = {"/api/login", "/api/register", "/api/health", "/api/version"}
 
@@ -3863,6 +3879,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._json(400, {"ok": False, "error": "Password is required"})
                     return
                 self._json(200, delete_account(user_id, password))
+                return
+
+            if method == "POST" and path == "/api/account/password":
+                current = body.get("current_password") or ""
+                new_pw = body.get("new_password") or ""
+                if not current or not new_pw:
+                    self._json(400, {"ok": False, "error": "Current and new password are required"})
+                    return
+                self._json(200, change_password(user_id, current, new_pw))
                 return
 
             self.send_error(404)

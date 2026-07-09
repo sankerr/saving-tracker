@@ -177,3 +177,13 @@ def delete_user(user_id: int) -> bool:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
             return cur.rowcount > 0
+
+
+def update_password_hash(user_id: int, password_hash: str) -> bool:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET password_hash = %s WHERE id = %s",
+                (password_hash, user_id),
+            )
+            return cur.rowcount > 0
