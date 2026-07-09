@@ -1451,21 +1451,29 @@ function clearUserSession() {
   if (whatIfClear) whatIfClear.hidden = true;
   clearPortfolioUi();
   document.getElementById('toast-stack').innerHTML = '';
-  const pw = document.getElementById('login-password');
-  if (pw) pw.value = '';
 }
 
-function logout(message = 'Signed out') {
+function returnToLoginScreen({ loginNotice = '' } = {}) {
   clearUserSession();
-  showLogin(message);
-  setStatus('', message);
-}
-
-function showLogin(msg = '') {
+  setAuthMode('login');
+  document.querySelectorAll('.modal').forEach((m) => m.remove());
+  const username = document.getElementById('login-username');
+  if (username) username.value = '';
+  const password = document.getElementById('login-password');
+  if (password) password.value = '';
   document.getElementById('app-main').hidden = true;
   document.getElementById('login-overlay').hidden = false;
   document.getElementById('logout-btn').hidden = true;
-  document.getElementById('login-error').textContent = msg || '';
+  document.getElementById('login-error').textContent = loginNotice;
+  window.scrollTo(0, 0);
+}
+
+function logout(loginNotice = '') {
+  returnToLoginScreen({ loginNotice });
+}
+
+function showLogin(msg = '') {
+  returnToLoginScreen({ loginNotice: msg });
 }
 
 function hideLogin() {
@@ -3740,8 +3748,8 @@ function init() {
     setStatus('pending', 'Deleting account…');
     const j = await api('DELETE', '/api/account', { password: r.password });
     if (j.ok) {
-      logout();
-      toast('Your account and all personal data have been deleted from the database.', 'info', 6000);
+      returnToLoginScreen();
+      toast('Your account was deleted. All personal data has been removed.', 'info', 6000);
     } else {
       setStatus('error', j.error || 'Could not delete account');
       toast(j.error || 'Could not delete account', 'error', 6000);
