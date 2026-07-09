@@ -3253,7 +3253,7 @@ const HELP_CONTENT = {
     title: 'About Retirement simulator',
     body: `
       <p>Standalone <strong>what-if tool</strong> for Israeli pension withdrawal at retirement (2026 rules). It is <strong>not linked</strong> to your pension holdings above and <strong>does not save anything</strong> to the database.</p>
-      <p>Enter projected <em>מקיפה</em> and optional <em>משלימה</em> balances at retirement, your birth date, gender, and target retirement age. The simulator shows three paths: full monthly pension, maximum lump-sum with minimum pension (₪5,306), and a custom monthly pension with the remaining cash.</p>
+      <p>Enter projected <em>מקיפה</em> and optional <em>משלימה</em> balances at retirement, your birth date, gender, and target retirement age. The simulator shows four paths: full monthly pension, maximum lump-sum with minimum pension (₪5,306), a custom monthly pension with the remaining cash, and cashing out משלימה while maximizing monthly pension from מקיפה.</p>
       <p>Lump-sum tax uses a simplified model: ~₪1.14M exemption, then 35% estimated tax on the remainder. Actual מקדמי המרה and tax depend on your fund and personal circumstances.</p>
     `,
   },
@@ -3687,6 +3687,23 @@ function renderRetirementSimulator() {
     `;
   }
 
+  function path4Rows(p) {
+    if (p.cashGross <= 0) {
+      return `
+        <dt>Locked (מקיפה)</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
+        <dt>משלימה cash</dt><dd>${rsimFmt(0)}</dd>
+      `;
+    }
+    return `
+      <dt>Locked (מקיפה)</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
+      <dt>משלימה cash (gross)</dt><dd>${rsimFmt(p.cashGross)}</dd>
+      <dt>Tax-free portion</dt><dd>${rsimFmt(p.taxFreeCash)}</dd>
+      <dt>Taxable portion</dt><dd>${rsimFmt(p.taxableCash)}</dd>
+      <dt>Est. tax (~35%)</dt><dd>${rsimFmt(p.estimatedTax)}</dd>
+      <dt>משלימה cash (net)</dt><dd class="highlight">${rsimFmt(p.netCash)}</dd>
+    `;
+  }
+
   pathsEl.hidden = false;
   pathsEl.innerHTML = `
     <div class="retirement-sim__path">
@@ -3708,6 +3725,13 @@ function renderRetirementSimulator() {
       <dl>
         <dt>Monthly pension</dt><dd class="highlight">${rsimFmt(result.path3.monthlyPension)}</dd>
         ${pathTaxRows(result.path3)}
+      </dl>
+    </div>
+    <div class="retirement-sim__path">
+      <h3>Path 4 — Cash משלימה, max pension from מקיפה</h3>
+      <dl>
+        <dt>Monthly pension (מקיפה)</dt><dd class="highlight">${rsimFmt(result.path4.monthlyPension)}</dd>
+        ${path4Rows(result.path4)}
       </dl>
     </div>
   `;

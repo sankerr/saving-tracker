@@ -151,6 +151,18 @@
       };
     }
 
+    // Path 4: cash out משלימה; max monthly pension from מקיפה (comprehensive only)
+    const path4Monthly = comprehensiveIls > 0 ? comprehensiveIls / mult : 0;
+    const path4 = {
+      monthlyPension: path4Monthly,
+      lockedCapital: comprehensiveIls,
+      cashGross: supplementaryIls,
+      ...calcCashTax(supplementaryIls),
+    };
+    if (supplementaryIls > 0 && comprehensiveIls <= 0) {
+      warnings.push('Path 4: no מקיפה balance — monthly pension is ₪0; all משלימה taken as cash.');
+    }
+
     return {
       ok: true,
       warnings,
@@ -171,6 +183,7 @@
       path1,
       path2,
       path3,
+      path4,
     };
   }
 
@@ -192,6 +205,21 @@
     assert('path3 gross', Math.abs(result.path3.cashGross - 2390000) < 1);
     assert('path3 tax', Math.abs(result.path3.estimatedTax - 437500) < 1);
     assert('path3 net', Math.abs(result.path3.netCash - 1952500) < 1);
+
+    const split = simulate({
+      gender: 'male',
+      birthDate: '1966-01-01',
+      retirementAge: 60,
+      comprehensiveIls: 4000000,
+      supplementaryIls: 2590000,
+      targetPensionIls: 20000,
+    });
+    assert('path4 ok', split.ok === true);
+    assert('path4 monthly', Math.abs(split.path4.monthlyPension - 4000000 / 210) < 1);
+    assert('path4 cash', Math.abs(split.path4.cashGross - 2590000) < 1);
+    assert('path4 locked', Math.abs(split.path4.lockedCapital - 4000000) < 1);
+    assert('path4 tax', Math.abs(split.path4.estimatedTax - 507500) < 1);
+    assert('path4 net', Math.abs(split.path4.netCash - 2082500) < 1);
 
     return { passed: failures.length === 0, failures, result };
   }
