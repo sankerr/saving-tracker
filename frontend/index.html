@@ -868,8 +868,108 @@ h2 {
 .disclaimer-banner li { margin-bottom: 0.35rem; }
 .disclaimer-banner li:last-child { margin-bottom: 0; }
 .disclaimer-banner strong { color: var(--color-text); font-weight: 600; }
+
+.retirement-sim__intro {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  margin: 0 0 1rem;
+  line-height: 1.55;
+}
+.retirement-sim__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.retirement-sim__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
+}
+.retirement-sim__meta strong { color: var(--color-text-strong); }
+.retirement-sim__warn {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--color-warning);
+  background: rgb(183 110 0 / 0.08);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+}
+.retirement-sim__paths {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.retirement-sim__path {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.125rem;
+  background: var(--color-surface-2);
+}
+.retirement-sim__path h3 {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  margin: 0 0 0.75rem;
+  color: var(--color-text-strong);
+}
+.retirement-sim__path dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.8125rem;
+}
+.retirement-sim__path dt { color: var(--color-muted); margin: 0; }
+.retirement-sim__path dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--color-text-strong);
+  text-align: right;
+  font-family: var(--font-display);
+}
+.retirement-sim__path dd.highlight {
+  color: var(--color-primary);
+  font-size: 1rem;
+}
+.retirement-sim__slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  grid-column: 1 / -1;
+}
+.retirement-sim__slider-row input[type="range"] { width: 100%; }
+.retirement-sim__note {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin: 1rem 0 0;
+  font-style: italic;
+  line-height: 1.5;
+}
+@media (max-width: 720px) {
+  .retirement-sim__grid { grid-template-columns: 1fr; }
+  .retirement-sim__paths { grid-template-columns: 1fr; }
+  .retirement-sim__grid .control-input {
+    min-height: 2.75rem;
+    font-size: 1rem;
+  }
+  .retirement-sim__slider-row input[type="range"] {
+    min-height: 2.25rem;
+    padding: 0.5rem 0;
+    touch-action: pan-y;
+  }
+  .retirement-sim__path { padding: 1rem; }
+  .retirement-sim__meta { flex-direction: column; gap: 0.5rem; }
+}
 </style>
 <script src="config.js"></script>
+<script src="pension-retirement-sim.js"></script>
 </head>
 <body>
 <div id="login-overlay" class="login-overlay" hidden>
@@ -1083,6 +1183,53 @@ h2 {
         <button class="btn btn--primary btn--small" id="add-pension-save" disabled>Save pension</button>
       </div>
     </div>
+  </section>
+
+  <section class="card" id="retirement-simulator-card">
+    <div class="card__header">
+      <h2>Retirement simulator <button class="help-btn" data-help="retirement-sim" title="About this simulator" aria-label="About Retirement simulator">?</button></h2>
+    </div>
+    <p class="retirement-sim__intro">
+      Estimate pension vs. lump-sum withdrawal at retirement (Israeli rules, 2026). Enter projected balances at retirement — <strong>nothing here is saved</strong> to your account or database.
+    </p>
+    <div class="retirement-sim__grid">
+      <div class="field">
+        <label for="rsim-birth-date">Birth date</label>
+        <input type="date" id="rsim-birth-date" class="control-input">
+      </div>
+      <div class="field">
+        <label for="rsim-gender">Gender</label>
+        <select id="rsim-gender" class="control-input">
+          <option value="male">Male (גבר)</option>
+          <option value="female">Female (אישה)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="rsim-retirement-age">Retirement age</label>
+        <input type="number" id="rsim-retirement-age" class="control-input" min="55" max="75" value="60">
+      </div>
+      <div class="field">
+        <label for="rsim-comprehensive">מקיפה balance at retirement (₪)</label>
+        <input type="number" id="rsim-comprehensive" class="control-input" min="0" step="1000" placeholder="5000000">
+      </div>
+      <div class="field">
+        <label for="rsim-supplementary">משלימה balance at retirement (₪, optional)</label>
+        <input type="number" id="rsim-supplementary" class="control-input" min="0" step="1000" placeholder="0">
+      </div>
+      <div class="field retirement-sim__slider-row">
+        <label for="rsim-target-pension">Target monthly pension — path 3 (₪)</label>
+        <input type="range" id="rsim-target-pension-range" min="5306" max="50000" step="100" value="20000">
+        <input type="number" id="rsim-target-pension" class="control-input" min="5306" step="100" value="20000">
+        <span class="chart-caption" id="rsim-pension-bounds">Min ₪5,306 · max depends on balance</span>
+      </div>
+    </div>
+    <div id="rsim-warnings"></div>
+    <div id="rsim-meta" class="retirement-sim__meta" hidden></div>
+    <div id="rsim-error" class="login-error" style="min-height:0"></div>
+    <div id="rsim-paths" class="retirement-sim__paths" hidden></div>
+    <p class="retirement-sim__note">
+      Informational estimate only — not financial, tax, or legal advice. Conversion factors (מקדמי המרה) are approximations; your fund sets the actual multiplier at retirement. Tax uses a simplified 35% on the taxable lump-sum portion above the ~₪1.14M exemption.
+    </p>
   </section>
 
   <section class="card" id="rsu-card">
@@ -3102,6 +3249,14 @@ const HELP_CONTENT = {
       <p>Tax: pension is taxed when withdrawn (annuity or lump-sum at retirement) under separate Israeli pension rules. <strong>The app does not compute Israeli tax.</strong></p>
     `,
   },
+  'retirement-sim': {
+    title: 'About Retirement simulator',
+    body: `
+      <p>Standalone <strong>what-if tool</strong> for Israeli pension withdrawal at retirement (2026 rules). It is <strong>not linked</strong> to your pension holdings above and <strong>does not save anything</strong> to the database.</p>
+      <p>Enter projected <em>מקיפה</em> and optional <em>משלימה</em> balances at retirement, your birth date, gender, and target retirement age. The simulator shows three paths: full monthly pension, maximum lump-sum with minimum pension (₪5,306), and a custom monthly pension with the remaining cash.</p>
+      <p>Lump-sum tax uses a simplified model: ~₪1.14M exemption, then 35% estimated tax on the remainder. Actual מקדמי המרה and tax depend on your fund and personal circumstances.</p>
+    `,
+  },
   rsu: {
     title: 'About RSU Grants',
     body: `
@@ -3416,8 +3571,151 @@ function periodMonthShort(p) {
   return d.toLocaleDateString('en-US', { month: 'short' });
 }
 
+// ── Retirement simulator (stateless, client-only) ──
+let _rsimDebounce = null;
+
+function initRetirementSimulator() {
+  const fields = [
+    'rsim-birth-date', 'rsim-gender', 'rsim-retirement-age',
+    'rsim-comprehensive', 'rsim-supplementary',
+    'rsim-target-pension', 'rsim-target-pension-range',
+  ];
+  const schedule = () => {
+    clearTimeout(_rsimDebounce);
+    _rsimDebounce = setTimeout(renderRetirementSimulator, 150);
+  };
+  fields.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', schedule);
+      el.addEventListener('change', schedule);
+    }
+  });
+  const range = document.getElementById('rsim-target-pension-range');
+  const num = document.getElementById('rsim-target-pension');
+  range.addEventListener('input', () => { num.value = range.value; });
+  num.addEventListener('input', () => {
+    const v = +num.value;
+    if (!Number.isNaN(v)) range.value = Math.min(+range.max, Math.max(+range.min, v));
+  });
+  renderRetirementSimulator();
+}
+
+function rsimFmt(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  return fmtILS.format(Math.round(n));
+}
+
+function renderRetirementSimulator() {
+  const Sim = window.PensionRetirementSim;
+  if (!Sim) return;
+
+  const birthDate = document.getElementById('rsim-birth-date').value;
+  const gender = document.getElementById('rsim-gender').value;
+  const retirementAge = document.getElementById('rsim-retirement-age').value;
+  const comprehensiveIls = document.getElementById('rsim-comprehensive').value;
+  const supplementaryIls = document.getElementById('rsim-supplementary').value || '0';
+  const targetPensionIls = document.getElementById('rsim-target-pension').value;
+
+  const errEl = document.getElementById('rsim-error');
+  const metaEl = document.getElementById('rsim-meta');
+  const pathsEl = document.getElementById('rsim-paths');
+  const warnEl = document.getElementById('rsim-warnings');
+  const boundsEl = document.getElementById('rsim-pension-bounds');
+  const range = document.getElementById('rsim-target-pension-range');
+  const num = document.getElementById('rsim-target-pension');
+
+  const result = Sim.simulate({
+    birthDate,
+    gender,
+    retirementAge,
+    comprehensiveIls,
+    supplementaryIls,
+    targetPensionIls,
+  });
+
+  if (!birthDate && !comprehensiveIls) {
+    errEl.textContent = '';
+    metaEl.hidden = true;
+    pathsEl.hidden = true;
+    warnEl.innerHTML = '';
+    boundsEl.textContent = `Min ${rsimFmt(Sim.MINIMUM_PENSION)} · max depends on balance`;
+    return;
+  }
+
+  if (!result.ok) {
+    errEl.textContent = result.error || 'Invalid inputs';
+    metaEl.hidden = true;
+    pathsEl.hidden = true;
+    warnEl.innerHTML = '';
+    return;
+  }
+
+  errEl.textContent = '';
+  const maxP = Math.floor(result.bounds.maxPension);
+  range.min = Sim.MINIMUM_PENSION;
+  range.max = Math.max(Sim.MINIMUM_PENSION, maxP);
+  boundsEl.textContent = `Min ${rsimFmt(Sim.MINIMUM_PENSION)} · max ${rsimFmt(maxP)} (full pension path)`;
+
+  let target = +targetPensionIls;
+  if (Number.isNaN(target)) target = result.bounds.targetPension;
+  target = Math.max(Sim.MINIMUM_PENSION, Math.min(maxP, target));
+  if (+num.value !== target) num.value = target;
+  if (+range.value !== target) range.value = target;
+
+  warnEl.innerHTML = (result.warnings || []).map((w) =>
+    `<p class="retirement-sim__warn">${escapeHtml(w)}</p>`
+  ).join('');
+
+  metaEl.hidden = false;
+  metaEl.innerHTML = `
+    <span>Retirement: <strong>${escapeHtml(result.retirementDate?.label || '—')}</strong></span>
+    <span>Current age: <strong>${result.currentAge ?? '—'}</strong></span>
+    <span>Multiplier: <strong>${result.multiplier.toFixed(1)}</strong></span>
+    <span>Total balance: <strong>${rsimFmt(result.totalBalance)}</strong></span>
+  `;
+
+  function pathTaxRows(p) {
+    if (p.cashGross <= 0) return '';
+    return `
+      <dt>Locked for pension</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
+      <dt>Cash (gross)</dt><dd>${rsimFmt(p.cashGross)}</dd>
+      <dt>Tax-free portion</dt><dd>${rsimFmt(p.taxFreeCash)}</dd>
+      <dt>Taxable portion</dt><dd>${rsimFmt(p.taxableCash)}</dd>
+      <dt>Est. tax (~35%)</dt><dd>${rsimFmt(p.estimatedTax)}</dd>
+      <dt>Cash (net)</dt><dd class="highlight">${rsimFmt(p.netCash)}</dd>
+    `;
+  }
+
+  pathsEl.hidden = false;
+  pathsEl.innerHTML = `
+    <div class="retirement-sim__path">
+      <h3>Path 1 — Full pension</h3>
+      <dl>
+        <dt>Monthly pension</dt><dd class="highlight">${rsimFmt(result.path1.monthlyPension)}</dd>
+        <dt>Lump sum</dt><dd>${rsimFmt(0)}</dd>
+      </dl>
+    </div>
+    <div class="retirement-sim__path">
+      <h3>Path 2 — Max cash (min pension)</h3>
+      <dl>
+        <dt>Monthly pension</dt><dd class="highlight">${rsimFmt(result.path2.monthlyPension)}</dd>
+        ${pathTaxRows(result.path2)}
+      </dl>
+    </div>
+    <div class="retirement-sim__path">
+      <h3>Path 3 — Your target pension</h3>
+      <dl>
+        <dt>Monthly pension</dt><dd class="highlight">${rsimFmt(result.path3.monthlyPension)}</dd>
+        ${pathTaxRows(result.path3)}
+      </dl>
+    </div>
+  `;
+}
+
 // ── Event wiring ──
 function init() {
+  initRetirementSimulator();
   document.getElementById('refresh-btn').addEventListener('click', runSync);
 
   document.getElementById('horizon-group').addEventListener('click', (e) => {
