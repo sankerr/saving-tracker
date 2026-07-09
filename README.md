@@ -119,6 +119,8 @@ python3 -m http.server 3000
 
 - `POST /api/login` — `{ "username", "password" }` → `{ "token" }` (approved users only)
 - `POST /api/register` — `{ "username", "password" }` → creates account with `approved=false`
+- `POST /api/account/password` — `{ "current_password", "new_password" }` (change password while logged in)
+- `DELETE /api/account` — `{ "password" }` (delete account and all portfolio data)
 - All other `/api/*` routes require `Authorization: Bearer <token>`
 - `GET /api/health` — no auth (Render health checks)
 
@@ -137,6 +139,8 @@ UPDATE users SET approved = true WHERE username = 'their_username';
 ```
 
 The first admin user (created from `ADMIN_USERNAME` / `ADMIN_PASSWORD` on first deploy) is auto-approved.
+
+**Forgot password?** There is no email reset. Logged-in users can change password in **Settings → Change password**. Otherwise an admin can set a new bcrypt hash directly in Neon (contact admin).
 
 ## Security
 
