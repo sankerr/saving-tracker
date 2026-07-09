@@ -894,7 +894,7 @@ h2 {
     </p>
   </div>
 </div>
-<main>
+<main id="app-main">
   <header class="hero">
     <div class="eyebrow">Cloud · Private · Password Protected</div>
     <h1>Saving Tracker</h1>
@@ -1294,6 +1294,7 @@ function timeAgo(iso) {
 }
 
 let APP = null;
+let SESSION_EPOCH = 0;
 let HORIZON = 24;
 let WHAT_IF_PCT = (() => {
   const v = localStorage.getItem('saving_what_if_pct');
@@ -1392,13 +1393,83 @@ function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+function clearPortfolioUi() {
+  document.getElementById('dash-total').textContent = '—';
+  document.getElementById('dash-profit').textContent = '—';
+  document.getElementById('dash-profit').dataset.sign = 'pos';
+  document.getElementById('dash-subline').textContent = '—';
+  document.getElementById('what-if-summary').hidden = true;
+  document.getElementById('range-summary').hidden = true;
+  document.getElementById('range-reset').hidden = true;
+  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+  ['funds-count', 'pension-count', 'rsu-count', 'espp-count', 'cash-count'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '0';
+  });
+  const cacheInfo = document.getElementById('cache-info');
+  if (cacheInfo) cacheInfo.textContent = '';
+  const pensionNote = document.getElementById('dash-pension-note');
+  if (pensionNote) pensionNote.remove();
+  const pensionPill = document.getElementById('pension-subtotal-pill');
+  if (pensionPill) pensionPill.hidden = true;
+  const pensionWf = document.getElementById('pension-what-if-summary');
+  if (pensionWf) pensionWf.hidden = true;
+  if (DASH_CHART) {
+    DASH_CHART.destroy();
+    DASH_CHART = null;
+  }
+  Object.keys(DETAIL_CHARTS).forEach((k) => {
+    DETAIL_CHARTS[k].destroy();
+    delete DETAIL_CHARTS[k];
+  });
+  const dashCanvas = document.getElementById('dash-chart');
+  if (dashCanvas) {
+    const c = dashCanvas.getContext('2d');
+    c.clearRect(0, 0, dashCanvas.width, dashCanvas.height);
+  }
+  document.querySelectorAll('.add-panel').forEach((p) => { p.hidden = true; });
+  const settingsBody = document.getElementById('settings-body');
+  if (settingsBody) settingsBody.hidden = true;
+  const settingsToggle = document.getElementById('settings-toggle');
+  if (settingsToggle) settingsToggle.textContent = 'Show';
+}
+
+function clearUserSession() {
+  SESSION_EPOCH += 1;
+  setToken('');
+  localStorage.removeItem('saving_what_if_pct');
+  WHAT_IF_PCT = null;
+  APP = null;
+  EXPANDED.clear();
+  DASH_RANGE = null;
+  const whatIfInput = document.getElementById('what-if-input');
+  const whatIfClear = document.getElementById('what-if-clear');
+  if (whatIfInput) whatIfInput.value = '';
+  if (whatIfClear) whatIfClear.hidden = true;
+  clearPortfolioUi();
+  document.getElementById('toast-stack').innerHTML = '';
+  const pw = document.getElementById('login-password');
+  if (pw) pw.value = '';
+}
+
+function logout(message = 'Signed out') {
+  clearUserSession();
+  showLogin(message);
+  setStatus('', message);
+}
+
 function showLogin(msg = '') {
+  document.getElementById('app-main').hidden = true;
   document.getElementById('login-overlay').hidden = false;
   document.getElementById('logout-btn').hidden = true;
   document.getElementById('login-error').textContent = msg || '';
 }
 
 function hideLogin() {
+  document.getElementById('app-main').hidden = false;
   document.getElementById('login-overlay').hidden = true;
   document.getElementById('logout-btn').hidden = false;
 }
@@ -1426,8 +1497,7 @@ async function api(method, path, body, { retries = 1 } = {}) {
       }
       const r = await fetch(apiUrl(path), opts);
       if (r.status === 401) {
-        setToken('');
-        showLogin('Session expired. Please sign in again.');
+        logout('Session expired. Please sign in again.');
         return { ok: false, error: 'Unauthorized' };
       }
       if (!r.ok && r.status >= 500) {
@@ -1446,6 +1516,9 @@ async function api(method, path, body, { retries = 1 } = {}) {
 async function login(username, password) {
   const j = await api('POST', '/api/login', { username, password }, { retries: 2 });
   if (j.ok && j.token) {
+    SESSION_EPOCH += 1;
+    clearPortfolioUi();
+    APP = null;
     setToken(j.token);
     hideLogin();
     return true;
@@ -1494,8 +1567,11 @@ function dataQuery() {
 }
 
 async function fetchData(showSpinner = false) {
+  const epoch = SESSION_EPOCH;
+  if (!getToken()) return;
   if (showSpinner) setStatus('pending', 'Loading…');
   const j = await api('GET', `/api/data?${dataQuery()}`);
+  if (epoch !== SESSION_EPOCH) return;
   if (j.ok === false) {
     setStatus('error', j.error || 'Failed to load data');
     return;
@@ -1506,8 +1582,11 @@ async function fetchData(showSpinner = false) {
 }
 
 async function runSync() {
+  const epoch = SESSION_EPOCH;
+  if (!getToken()) return;
   setStatus('pending', 'Syncing…');
   const j = await api('POST', `/api/sync?${dataQuery()}`, {});
+  if (epoch !== SESSION_EPOCH) return;
   if (j.ok === false) {
     setStatus('error', j.error || 'Sync failed');
     toast(j.error || 'Sync failed', 'error');
@@ -1555,7 +1634,7 @@ function renderPensionDashboardNote() {
 }
 
 function renderAll() {
-  if (!APP) return;
+  if (!APP || !getToken()) return;
   renderDashboard();
   renderPensionDashboardNote();
   renderFunds();
@@ -3660,8 +3739,7 @@ function init() {
     if (!r || !r.password) return;
     const j = await api('DELETE', '/api/account', { password: r.password });
     if (j.ok) {
-      setToken('');
-      showLogin();
+      logout();
       toast('Your account and all personal data have been deleted from the database.', 'info', 6000);
     } else {
       toast(j.error || 'Could not delete account', 'error');
@@ -4594,12 +4672,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('logout-btn').addEventListener('click', () => {
-    setToken('');
-    showLogin();
-    setStatus('', 'Signed out');
+    logout();
   });
 
   if (!getToken()) {
+    clearUserSession();
     showLogin();
     return;
   }
@@ -4608,7 +4685,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function startApp() {
+  clearPortfolioUi();
+  APP = null;
+  setStatus('pending', 'Loading…');
   fetchData(true).then(() => {
+    if (!getToken() || !APP) return;
     if (!APP?.cache_status?.synced_today) {
       return runSync();
     }
