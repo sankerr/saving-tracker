@@ -2128,6 +2128,7 @@ function renderFundDetail(h) {
 
     ${c.fund_metrics ? renderFundMetrics(c.fund_metrics) : ''}
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-fund-${h.id}"></canvas></div>
+    <p class="chart-caption projection-mean-caption" data-projection-caption-for="detail-fund-${h.id}" hidden></p>
 
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Recurring contributions</h3>
     ${rules.length ? `<div class="rule-list">${rules.map(r => renderRuleRow(h.id, r)).join('')}</div>`
@@ -2364,6 +2365,7 @@ function renderPensionDetail(h) {
     ${whatIfHTML}
 
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-pension-${h.id}"></canvas></div>
+    <p class="chart-caption projection-mean-caption" data-projection-caption-for="detail-pension-${h.id}" hidden></p>
 
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Recurring contributions</h3>
     ${rules.length ? `<div class="rule-list">${rules.map(r => renderRuleRow(h.id, r)).join('')}</div>`
@@ -2988,6 +2990,22 @@ function drawRsuStockHistoryChart(canvasId, grant) {
   });
 }
 
+function projectionMeanLabel(proj, kind) {
+  if (!proj || !proj.paths || !proj.paths.mean.length) return 'Projection mean';
+  if (kind === 'fund') {
+    const annual = proj.annual_pct != null
+      ? proj.annual_pct
+      : (proj.mu_monthly != null ? (Math.pow(1 + proj.mu_monthly, 12) - 1) * 100 : null);
+    if (annual == null) return 'Projection mean';
+    const n = proj.n_samples || 0;
+    const contrib = proj.includes_recurring ? ' + contributions' : '';
+    return `Projection mean (~${annual.toFixed(1)}%/yr hist avg${contrib}, ${n} mo)`;
+  }
+  if (kind === 'rsu') return 'Projection mean (vesting at today\'s price)';
+  if (kind === 'espp') return 'Projection mean (flat)';
+  return 'Projection mean';
+}
+
 function drawDetailChart(canvasId, item, kind) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
@@ -3090,13 +3108,27 @@ function drawDetailChart(canvasId, item, kind) {
     }
   }
 
+  const projMeanLabel = projectionMeanLabel(proj, kind);
+
+  const capEl = document.querySelector(`[data-projection-caption-for="${canvasId}"]`);
+  if (capEl) {
+    if (kind === 'fund' && proj && proj.annual_pct != null) {
+      const contrib = proj.includes_recurring ? ' Includes your recurring contributions each month.' : '';
+      capEl.textContent = `Dashed line uses ~${proj.annual_pct.toFixed(1)}%/yr — the average of ${proj.n_samples || 0} historical monthly yields from the official dataset.${contrib}`;
+      capEl.hidden = false;
+    } else {
+      capEl.textContent = '';
+      capEl.hidden = true;
+    }
+  }
+
   DETAIL_CHARTS[canvasId] = new Chart(ctx.getContext('2d'), {
     type: 'line',
     data: {
       labels: allLabels,
       datasets: [
         { label: 'Value', data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : 'rgba(77,205,205,1)'), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : 'rgba(77,205,205,0.18)'), fill: 'origin', tension: 0.25, pointRadius: 0 },
-        { label: 'Projection mean', data: projMeanArr, borderColor: 'rgba(43,43,62,0.7)', borderDash: [6,4], borderWidth: 1.5, fill: false, tension: 0.2, pointRadius: 0 },
+        { label: projMeanLabel, data: projMeanArr, borderColor: 'rgba(43,43,62,0.7)', borderDash: [6,4], borderWidth: 1.5, fill: false, tension: 0.2, pointRadius: 0 },
         ...(futureVestArr.length ? [{
           label: 'Vesting at today\'s price',
           data: futureVestArr,
@@ -3129,11 +3161,12 @@ function drawDetailChart(canvasId, item, kind) {
       scales: { x: { grid: { display: false } }, y: { ticks: { callback: (v) => fmt.format(v) } } },
       plugins: {
         legend: {
-          display: (kind === 'rsu' && futureVestArr.length > 0) || whatIfArr.length > 0,
+          display: (kind === 'rsu' && futureVestArr.length > 0) || whatIfArr.length > 0
+            || (kind === 'fund' && proj && proj.annual_pct != null),
           position: 'bottom',
           labels: {
             font: { size: 11 },
-            filter: (item) => /Vesting|If \d/.test(item.text || ''),
+            filter: (item) => /Vesting|If funds grow|Projection mean/.test(item.text || ''),
           },
         },
         tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtP.format(ctx.parsed.y || 0)}` } },
@@ -3220,7 +3253,7 @@ const HELP_CONTENT = {
     body: `
       <p>The big number is your <strong>total portfolio value</strong> in ILS — the sum of every fund holding, RSU grant (USD value × current FX), and cash entry.</p>
       <p>The <strong>stacked area chart</strong> looks forward only. The first column is the current month (today's snapshot of funds + RSU); subsequent columns are projected month-by-month. RSU layer = vested-and-held shares × current price × FX, growing as the vesting schedule fires (cliff + monthly/quarterly cadence) — flat-price assumption. Cash sits in its own flat layer at the bottom of the stack.</p>
-      <p>The <code>If funds grow %/yr</code> input sets the rate for <strong>both</strong> the future Funds stack and the dashed total line. <strong>Growth applies to funds only</strong> (and to projected fund contributions). <strong>Cash, RSU vesting, and ESPP are added flat</strong> on top — cash and ESPP as constants at today's value, RSU as the deterministic vesting curve at today's price/FX. With no rate entered, the Funds stack uses each fund's <strong>historical average monthly return</strong> from gemelnet instead. Per-fund detail charts still show the historical projection mean alongside your what-if line for comparison.</p>
+      <p>The <code>If funds grow %/yr</code> input sets the rate for <strong>both</strong> the future Funds stack and the dashed total line. <strong>Growth applies to funds only</strong> (and to projected fund contributions). <strong>Cash, RSU vesting, and ESPP are added flat</strong> on top — cash and ESPP as constants at today's value, RSU as the deterministic vesting curve at today's price/FX. With no rate entered, the Funds stack uses each fund's <strong>historical average monthly return</strong> from gemelnet instead. Per-fund detail charts label the dashed <strong>Projection mean</strong> with the implied <strong>%/yr</strong> from that historical average (and note if recurring contributions are included).</p>
       <p><strong>Horizon chips</strong> (6m / 12m / 24m / 60m / 120m) control how far forward the chart extends. Picking a chip resets any active range.</p>
       <p><strong>Date range</strong>: pick start/end months in the inputs, or <strong>click and drag horizontally</strong> on the chart, to focus on a sub-range. Pick a month earlier than today to scroll back into history (the chart carries it under the hood — it's just hidden by default). Esc cancels an in-progress drag. The summary box below shows totals at both endpoints and the delta. Hit Reset (or any horizon chip) to return to the full view.</p>
     `,

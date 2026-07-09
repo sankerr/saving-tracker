@@ -1650,8 +1650,10 @@ def project_returns(returns: list, current: float, horizon_months: int,
         total_contrib += c
         cur_mean = (cur_mean + c) * (1 + mu)
         paths["mean"].append(round(cur_mean, 2))
+    annual_pct = round(((1 + mu) ** 12 - 1) * 100.0, 2) if returns else None
     return {
         "mu_monthly": mu,
+        "annual_pct": annual_pct,
         "sigma_monthly": sigma,
         "n_samples": len(returns),
         "paths": paths,
