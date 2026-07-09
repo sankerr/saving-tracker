@@ -49,6 +49,17 @@ def init_schema() -> None:
                 ADD COLUMN IF NOT EXISTS approved BOOLEAN NOT NULL DEFAULT true
                 """
             )
+            # Existing DBs may have been created without ON DELETE CASCADE.
+            cur.execute(
+                "ALTER TABLE app_state DROP CONSTRAINT IF EXISTS app_state_user_id_fkey"
+            )
+            cur.execute(
+                """
+                ALTER TABLE app_state
+                ADD CONSTRAINT app_state_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                """
+            )
 
 
 def get_user_by_id(user_id: int) -> dict | None:
@@ -175,8 +186,9 @@ def upsert_state(user_id: int, data: dict, cache: dict) -> None:
 def delete_user(user_id: int) -> bool:
     with _conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
-            return cur.rowcount > 0
+            cur.execute("DELETE FROM app_state WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM users WHERE id = %s RETURNING id", (user_id,))
+            return cur.fetchone() is not None
 
 
 def update_password_hash(user_id: int, password_hash: str) -> bool:

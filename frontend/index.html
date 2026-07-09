@@ -3737,12 +3737,14 @@ function init() {
       danger: true,
     });
     if (!r || !r.password) return;
+    setStatus('pending', 'Deleting account…');
     const j = await api('DELETE', '/api/account', { password: r.password });
     if (j.ok) {
       logout();
       toast('Your account and all personal data have been deleted from the database.', 'info', 6000);
     } else {
-      toast(j.error || 'Could not delete account', 'error');
+      setStatus('error', j.error || 'Could not delete account');
+      toast(j.error || 'Could not delete account', 'error', 6000);
     }
   });
 
