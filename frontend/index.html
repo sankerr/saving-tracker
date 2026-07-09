@@ -1067,6 +1067,9 @@ h2 {
     <p id="what-if-summary" hidden style="margin:0 0 0.75rem 0; padding:0.5rem 0.875rem;
         background:rgb(183 110 0 / 0.06); border-left:3px solid var(--color-warning);
         border-radius:var(--radius-sm); font-size:0.875rem;"></p>
+    <p id="projection-summary" hidden style="margin:0 0 0.75rem 0; padding:0.5rem 0.875rem;
+        background:rgb(181 101 216 / 0.08); border-left:3px solid rgb(181 101 216);
+        border-radius:var(--radius-sm); font-size:0.875rem;"></p>
     <div class="chart-wrap">
       <canvas id="dash-chart" style="cursor: crosshair;"></canvas>
     </div>
@@ -1422,6 +1425,10 @@ const fmtUSDPrec = new Intl.NumberFormat('en-US', {style: 'currency', currency: 
 const fmtNum = new Intl.NumberFormat('en-US');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '—';
 
+// Fixed purple — readable on both light and dark backgrounds (not theme-dependent).
+const PROJECTION_MEAN_COLOR = 'rgba(181, 101, 216, 1)';
+const PROJECTION_MEAN_FILL = 'rgba(181, 101, 216, 0.08)';
+
 function fmtPct(n, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
   return (n * 100).toFixed(digits) + '%';
@@ -1546,6 +1553,7 @@ function clearPortfolioUi() {
   document.getElementById('dash-profit').dataset.sign = 'pos';
   document.getElementById('dash-subline').textContent = '—';
   document.getElementById('what-if-summary').hidden = true;
+  document.getElementById('projection-summary').hidden = true;
   document.getElementById('range-summary').hidden = true;
   document.getElementById('range-reset').hidden = true;
   ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
@@ -1832,6 +1840,26 @@ function renderDashboard() {
   } else {
     wfBox.hidden = true;
   }
+
+  const projBox = document.getElementById('projection-summary');
+  const proj = p.projection;
+  if (proj && proj.paths?.mean?.length) {
+    const horizon = proj.horizon_months || HORIZON || 24;
+    const endVal = proj.paths.mean[proj.paths.mean.length - 1];
+    const delta = endVal - (p.total_value_ils || 0);
+    const sign = delta >= 0 ? '+' : '';
+    const annual = portfolioFundsAnnualPct(proj);
+    const ratePart = annual != null
+      ? `Funds grow at a <strong>value-weighted ~${annual.toFixed(1)}%/yr</strong> historical average`
+      : 'Funds use each holding\'s historical average return';
+    const contrib = proj.funds_includes_recurring ? ' (including recurring contributions)' : '';
+    projBox.innerHTML = `<strong>${dashboardProjectionMeanLabel(proj)}</strong> over ${horizon} months → <strong>${fmtILS.format(endVal)}</strong> ` +
+      `<span style="color:var(--color-muted)">(${sign}${fmtILS.format(delta)} from today)</span>. ` +
+      `<span style="color:var(--color-muted)">${ratePart}${contrib}; RSU vesting + flat ESPP/cash included in total.</span>`;
+    projBox.hidden = false;
+  } else {
+    projBox.hidden = true;
+  }
   drawDashboardChart();
 }
 
@@ -1926,6 +1954,19 @@ function drawDashboardChart() {
     whatIfLabel = `If funds grow ${wf.annual_pct}%/yr`;
   }
 
+  // Historical projection total — sum of per-holding projection means (funds + RSU + ESPP + cash).
+  let projMeanData = [];
+  let projMeanLabel = null;
+  if (proj && proj.paths && proj.paths.mean && proj.paths.mean.length) {
+    const todayIdx = histLabels.length;
+    projMeanData = new Array(labels.length).fill(null);
+    projMeanData[todayIdx] = totalData[todayIdx];
+    for (let i = 0; i < proj.paths.mean.length && (todayIdx + 1 + i) < labels.length; i++) {
+      projMeanData[todayIdx + 1 + i] = proj.paths.mean[i];
+    }
+    projMeanLabel = dashboardProjectionMeanLabel(proj);
+  }
+
   // Date inputs: allow picking from the earliest history through 50 years
   // out (matches backend HORIZON_CAP_MONTHS). Picking a month past the
   // current horizon auto-extends it via onRangeInputChange. Default visible
@@ -1974,6 +2015,17 @@ function drawDashboardChart() {
           borderColor: 'rgba(183,110,0,1)',
           backgroundColor: 'rgba(183,110,0,0.08)',
           borderDash: [3, 3],
+          borderWidth: 2,
+          fill: false,
+          tension: 0.2,
+          pointRadius: 0,
+        }] : []),
+        ...(projMeanData.length ? [{
+          label: projMeanLabel,
+          data: projMeanData,
+          borderColor: PROJECTION_MEAN_COLOR,
+          backgroundColor: PROJECTION_MEAN_FILL,
+          borderDash: [6, 4],
           borderWidth: 2,
           fill: false,
           tension: 0.2,
@@ -2990,6 +3042,30 @@ function drawRsuStockHistoryChart(canvasId, grant) {
   });
 }
 
+function portfolioFundsAnnualPct(proj) {
+  if (proj && proj.funds_annual_pct != null) return proj.funds_annual_pct;
+  const holdings = (APP.fund_holdings || []).filter((h) => !h.archived && h.projection?.annual_pct != null);
+  let total = 0;
+  let weighted = 0;
+  for (const h of holdings) {
+    const v = h.computed?.current_value_ils || 0;
+    if (v <= 0) continue;
+    weighted += v * h.projection.annual_pct;
+    total += v;
+  }
+  return total > 0 ? weighted / total : null;
+}
+
+function dashboardProjectionMeanLabel(proj) {
+  if (!proj || !proj.paths?.mean?.length) return null;
+  const annual = portfolioFundsAnnualPct(proj);
+  const contrib = proj.funds_includes_recurring ? ' + contributions' : '';
+  if (annual != null) {
+    return `Projection mean (~${annual.toFixed(1)}%/yr funds hist avg${contrib})`;
+  }
+  return 'Projection mean';
+}
+
 function projectionMeanLabel(proj, kind) {
   if (!proj || !proj.paths || !proj.paths.mean.length) return 'Projection mean';
   if (kind === 'fund') {
@@ -3128,7 +3204,7 @@ function drawDetailChart(canvasId, item, kind) {
       labels: allLabels,
       datasets: [
         { label: 'Value', data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : 'rgba(77,205,205,1)'), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : 'rgba(77,205,205,0.18)'), fill: 'origin', tension: 0.25, pointRadius: 0 },
-        { label: projMeanLabel, data: projMeanArr, borderColor: 'rgba(43,43,62,0.7)', borderDash: [6,4], borderWidth: 1.5, fill: false, tension: 0.2, pointRadius: 0 },
+        { label: projMeanLabel, data: projMeanArr, borderColor: PROJECTION_MEAN_COLOR, backgroundColor: PROJECTION_MEAN_FILL, borderDash: [6,4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0 },
         ...(futureVestArr.length ? [{
           label: 'Vesting at today\'s price',
           data: futureVestArr,
@@ -3253,7 +3329,8 @@ const HELP_CONTENT = {
     body: `
       <p>The big number is your <strong>total portfolio value</strong> in ILS — the sum of every fund holding, RSU grant (USD value × current FX), and cash entry.</p>
       <p>The <strong>stacked area chart</strong> looks forward only. The first column is the current month (today's snapshot of funds + RSU); subsequent columns are projected month-by-month. RSU layer = vested-and-held shares × current price × FX, growing as the vesting schedule fires (cliff + monthly/quarterly cadence) — flat-price assumption. Cash sits in its own flat layer at the bottom of the stack.</p>
-      <p>The <code>If funds grow %/yr</code> input sets the rate for <strong>both</strong> the future Funds stack and the dashed total line. <strong>Growth applies to funds only</strong> (and to projected fund contributions). <strong>Cash, RSU vesting, and ESPP are added flat</strong> on top — cash and ESPP as constants at today's value, RSU as the deterministic vesting curve at today's price/FX. With no rate entered, the Funds stack uses each fund's <strong>historical average monthly return</strong> from gemelnet instead. Per-fund detail charts label the dashed <strong>Projection mean</strong> with the implied <strong>%/yr</strong> from that historical average (and note if recurring contributions are included).</p>
+      <p>The <code>If funds grow %/yr</code> input sets the rate for <strong>both</strong> the future Funds stack and the dashed orange total line. <strong>Growth applies to funds only</strong> (and to projected fund contributions). <strong>Cash, RSU vesting, and ESPP are added flat</strong> on top — cash and ESPP as constants at today's value, RSU as the deterministic vesting curve at today's price/FX. With no rate entered, the Funds stack uses each fund's <strong>historical average monthly return</strong> from gemelnet instead.</p>
+      <p>The dashed <strong>purple Projection mean</strong> line sums every holding's historical projection (funds at their hist-avg %/yr, RSU vesting, flat ESPP/cash). Its label shows the portfolio's <strong>value-weighted funds %/yr</strong>. Per-fund detail charts use the same purple line with each fund's own rate.</p>
       <p><strong>Horizon chips</strong> (6m / 12m / 24m / 60m / 120m) control how far forward the chart extends. Picking a chip resets any active range.</p>
       <p><strong>Date range</strong>: pick start/end months in the inputs, or <strong>click and drag horizontally</strong> on the chart, to focus on a sub-range. Pick a month earlier than today to scroll back into history (the chart carries it under the hood — it's just hidden by default). Esc cancels an in-progress drag. The summary box below shows totals at both endpoints and the delta. Hit Reset (or any horizon chip) to return to the full view.</p>
     `,

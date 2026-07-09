@@ -2511,6 +2511,9 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
     espp_mean = [0.0] * horizon_months
     cash_mean = [round(cash_now_ils, 2)] * horizon_months
     any_data = False
+    funds_weight_total = 0.0
+    funds_weighted_annual = 0.0
+    funds_includes_recurring = False
     for h in funds:
         if h.get("archived"):
             continue
@@ -2518,6 +2521,14 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
         if not p:
             continue
         any_data = True
+        if p.get("includes_recurring"):
+            funds_includes_recurring = True
+        annual_pct = p.get("annual_pct")
+        if annual_pct is not None:
+            val = float((h.get("computed") or {}).get("current_value_ils") or 0)
+            if val > 0:
+                funds_weight_total += val
+                funds_weighted_annual += val * float(annual_pct)
         for i in range(horizon_months):
             mean_path[i] += p["paths"]["mean"][i]
             funds_mean[i] += p["paths"]["mean"][i]
@@ -2557,6 +2568,9 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
             "cash_mean": cash_mean,
         },
         "horizon_months": horizon_months,
+        "funds_annual_pct": round(funds_weighted_annual / funds_weight_total, 2)
+        if funds_weight_total > 0 else None,
+        "funds_includes_recurring": funds_includes_recurring,
     }
 
 
