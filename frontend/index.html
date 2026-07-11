@@ -141,6 +141,12 @@ h1 {
   50% { opacity: 0.4; transform: scale(0.8); }
 }
 .status-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+.status-data-month {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
 .btn {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.5rem 1rem; border: none; border-radius: var(--radius-sm);
@@ -1019,6 +1025,7 @@ h2 {
       <span class="status-pill__dot"></span>
       <span id="status-pill-text">Loading…</span>
     </div>
+    <span class="status-data-month" id="status-data-month" hidden></span>
     <div class="status-actions">
       <button class="btn btn--ghost btn--small" id="theme-toggle-btn" type="button" title="Toggle light/dark mode" aria-label="Toggle theme">🌙</button>
       <button class="btn btn--ghost btn--small" id="logout-btn" hidden>Sign out</button>
@@ -1554,6 +1561,8 @@ function clearPortfolioUi() {
   document.getElementById('dash-subline').textContent = '—';
   document.getElementById('what-if-summary').hidden = true;
   document.getElementById('projection-summary').hidden = true;
+  const dataMonth = document.getElementById('status-data-month');
+  if (dataMonth) { dataMonth.textContent = ''; dataMonth.hidden = true; }
   document.getElementById('range-summary').hidden = true;
   document.getElementById('range-reset').hidden = true;
   ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
@@ -1768,6 +1777,28 @@ function setStatus(state, text) {
   pill.dataset.state = state;
   txt.textContent = text;
 }
+
+function updateStatusDataMonth() {
+  const el = document.getElementById('status-data-month');
+  if (!el) return;
+  let period = APP?.cache_status?.latest_published_period;
+  if (!period) {
+    let max = 0;
+    for (const h of [...(APP?.fund_holdings || []), ...(APP?.pension_holdings || [])]) {
+      if (h.archived) continue;
+      const lp = h.computed?.last_period;
+      if (lp && lp > max) max = lp;
+    }
+    period = max > 0 ? max : null;
+  }
+  if (period) {
+    el.textContent = `Yields · ${periodMonthYearLabel(period)}`;
+    el.hidden = false;
+  } else {
+    el.textContent = '';
+    el.hidden = true;
+  }
+}
 function toast(msg, kind = 'info', ms = 3500) {
   const stack = document.getElementById('toast-stack');
   const el = document.createElement('div');
@@ -1797,6 +1828,7 @@ function renderPensionDashboardNote() {
 }
 
 function renderAll() {
+  updateStatusDataMonth();
   if (!APP || !getToken()) return;
   renderDashboard();
   renderPensionDashboardNote();
@@ -2119,7 +2151,6 @@ function renderFundRow(h) {
   const ytdYear = c.ytd_year;
   const lastPeriod = c.last_period;
   const lastMonthLabel = lastPeriod ? periodMonthShort(lastPeriod) : '';
-  const pendingBadge = c.is_pending_current_month ? `<span class="badge badge--pending">ממתין לדיווח</span>` : '';
   const archivedBadge = h.archived ? `<span class="badge badge--archived">archived</span>` : '';
   const profitClass = (c.profit_ils || 0) >= 0 ? 'pos' : 'neg';
   const profitSign = (c.profit_ils || 0) >= 0 ? '+' : '';
@@ -2128,7 +2159,7 @@ function renderFundRow(h) {
   <div class="holding-row" data-id="${h.id}" data-archived="${!!h.archived}" data-expanded="${expanded}">
     <div class="holding-row__head" data-toggle="fund:${h.id}">
       <div>
-        <p class="holding-row__title" dir="auto">${escapeHtml(h.nickname || h.fund_name_snapshot)} <span class="badge badge--funds">FUND ${h.fund_id}</span> ${srcBadge} ${pendingBadge} ${archivedBadge}</p>
+        <p class="holding-row__title" dir="auto">${escapeHtml(h.nickname || h.fund_name_snapshot)} <span class="badge badge--funds">FUND ${h.fund_id}</span> ${srcBadge} ${archivedBadge}</p>
         <p class="holding-row__sub" dir="auto">
           <span>${escapeHtml(h.fund_name_snapshot || '')}</span>
           <span class="holding-row__sub-sep">·</span>
@@ -2347,14 +2378,13 @@ function renderPensionRow(h) {
   const ytdYear = c.ytd_year;
   const lastPeriod = c.last_period;
   const lastMonthLabel = lastPeriod ? periodMonthShort(lastPeriod) : '';
-  const pendingBadge = c.is_pending_current_month ? `<span class="badge badge--pending">ממתין לדיווח</span>` : '';
   const profitClass = (c.profit_ils || 0) >= 0 ? 'pos' : 'neg';
   const profitSign = (c.profit_ils || 0) >= 0 ? '+' : '';
   return `
   <div class="holding-row" data-id="${h.id}" data-expanded="${expanded}">
     <div class="holding-row__head" data-toggle="pension:${h.id}">
       <div>
-        <p class="holding-row__title" dir="auto">${escapeHtml(h.nickname || h.fund_name_snapshot)} <span class="badge badge--funds">FUND ${h.fund_id}</span> ${pendingBadge}</p>
+        <p class="holding-row__title" dir="auto">${escapeHtml(h.nickname || h.fund_name_snapshot)} <span class="badge badge--funds">FUND ${h.fund_id}</span></p>
         <p class="holding-row__sub" dir="auto">
           <span>${escapeHtml(h.fund_name_snapshot || '')}</span>
           <span class="holding-row__sub-sep">·</span>
@@ -3342,7 +3372,7 @@ const HELP_CONTENT = {
       <p>Each holding has an <strong>anchor period</strong> (the month your reported balance is for) and an <strong>anchor balance</strong> (₪ as of that month). The app compounds forward using the fund's published <code>MONTHLY_YIELD</code>.</p>
       <p>Inside a fund's detail panel: <strong>recurring rules</strong> let you record monthly contributions split into <em>employee</em> + <em>employer</em>. Hit "+ Add change point" when amounts change (raises etc.) — the previous open-ended rule auto-closes the day before.</p>
       <p><strong>Manual events</strong> sit on top of rules — useful for one-off bonus deposits, withdrawals, or balance corrections.</p>
-      <p>The <code>ממתין לדיווח</code> ("awaiting publication") badge appears when gemelnet hasn't yet posted the latest month — values are accurate up to the most recent published period.</p>
+      <p>The status bar shows the <strong>latest published yield month</strong> synced from data.gov.il (e.g. May-2026). Values are compounded only through that month until the next dataset update.</p>
       <p><strong>~Mgmt fees paid</strong> in the detail grid is a running estimate of <em>דמי ניהול מצבירה</em> (annual management fee on accumulated assets) you've paid since the anchor period: each month's fee = <code>start-balance × annual_fee% / 12</code>, summed. Note that gemelnet's published <code>MONTHLY_YIELD</code> is already <em>net</em> of these fees — this number just shows the absolute ₪ amount the fund implicitly took.</p>
     `,
   },
@@ -3679,6 +3709,14 @@ function periodMonthShort(p) {
   if (m < 1 || m > 12) return '';
   const d = new Date(y, m - 1, 1);
   return d.toLocaleDateString('en-US', { month: 'short' });
+}
+function periodMonthYearLabel(p) {
+  if (typeof p !== 'number') return '';
+  const y = Math.floor(p/100), m = p % 100;
+  if (m < 1 || m > 12) return '';
+  const d = new Date(y, m - 1, 1);
+  const month = d.toLocaleDateString('en-US', { month: 'short' });
+  return `${month}-${y}`;
 }
 
 // ── Retirement simulator (stateless, client-only) ──

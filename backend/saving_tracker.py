@@ -289,6 +289,17 @@ def synced_today() -> bool:
     return datetime.fromtimestamp(ts).date() == date.today()
 
 
+def latest_published_period() -> int | None:
+    """Latest REPORT_PERIOD present in any synced fund/pension/insurance cache."""
+    latest = 0
+    for key in ("fund_monthly", "pensia_monthly", "insurance_monthly"):
+        for entry in (CACHE.get(key) or {}).values():
+            lp = int(entry.get("last_seen_period") or 0)
+            if lp > latest:
+                latest = lp
+    return latest if latest > 0 else None
+
+
 def period_iter(start: int, end: int):
     """Yield YYYYMM ints from start..end inclusive."""
     if end < start:
@@ -2242,6 +2253,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
                 "usdils_override": DATA["settings"].get("usdils_rate_override"),
                 "last_full_sync_at": CACHE.get("last_full_sync_at"),
                 "synced_today": synced_today(),
+                "latest_published_period": latest_published_period(),
             },
         }
 
