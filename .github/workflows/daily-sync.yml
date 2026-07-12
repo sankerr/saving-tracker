@@ -10,10 +10,133 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Trigger sync
+      - name: Preflight secrets
         run: |
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          set -euo pipefail
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "ERROR: GitHub secret CRON_SECRET is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.RENDER_API_URL }}" ]; then
+            echo "ERROR: GitHub secret RENDER_API_URL is not set."
+            exit 1
+          fi
+          echo "CRON_SECRET is set (${#CRON_SECRET} chars)"
+          echo "RENDER_API_URL=${{ secrets.RENDER_API_URL }}"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Wake API and trigger sync
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${RENDER_API_URL%/}"
+
+          echo "== Health check =="
+          HEALTH_CODE=$(curl -sS -o /tmp/health.txt -w '%{http_code}' \
+            --retry 5 --retry-delay 15 --retry-all-errors \
+            --connect-timeout 30 --max-time 120 \
+            "${BASE}/api/health" || true)
+          echo "GET /api/health -> HTTP ${HEALTH_CODE}"
+          cat /tmp/health.txt || true
+          echo
+
+          if [ "${HEALTH_CODE}" != "200" ]; then
+            echo "ERROR: API health check failed (expected 200)."
+            exit 1
+          fi
+
+          echo "== Trigger cron sync =="
+          SYNC_CODE=$(curl -sS -o /tmp/cron-sync.txt -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
             --retry 3 --retry-delay 30 --retry-all-errors \
-            --max-time 600 \
-            "${{ secrets.RENDER_API_URL }}/api/cron/sync"
+            --connect-timeout 30 --max-time 600 \
+            "${BASE}/api/cron/sync" || true)
+          echo "POST /api/cron/sync -> HTTP ${SYNC_CODE}"
+          cat /tmp/cron-sync.txt || true
+          echo
+
+          case "${SYNC_CODE}" in
+            202)
+              echo "Cron sync accepted."
+              ;;
+            401)
+              echo "ERROR: Unauthorized — CRON_SECRET on Render does not match GitHub secret."
+              exit 1
+              ;;
+            503)
+              echo "ERROR: Cron not configured — set CRON_SECRET on Render and redeploy."
+              exit 1
+              ;;
+            409)
+              echo "ERROR: Cron sync already running."
+              exit 1
+              ;;
+            *)
+              echo "ERROR: Unexpected HTTP ${SYNC_CODE} from /api/cron/sync."
+              exit 1
+              ;;
+          esac
+
+      - name: Poll cron status
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+        run: |
+          set -euo pipefail
+          BASE="${RENDER_API_URL%/}"
+
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            STATUS_CODE=$(curl -sS -o /tmp/cron-status.txt -w '%{http_code}' \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              --connect-timeout 30 --max-time 60 \
+              "${BASE}/api/cron/status" || true)
+            echo "Poll ${attempt}: GET /api/cron/status -> HTTP ${STATUS_CODE}"
+            cat /tmp/cron-status.txt || true
+            echo
+
+            if [ "${STATUS_CODE}" != "200" ]; then
+              echo "WARN: status poll failed; retrying in 30s..."
+              sleep 30
+              continue
+            fi
+
+            RUNNING=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/cron-status.txt").read_text())
+          print(data.get("status", {}).get("running", True))
+          PY
+            )
+            if [ "${RUNNING}" = "False" ] || [ "${RUNNING}" = "false" ]; then
+              echo "Cron job finished."
+              python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          data = json.loads(Path("/tmp/cron-status.txt").read_text())
+          status = data.get("status", {})
+          if status.get("error"):
+              print(f"ERROR: cron job error: {status['error']}", file=sys.stderr)
+              sys.exit(1)
+          results = (status.get("results") or {}).get("users") or []
+          for row in results:
+              print(
+                  f"user_id={row.get('user_id')} email={row.get('email')} "
+                  f"before={row.get('before')} after={row.get('after')} "
+                  f"notified={row.get('notified')} sync_error={row.get('sync_error')}"
+              )
+          if not results:
+              print("WARN: no approved users synced.")
+          PY
+              exit 0
+            fi
+
+            echo "Cron still running; waiting 30s..."
+            sleep 30
+          done
+
+          echo "ERROR: cron job did not finish within poll window."
+          exit 1

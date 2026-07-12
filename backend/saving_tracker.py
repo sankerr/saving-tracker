@@ -899,9 +899,12 @@ def run_sync(*, force=False) -> dict:
 
 def run_scheduled_sync_for_all_users() -> dict:
     results = []
-    for user in db.list_approved_users():
+    users = db.list_approved_users()
+    print(f"cron sync: {len(users)} approved user(s)")
+    for user in users:
         user_id = user["id"]
         to_email = user["username"]
+        print(f"cron sync: starting user_id={user_id} email={to_email}")
         entry = {
             "user_id": user_id,
             "email": to_email,
@@ -930,20 +933,29 @@ def run_scheduled_sync_for_all_users() -> dict:
                         CACHE["last_notified_period"] = after
                     save_cache()
                     entry["notified"] = True
+            print(
+                f"cron sync: finished user_id={user_id} before={entry['before']} "
+                f"after={entry['after']} notified={entry['notified']} "
+                f"sync_error={entry['sync_error']}"
+            )
         except Exception as ex:
             entry["sync_error"] = str(ex)
+            print(f"cron sync: failed user_id={user_id} email={to_email}: {ex}")
         results.append(entry)
+    print(f"cron sync: complete for {len(results)} user(s)")
     return {"ok": True, "users": results}
 
 
 def _run_cron_job() -> None:
     global _cron_status
+    print(f"cron sync: job started at {now_iso()}")
     try:
         result = run_scheduled_sync_for_all_users()
         _cron_status["results"] = result
+        print(f"cron sync: job succeeded at {now_iso()}")
     except Exception as ex:
         _cron_status["error"] = str(ex)
-        print(f"cron sync failed: {ex}")
+        print(f"cron sync: job failed at {now_iso()}: {ex}")
     finally:
         _cron_status["running"] = False
         _cron_status["finished_at"] = now_iso()
@@ -3548,10 +3560,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _verify_cron_secret(self) -> bool:
         if not CRON_SECRET:
+            print("cron auth: rejected — CRON_SECRET not configured on server")
             self._json(503, {"ok": False, "error": "Cron not configured"})
             return False
         token = self._bearer_token()
         if not token or not secrets.compare_digest(token, CRON_SECRET):
+            print("cron auth: rejected — invalid or missing bearer token")
             self._json(401, {"ok": False, "error": "Unauthorized"})
             return False
         return True
@@ -3727,8 +3741,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self._verify_cron_secret():
                 return
             if not _cron_job_lock.acquire(blocking=False):
+                print("cron sync: rejected — job already running")
                 self._json(409, {"ok": False, "error": "Cron sync already running"})
                 return
+            print(f"cron sync: accepted at {now_iso()}")
             _cron_status.update({
                 "running": True,
                 "started_at": now_iso(),
