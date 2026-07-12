@@ -43,8 +43,11 @@ Browser → Cloudflare Pages (frontend)
 | `DATABASE_URL` | `postgresql://...` | Neon pooled connection string |
 | `SESSION_SECRET` | random 32+ chars | JWT signing secret |
 | `CORS_ORIGIN` | `https://your-app.pages.dev` | Your Cloudflare Pages URL (no trailing slash) |
-| `ADMIN_USERNAME` | `you` | Only used on first boot when DB has no users |
+| `ADMIN_USERNAME` | `you@example.com` | Valid email; only used on first boot when DB has no users |
 | `ADMIN_PASSWORD` | `...` | Strong password |
+| `CRON_SECRET` | random 32+ chars | Protects `POST /api/cron/sync` (GitHub Actions daily job) |
+| `RESEND_API_KEY` | `re_...` | [Resend](https://resend.com) API key for yield-update emails |
+| `NOTIFY_FROM` | `Saving Tracker <onboarding@resend.dev>` | Verified sender in Resend |
 
 5. Deploy and note the public URL, e.g. `https://saving-tracker-api.onrender.com`
 
@@ -117,12 +120,30 @@ python3 -m http.server 3000
 
 ## API auth
 
-- `POST /api/login` — `{ "username", "password" }` → `{ "token" }` (approved users only)
-- `POST /api/register` — `{ "username", "password" }` → creates account with `approved=false`
+- `POST /api/login` — `{ "username", "password" }` → `{ "token" }` (approved users only; username must be a valid email)
+- `POST /api/register` — `{ "username", "password" }` → creates account with `approved=false` (username must be a valid email)
 - `POST /api/account/password` — `{ "current_password", "new_password" }` (change password while logged in)
 - `DELETE /api/account` — `{ "password" }` (delete account and all portfolio data)
 - All other `/api/*` routes require `Authorization: Bearer <token>`
 - `GET /api/health` — no auth (Render health checks)
+- `POST /api/cron/sync` — daily sync trigger; requires `Authorization: Bearer <CRON_SECRET>` (returns `202`)
+- `GET /api/cron/status` — cron job status; requires `Authorization: Bearer <CRON_SECRET>`
+
+## Daily sync & email alerts
+
+A GitHub Actions workflow (`.github/workflows/daily-sync.yml`) triggers `POST /api/cron/sync` every day at **08:00 Asia/Jerusalem** (05:00 UTC). This works on Render's free tier — the HTTP request wakes the sleeping service, syncs all approved users, and sends a Resend email when published yields advance to a new month.
+
+**One-time setup:**
+
+1. Ensure usernames in Neon are valid emails. If your admin account uses a non-email username, update it:
+   ```sql
+   UPDATE users SET username = 'you@example.com' WHERE username = 'admin';
+   ```
+2. Create a [Resend](https://resend.com) account, verify a sender domain (or use Resend's test sender), and set `RESEND_API_KEY` + `NOTIFY_FROM` on Render.
+3. Copy Render's `CRON_SECRET` value into GitHub repo **Settings → Secrets → Actions** as `CRON_SECRET`, and add `RENDER_API_URL` (e.g. `https://saving-tracker-api.onrender.com`).
+4. Deploy, then run the workflow manually (**Actions → Daily sync → Run workflow**) to verify.
+
+Notifications are sent to each user's username (email) when `latest_published_period` advances after sync.
 
 ## User registration & approval
 
@@ -135,10 +156,10 @@ There is **no API to approve users** — approval is DB-only by design. In the N
 SELECT id, username, approved, created_at FROM users ORDER BY created_at;
 
 -- Approve a user
-UPDATE users SET approved = true WHERE username = 'their_username';
+UPDATE users SET approved = true WHERE username = 'their@example.com';
 ```
 
-The first admin user (created from `ADMIN_USERNAME` / `ADMIN_PASSWORD` on first deploy) is auto-approved.
+The first admin user (created from `ADMIN_USERNAME` / `ADMIN_PASSWORD` on first deploy) is auto-approved. `ADMIN_USERNAME` must be a valid email address.
 
 **Forgot password?** There is no email reset. Logged-in users can change password in **Settings → Change password**. Otherwise an admin can set a new bcrypt hash directly in Neon (contact admin).
 

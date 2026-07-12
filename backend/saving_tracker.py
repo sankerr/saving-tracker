@@ -37,6 +37,7 @@ import http.server
 import json
 import math
 import os
+import secrets
 import statistics
 import sys
 import threading
@@ -50,10 +51,12 @@ import requests
 
 import auth
 import db
+import notify
 
 
 # ── Config ───────────────────────────────────────────────────────────────────
 CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "").rstrip("/")
+CRON_SECRET = os.environ.get("CRON_SECRET", "")
 ACTIVE_USER_ID: int | None = None
 
 GEMELNET_PACKAGE_ID = "gemelnet"
@@ -156,6 +159,14 @@ _sync_status = {
     "error": None,
     "step": None,
 }
+_cron_job_lock = threading.Lock()
+_cron_status = {
+    "running": False,
+    "started_at": None,
+    "finished_at": None,
+    "error": None,
+    "results": None,
+}
 
 
 # ── JSON I/O (atomic) ────────────────────────────────────────────────────────
@@ -239,6 +250,8 @@ def bootstrap_storage() -> None:
             raise RuntimeError(
                 "No users in database. Set ADMIN_USERNAME and ADMIN_PASSWORD for first boot."
             )
+        if not auth.is_valid_email(username):
+            raise RuntimeError("ADMIN_USERNAME must be a valid email address")
         user_id = db.create_user(username, auth.hash_password(password), approved=True)
         print(f"Created admin user: {username} (id={user_id}, approved=true)")
 
@@ -260,10 +273,8 @@ def _activate_user(user_id: int) -> None:
 
 
 def _validate_username(username: str) -> str | None:
-    if len(username) < 3 or len(username) > 32:
-        return "Username must be 3–32 characters"
-    if not all(c.isalnum() or c == "_" for c in username):
-        return "Username may only contain letters, numbers, and underscores"
+    if not auth.is_valid_email(username):
+        return "Username must be a valid email address"
     return None
 
 
@@ -884,6 +895,59 @@ def run_sync(*, force=False) -> dict:
         _sync_status["finished_at"] = now_iso()
         _sync_status["step"] = None
         _sync_lock.release()
+
+
+def run_scheduled_sync_for_all_users() -> dict:
+    results = []
+    for user in db.list_approved_users():
+        user_id = user["id"]
+        to_email = user["username"]
+        entry = {
+            "user_id": user_id,
+            "email": to_email,
+            "before": None,
+            "after": None,
+            "notified": False,
+            "sync_error": None,
+        }
+        try:
+            with _user_ctx_lock:
+                _activate_user(user_id)
+            before = latest_published_period()
+            entry["before"] = before
+            sync_result = run_sync()
+            if not sync_result.get("ok"):
+                entry["sync_error"] = sync_result.get("error")
+                results.append(entry)
+                continue
+            after = latest_published_period()
+            entry["after"] = after
+            last_notified = int(CACHE.get("last_notified_period") or 0)
+            if after and after > last_notified and after > (before or 0):
+                synced_at = CACHE.get("last_full_sync_at") or now_iso()
+                if notify.send_new_month_email(to=to_email, period_yyyymm=after, synced_at=synced_at):
+                    with _cache_lock:
+                        CACHE["last_notified_period"] = after
+                    save_cache()
+                    entry["notified"] = True
+        except Exception as ex:
+            entry["sync_error"] = str(ex)
+        results.append(entry)
+    return {"ok": True, "users": results}
+
+
+def _run_cron_job() -> None:
+    global _cron_status
+    try:
+        result = run_scheduled_sync_for_all_users()
+        _cron_status["results"] = result
+    except Exception as ex:
+        _cron_status["error"] = str(ex)
+        print(f"cron sync failed: {ex}")
+    finally:
+        _cron_status["running"] = False
+        _cron_status["finished_at"] = now_iso()
+        _cron_job_lock.release()
 
 
 # ── Vesting calculator ───────────────────────────────────────────────────────
@@ -3482,6 +3546,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return header[7:].strip()
         return None
 
+    def _verify_cron_secret(self) -> bool:
+        if not CRON_SECRET:
+            self._json(503, {"ok": False, "error": "Cron not configured"})
+            return False
+        token = self._bearer_token()
+        if not token or not secrets.compare_digest(token, CRON_SECRET):
+            self._json(401, {"ok": False, "error": "Unauthorized"})
+            return False
+        return True
+
     def _auth_user_id(self) -> int | None:
         token = self._bearer_token()
         if not token:
@@ -3544,6 +3618,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/health":
             self._json(200, {"ok": True, "status": "healthy"})
+            return
+
+        if path == "/api/cron/status":
+            if not self._verify_cron_secret():
+                return
+            self._json(200, {"ok": True, "status": dict(_cron_status)})
             return
 
         user_id = self._require_auth(path)
@@ -3642,6 +3722,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         body = self._read_body() if method in ("POST", "PATCH", "DELETE") else {}
+
+        if method == "POST" and path == "/api/cron/sync":
+            if not self._verify_cron_secret():
+                return
+            if not _cron_job_lock.acquire(blocking=False):
+                self._json(409, {"ok": False, "error": "Cron sync already running"})
+                return
+            _cron_status.update({
+                "running": True,
+                "started_at": now_iso(),
+                "finished_at": None,
+                "error": None,
+                "results": None,
+            })
+            threading.Thread(target=_run_cron_job, daemon=True).start()
+            self._json(202, {"ok": True, "status": "started"})
+            return
 
         if method == "POST" and path == "/api/login":
             username = (body.get("username") or "").strip()

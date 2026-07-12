@@ -29,6 +29,10 @@ def main():
     if not args.username or not args.password:
         print("ERROR: set --username/--password or ADMIN_USERNAME/ADMIN_PASSWORD", file=sys.stderr)
         sys.exit(1)
+    if not auth.is_valid_email(args.username.strip()):
+        print("ERROR: username must be a valid email address", file=sys.stderr)
+        sys.exit(1)
+    args.username = args.username.strip()
 
     data_path = Path(args.data)
     cache_path = Path(args.cache)

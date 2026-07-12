@@ -121,6 +121,15 @@ def sole_user_id() -> int | None:
             return row[0] if row else None
 
 
+def list_approved_users() -> list[dict]:
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, username FROM users WHERE approved = true ORDER BY id"
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
 def load_state(user_id: int) -> tuple[dict, dict]:
     with _conn() as conn:
         with conn.cursor() as cur:

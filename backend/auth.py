@@ -1,13 +1,20 @@
 """Simple username/password auth with JWT bearer tokens."""
 
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "")
 TOKEN_TTL_HOURS = int(os.environ.get("TOKEN_TTL_HOURS", "168"))
+
+
+def is_valid_email(username: str) -> bool:
+    return bool(_EMAIL_RE.match((username or "").strip()))
 
 
 def hash_password(password: str) -> str:

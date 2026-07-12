@@ -1,0 +1,19 @@
+name: Daily sync
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # 08:00 Asia/Jerusalem (UTC+3)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger sync
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --retry 3 --retry-delay 30 --retry-all-errors \
+            --max-time 600 \
+            "${{ secrets.RENDER_API_URL }}/api/cron/sync"

@@ -983,8 +983,8 @@ h2 {
     <h2 id="auth-title">Sign in</h2>
     <p id="auth-subtitle">Enter your credentials to access your portfolio.</p>
     <div class="login-field">
-      <label for="login-username">Username</label>
-      <input id="login-username" type="text" autocomplete="username" required>
+      <label for="login-username">Email</label>
+      <input id="login-username" type="email" autocomplete="email" required placeholder="you@example.com">
     </div>
     <div class="login-field">
       <label for="login-password">Password</label>
@@ -1706,8 +1706,8 @@ function setAuthMode(mode) {
   const isLogin = mode === 'login';
   document.getElementById('auth-title').textContent = isLogin ? 'Sign in' : 'Create account';
   document.getElementById('auth-subtitle').textContent = isLogin
-    ? 'Enter your credentials to access your portfolio.'
-    : 'Choose a username and password. An admin must approve new accounts.';
+    ? 'Enter your email and password to access your portfolio.'
+    : 'Enter a valid email address and password. An admin must approve new accounts.';
   document.getElementById('login-btn').textContent = isLogin ? 'Sign in' : 'Create account';
   document.getElementById('auth-toggle-btn').textContent = isLogin
     ? 'Create an account'
