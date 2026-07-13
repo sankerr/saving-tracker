@@ -2,7 +2,7 @@ name: Daily sync
 
 on:
   schedule:
-    - cron: '45 9 * * *'   # 12:45 Asia/Jerusalem (UTC+3)
+    - cron: '5 5 * * *'   # 08:05 Asia/Jerusalem (UTC+3)
   workflow_dispatch:
 
 jobs:
