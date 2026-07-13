@@ -904,10 +904,9 @@ def run_scheduled_sync_for_all_users() -> dict:
     for user in users:
         user_id = user["id"]
         to_email = user["username"]
-        print(f"cron sync: starting user_id={user_id} email={to_email}")
+        print(f"cron sync: starting user_id={user_id}")
         entry = {
             "user_id": user_id,
-            "email": to_email,
             "before": None,
             "after": None,
             "notified": False,
@@ -940,7 +939,7 @@ def run_scheduled_sync_for_all_users() -> dict:
             )
         except Exception as ex:
             entry["sync_error"] = str(ex)
-            print(f"cron sync: failed user_id={user_id} email={to_email}: {ex}")
+            print(f"cron sync: failed user_id={user_id}: {ex}")
         results.append(entry)
     print(f"cron sync: complete for {len(results)} user(s)")
     return {"ok": True, "users": results}

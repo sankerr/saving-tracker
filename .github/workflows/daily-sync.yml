@@ -95,7 +95,13 @@ jobs:
               --connect-timeout 30 --max-time 60 \
               "${BASE}/api/cron/status" || true)
             echo "Poll ${attempt}: GET /api/cron/status -> HTTP ${STATUS_CODE}"
-            cat /tmp/cron-status.txt || true
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/cron-status.txt").read_text())
+          status = data.get("status", {})
+          print(f"running={status.get('running')} error={status.get('error')}")
+          PY
             echo
 
             if [ "${STATUS_CODE}" != "200" ]; then
@@ -124,7 +130,7 @@ jobs:
           results = (status.get("results") or {}).get("users") or []
           for row in results:
               print(
-                  f"user_id={row.get('user_id')} email={row.get('email')} "
+                  f"user_id={row.get('user_id')} "
                   f"before={row.get('before')} after={row.get('after')} "
                   f"notified={row.get('notified')} sync_error={row.get('sync_error')}"
               )
