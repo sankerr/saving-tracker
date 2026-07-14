@@ -13,6 +13,10 @@
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
   var meta = document.getElementById('meta-theme-color');
   if (meta) meta.content = dark ? '#0F0F1A' : '#FCFBF8';
+  var lang = localStorage.getItem('st_lang') || 'en';
+  if (lang !== 'he' && lang !== 'en') lang = 'en';
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
 })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -77,8 +81,12 @@ body::before {
   pointer-events: none; z-index: -1;
 }
 main {
-  max-width: 1080px; margin: 0 auto;
-  padding: clamp(1rem, 4vw, 3rem) clamp(1rem, 4vw, 2rem);
+  /* Full-width reading column with comfortable side gutters */
+  max-width: min(1480px, 100%);
+  width: 100%;
+  margin: 0 auto;
+  padding: clamp(1rem, 3.5vw, 2.5rem) clamp(1.25rem, 3.5vw, 2.5rem);
+  box-sizing: border-box;
 }
 
 .hero {
@@ -880,15 +888,16 @@ h2 {
   --chat-panel-width: min(360px, 100vw);
 }
 body.chat-available main {
-  transition: max-width 0.22s ease, margin 0.22s ease;
+  transition: max-width 0.22s ease, margin 0.22s ease, padding 0.22s ease;
 }
-/* Desktop: use the full leftover viewport beside the dock (often wider than 1080). */
+/* Desktop: shrink slightly and sit in the leftover space left of the dock (never grow wider). */
 @media (min-width: 901px) {
   body.chat-open main {
-    max-width: calc(100vw - var(--chat-panel-width) - 1rem);
+    max-width: min(1480px, calc(100vw - var(--chat-panel-width) - 1.5rem));
     width: 100%;
-    margin-left: auto;
-    margin-right: var(--chat-panel-width);
+    margin-inline-start: 0;
+    margin-inline-end: var(--chat-panel-width);
+    padding-inline: clamp(1rem, 2.5vw, 1.75rem);
     box-sizing: border-box;
   }
 }
@@ -1145,11 +1154,11 @@ body.chat-open .chat-fab { display: none; }
 body.chat-open .chat-backdrop { display: block; }
 
 @media (max-width: 900px) {
-  /* Mobile: chat overlays; keep main full width. */
+  /* Mobile: chat overlays; keep main centered full-width column. */
   body.chat-open main {
-    max-width: 1080px;
-    margin-left: auto;
-    margin-right: auto;
+    max-width: min(1480px, 100%);
+    margin-inline: auto;
+    padding-inline: clamp(1.25rem, 3.5vw, 2.5rem);
   }
   .chat-panel {
     width: min(100vw, 420px);
@@ -1159,6 +1168,44 @@ body.chat-open .chat-backdrop { display: block; }
 
 @media (min-width: 901px) {
   body.chat-open .chat-backdrop { display: none; }
+}
+
+/* ── RTL (Hebrew) ── */
+html[dir="rtl"] .disclaimer-banner ul { padding-right: 1.125rem; padding-left: 0; }
+html[dir="rtl"] .chat-msg--user { align-self: flex-start; align-items: flex-start; }
+html[dir="rtl"] .chat-msg--assistant { align-self: flex-end; align-items: flex-end; }
+html[dir="rtl"] .chat-msg--user .chat-msg__bubble {
+  border-bottom-right-radius: 14px;
+  border-bottom-left-radius: 4px;
+}
+html[dir="rtl"] .chat-msg--assistant .chat-msg__bubble {
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 4px;
+}
+html[dir="rtl"] .chat-suggestions button { text-align: right; }
+html[dir="rtl"] .login-overlay { text-align: right; }
+html[dir="rtl"] .card__header { direction: rtl; }
+html[dir="rtl"] .status-actions { flex-direction: row; }
+
+html[dir="rtl"] .status-bar { flex-direction: row; }
+html[dir="rtl"] .status-actions { margin-inline-start: auto; margin-inline-end: 0; }
+html[dir="rtl"] .holding-row__chevron { transform: scaleX(-1); }
+html[dir="rtl"] .disclaimer-banner { text-align: right; }
+html[dir="rtl"] .form-grid label,
+html[dir="rtl"] .field label { text-align: right; }
+html[dir="rtl"] .chat-composer { direction: rtl; }
+html[dir="rtl"] .modal__panel { text-align: right; }
+html[dir="rtl"] .help-body { text-align: right; }
+html[dir="rtl"] .toast-stack { left: 1rem; right: auto; }
+html[dir="rtl"] .chip-row,
+html[dir="rtl"] .horizon-chips { flex-direction: row; }
+/* Keep AI chat docked on the right in both languages */
+html[dir="rtl"] .chat-panel {
+  left: auto;
+  right: 0;
+  border-left: 1px solid var(--color-border);
+  border-right: none;
+  box-shadow: -8px 0 40px rgb(11 11 59 / 0.08);
 }
 
 .retirement-sim__intro {
@@ -1261,71 +1308,75 @@ body.chat-open .chat-backdrop { display: block; }
 }
 </style>
 <script src="config.js"></script>
+<script src="i18n.js"></script>
 <script src="pension-retirement-sim.js"></script>
 </head>
 <body>
 <div id="login-overlay" class="login-overlay" hidden>
   <div class="login-card" id="login-card">
-    <h2 id="auth-title">Sign in</h2>
-    <p id="auth-subtitle">Enter your credentials to access your portfolio.</p>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem;">
+      <button type="button" class="btn btn--ghost btn--small" data-lang-toggle id="login-lang-toggle">עב</button>
+    </div>
+    <h2 id="auth-title" data-i18n="auth.title.login">Sign in</h2>
+    <p id="auth-subtitle" data-i18n="auth.subtitle.login">Enter your email and password to access your portfolio.</p>
     <div class="login-field">
-      <label for="login-username">Email</label>
-      <input id="login-username" type="email" autocomplete="email" required placeholder="you@example.com">
+      <label for="login-username" data-i18n="auth.email">Email</label>
+      <input id="login-username" type="email" autocomplete="email" required data-i18n-placeholder="auth.emailPlaceholder" placeholder="you@example.com">
     </div>
     <div class="login-field">
-      <label for="login-password">Password</label>
+      <label for="login-password" data-i18n="auth.password">Password</label>
       <input id="login-password" type="password" autocomplete="current-password" required>
     </div>
     <div id="login-error" class="login-error"></div>
-    <button class="btn btn--primary" id="login-btn" type="button" style="width:100%">Sign in</button>
+    <button class="btn btn--primary" id="login-btn" type="button" style="width:100%" data-i18n="auth.submit.login">Sign in</button>
     <p style="margin:1rem 0 0;font-size:0.875rem;text-align:center;color:var(--color-muted)">
-      <button type="button" class="btn btn--ghost btn--small" id="auth-toggle-btn">Create an account</button>
+      <button type="button" class="btn btn--ghost btn--small" id="auth-toggle-btn" data-i18n="auth.toggle.toRegister">Create an account</button>
     </p>
-    <p id="forgot-password-note" style="margin:0.75rem 0 0;font-size:0.8125rem;text-align:center;color:var(--color-muted);line-height:1.45;">
+    <p id="forgot-password-note" data-i18n="auth.forgotNote" style="margin:0.75rem 0 0;font-size:0.8125rem;text-align:center;color:var(--color-muted);line-height:1.45;">
       Forgot password? Sign in with a new account or ask your admin to reset it in the database.
     </p>
   </div>
 </div>
 <main id="app-main">
   <header class="hero">
-    <div class="eyebrow">Cloud · Private · Password Protected</div>
-    <h1>Saving Tracker</h1>
-    <p class="subtitle">A personal portfolio notebook for Israeli pension/provident funds (gemelnet), RSU grants, ESPP, and cash — built for private tracking, not professional use.</p>
+    <h1 data-i18n="hero.title">Saving Tracker</h1>
+    <p class="subtitle" data-i18n="hero.subtitle">A personal portfolio notebook for Israeli pension/provident funds (gemelnet), RSU grants, ESPP, and cash — built for private tracking, not professional use.</p>
   </header>
 
-  <aside class="disclaimer-banner" aria-label="Important disclaimers">
-    <p class="disclaimer-banner__title">Important — read before using</p>
+  <aside class="disclaimer-banner" data-i18n-aria-label="disclaimer.aria" aria-label="Important disclaimers">
+    <p class="disclaimer-banner__title" data-i18n="disclaimer.title">Important — read before using</p>
     <ul>
-      <li><strong>Personal use only.</strong> This app is a hobby tool for tracking your own savings. It is not a commercial product, regulated financial service, or substitute for a licensed advisor.</li>
-      <li><strong>Not financial, investment, tax, or legal advice.</strong> All figures, charts, and projections are informational estimates. Do not make real-world decisions based solely on this app.</li>
-      <li><strong>No tax calculation.</strong> Numbers are pre-tax and nominal. Israeli tax rules (CPI adjustment, Section 102, deposit ceilings, withholding, etc.) are not modeled — consult your fund manager, accountant, or <a href="https://www.gov.il/he/departments/israel_tax_authority" target="_blank" rel="noopener noreferrer">Israel Tax Authority</a> resources.</li>
-      <li><strong>Data may be wrong or stale.</strong> Fund yields come from data.gov.il; stock and FX prices from Yahoo Finance. Sources can be delayed, revised, or unavailable. Always verify against official statements.</li>
-      <li><strong>Projections are not promises.</strong> Past performance and assumed growth rates do not guarantee future results. What-if scenarios are simplified models, not forecasts.</li>
-      <li><strong>Use at your own risk.</strong> The authors provide no warranty and accept no liability for losses or decisions arising from use of this software.</li>
-      <li><strong>Your responsibility.</strong> You are solely responsible for the accuracy of data you enter and for keeping your login credentials secure. New accounts require admin approval before access is granted.</li>
+      <li data-i18n="disclaimer.item.personalUse" data-i18n-html><strong>Personal use only.</strong> This app is a hobby tool for tracking your own savings. It is not a commercial product, regulated financial service, or substitute for a licensed advisor.</li>
+      <li data-i18n="disclaimer.item.notAdvice" data-i18n-html><strong>Not financial, investment, tax, or legal advice.</strong> All figures, charts, and projections are informational estimates. Do not make real-world decisions based solely on this app.</li>
+      <li data-i18n="disclaimer.item.noTax" data-i18n-html><strong>No tax calculation.</strong> Numbers are pre-tax and nominal. Israeli tax rules (CPI adjustment, Section 102, deposit ceilings, withholding, etc.) are not modeled — consult your fund manager, accountant, or Israel Tax Authority resources.</li>
+      <li data-i18n="disclaimer.item.dataStale" data-i18n-html><strong>Data may be wrong or stale.</strong> Fund yields come from data.gov.il; stock and FX prices from Yahoo Finance. Sources can be delayed, revised, or unavailable. Always verify against official statements.</li>
+      <li data-i18n="disclaimer.item.projections" data-i18n-html><strong>Projections are not promises.</strong> Past performance and assumed growth rates do not guarantee future results. What-if scenarios are simplified models, not forecasts.</li>
+      <li data-i18n="disclaimer.item.ownRisk" data-i18n-html><strong>Use at your own risk.</strong> The authors provide no warranty and accept no liability for losses or decisions arising from use of this software.</li>
+      <li data-i18n="disclaimer.item.responsibility" data-i18n-html><strong>Your responsibility.</strong> You are solely responsible for the accuracy of data you enter and for keeping your login credentials secure. New accounts require admin approval before access is granted.</li>
     </ul>
   </aside>
 
   <div class="status-bar">
     <div class="status-pill" id="status-pill" data-state="">
       <span class="status-pill__dot"></span>
-      <span id="status-pill-text">Loading…</span>
+      <span id="status-pill-text" data-i18n="status.loading">Loading…</span>
     </div>
     <span class="status-data-month" id="status-data-month" hidden></span>
     <div class="status-actions">
-      <button class="btn btn--ghost btn--small" id="chat-toggle-btn" type="button" hidden title="Open AI chat" aria-label="Open AI chat" aria-expanded="false" aria-controls="chat-panel">AI chat</button>
-      <button class="btn btn--ghost btn--small" id="theme-toggle-btn" type="button" title="Toggle light/dark mode" aria-label="Toggle theme">🌙</button>
-      <button class="btn btn--ghost btn--small" id="logout-btn" hidden>Sign out</button>
-      <button class="btn btn--ghost btn--small" id="refresh-btn">↻ Refresh</button>
+      <button type="button" class="btn btn--ghost btn--small" data-lang-toggle id="lang-toggle-btn">עב</button>
+      <button class="btn btn--ghost btn--small" id="chat-toggle-btn" type="button" hidden data-i18n="chrome.aiChat" data-i18n-title="chrome.openAiChat" data-i18n-aria-label="chrome.openAiChat" title="Open AI chat" aria-label="Open AI chat" aria-expanded="false" aria-controls="chat-panel">AI chat</button>
+      <button class="btn btn--ghost btn--small" id="theme-toggle-btn" type="button" data-i18n-title="chrome.toggleTheme" data-i18n-aria-label="chrome.toggleTheme" title="Toggle light/dark mode" aria-label="Toggle theme">🌙</button>
+      <button class="btn btn--ghost btn--small" id="logout-btn" hidden data-i18n="chrome.signOut">Sign out</button>
+      <button class="btn btn--ghost btn--small" id="refresh-btn" data-i18n="chrome.refresh">↻ Refresh</button>
     </div>
   </div>
 
   <section class="card" id="dashboard-card">
     <div class="card__header">
-      <h2>Dashboard <button class="help-btn" data-help="dashboard" title="What is this section?" aria-label="About the Dashboard">?</button></h2>
+      <h2><span data-i18n="section.dashboard">Dashboard</span> <button class="help-btn" data-help="dashboard" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.dashboard.title" title="What is this section?" aria-label="About the Dashboard">?</button></h2>
       <div class="chart-controls">
         <div class="chart-controls__group">
-          <span>Horizon:</span>
+          <span data-i18n="dashboard.horizon">Horizon:</span>
           <div class="chip-group" id="horizon-group">
             <button data-h="6">6m</button>
             <button data-h="12">12m</button>
@@ -1335,21 +1386,21 @@ body.chat-open .chat-backdrop { display: block; }
           </div>
         </div>
         <div class="chart-controls__group chart-controls__group--range">
-          <span>Range</span>
+          <span data-i18n="dashboard.range">Range</span>
           <div class="range-inputs">
             <input type="month" id="range-start" class="control-input control-input--month">
             <span style="color:var(--color-muted)">→</span>
             <input type="month" id="range-end" class="control-input control-input--month">
           </div>
-          <button class="btn btn--ghost btn--small" id="range-reset" hidden>Reset range</button>
+          <button class="btn btn--ghost btn--small" id="range-reset" hidden data-i18n="dashboard.resetRange">Reset range</button>
         </div>
         <div class="chart-controls__group">
-          <span title="Applied to funds only. Cash, RSU vesting, and ESPP are added flat on top.">If funds grow %/yr:</span>
+          <span data-i18n="dashboard.whatIfGrow" title="Applied to funds only. Cash, RSU vesting, and ESPP are added flat on top.">If funds grow %/yr:</span>
           <input type="number" id="what-if-input" class="control-input control-input--number" step="0.5" min="-50" max="200"
                  placeholder="15"
                  title="Annual growth rate applied to funds only. Cash, RSU vesting, and ESPP are added flat on top — they don't compound at this rate.">
           <button class="btn btn--ghost btn--small" id="what-if-clear" hidden>×</button>
-          <span class="chart-controls__hint">funds only · cash + RSU + ESPP held flat</span>
+          <span class="chart-controls__hint" data-i18n="dashboard.whatIfHint">funds only · cash + RSU + ESPP held flat</span>
         </div>
       </div>
     </div>
@@ -1375,8 +1426,8 @@ body.chat-open .chat-backdrop { display: block; }
 
   <section class="card" id="funds-card">
     <div class="card__header">
-      <h2>Funds <span class="h2-count" id="funds-count">0</span> <button class="help-btn" data-help="funds" title="What is this section?" aria-label="About Funds">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-fund-btn">+ Add fund</button>
+      <h2><span data-i18n="section.funds">Funds</span> <span class="h2-count" id="funds-count">0</span> <button class="help-btn" data-help="funds" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.funds.title" title="What is this section?" aria-label="About Funds">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-fund-btn" data-i18n="funds.add">+ Add fund</button>
     </div>
     <div id="funds-list" class="holdings-list"></div>
     <div id="add-fund-panel" class="add-panel" hidden>
@@ -1418,22 +1469,22 @@ body.chat-open .chat-backdrop { display: block; }
         </p>
       </div>
       <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-fund-cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-fund-save" disabled>Save holding</button>
+        <button class="btn btn--ghost btn--small" id="add-fund-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-fund-save" disabled data-i18n="funds.saveHolding">Save holding</button>
       </div>
     </div>
   </section>
 
   <section class="card" id="pension-card">
     <div class="card__header">
-      <h2>Pension <span class="h2-count" id="pension-count">0</span> <button class="help-btn" data-help="pension" title="What is this section?" aria-label="About Pension">?</button></h2>
+      <h2><span data-i18n="section.pension">Pension</span> <span class="h2-count" id="pension-count">0</span> <button class="help-btn" data-help="pension" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.pension.title" title="What is this section?" aria-label="About Pension">?</button></h2>
       <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
         <span class="subtotal-pill" id="pension-subtotal-pill" hidden>
           <span class="subtotal-pill__label">Subtotal</span>
           <span class="subtotal-pill__value" id="pension-subtotal-value">₪ 0</span>
           <span class="subtotal-pill__sub">excluded from dashboard total</span>
         </span>
-        <button class="btn btn--primary btn--small" id="add-pension-btn">+ Add pension</button>
+        <button class="btn btn--primary btn--small" id="add-pension-btn" data-i18n="pension.add">+ Add pension</button>
       </div>
     </div>
     <p id="pension-what-if-summary" hidden style="margin:0 0 0.75rem 0; padding:0.5rem 0.875rem;
@@ -1476,45 +1527,45 @@ body.chat-open .chat-backdrop { display: block; }
         </p>
       </div>
       <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-pension-cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-pension-save" disabled>Save pension</button>
+        <button class="btn btn--ghost btn--small" id="add-pension-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-pension-save" disabled data-i18n="pension.save">Save pension</button>
       </div>
     </div>
   </section>
 
   <section class="card" id="retirement-simulator-card">
     <div class="card__header">
-      <h2>Retirement simulator <button class="help-btn" data-help="retirement-sim" title="About this simulator" aria-label="About Retirement simulator">?</button></h2>
+      <h2><span data-i18n="section.retirementSim">Retirement simulator</span> <button class="help-btn" data-help="retirement-sim" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.retirementSim.title" title="About this simulator" aria-label="About Retirement simulator">?</button></h2>
     </div>
-    <p class="retirement-sim__intro">
-      Estimate pension vs. lump-sum withdrawal at retirement (Israeli rules, 2026). Enter projected balances at retirement — <strong>nothing here is saved</strong> to your account or database.
+    <p class="retirement-sim__intro" data-i18n="rsim.intro">
+      Estimate pension vs. lump-sum choices at retirement using simplified 2026 Israeli rules. Nothing here is saved to your account.
     </p>
     <div class="retirement-sim__grid">
       <div class="field">
-        <label for="rsim-birth-date">Birth date</label>
+        <label for="rsim-birth-date" data-i18n="rsim.birthDate">Birth date</label>
         <input type="date" id="rsim-birth-date" class="control-input">
       </div>
       <div class="field">
-        <label for="rsim-gender">Gender</label>
+        <label for="rsim-gender" data-i18n="rsim.gender">Gender</label>
         <select id="rsim-gender" class="control-input">
-          <option value="male">Male (גבר)</option>
-          <option value="female">Female (אישה)</option>
+          <option value="male" data-i18n="rsim.gender.male">Male (גבר)</option>
+          <option value="female" data-i18n="rsim.gender.female">Female (אישה)</option>
         </select>
       </div>
       <div class="field">
-        <label for="rsim-retirement-age">Retirement age</label>
+        <label for="rsim-retirement-age" data-i18n="rsim.retirementAge">Retirement age</label>
         <input type="number" id="rsim-retirement-age" class="control-input" min="55" max="75" value="60">
       </div>
       <div class="field">
-        <label for="rsim-comprehensive">מקיפה balance at retirement (₪)</label>
+        <label for="rsim-comprehensive" data-i18n="rsim.comprehensive">מקיפה balance at retirement (₪)</label>
         <input type="number" id="rsim-comprehensive" class="control-input" min="0" step="1000" placeholder="5000000">
       </div>
       <div class="field">
-        <label for="rsim-supplementary">משלימה balance at retirement (₪, optional)</label>
+        <label for="rsim-supplementary" data-i18n="rsim.supplementary">משלימה balance at retirement (₪, optional)</label>
         <input type="number" id="rsim-supplementary" class="control-input" min="0" step="1000" placeholder="0">
       </div>
       <div class="field retirement-sim__slider-row">
-        <label for="rsim-target-pension">Target monthly pension — path 3 (₪)</label>
+        <label for="rsim-target-pension" data-i18n="rsim.targetPension">Target monthly pension — path 3 (₪)</label>
         <input type="range" id="rsim-target-pension-range" min="5306" max="50000" step="100" value="20000">
         <input type="number" id="rsim-target-pension" class="control-input" min="5306" step="100" value="20000">
         <span class="chart-caption" id="rsim-pension-bounds">Min ₪5,306 · max depends on balance</span>
@@ -1524,15 +1575,15 @@ body.chat-open .chat-backdrop { display: block; }
     <div id="rsim-meta" class="retirement-sim__meta" hidden></div>
     <div id="rsim-error" class="login-error" style="min-height:0"></div>
     <div id="rsim-paths" class="retirement-sim__paths" hidden></div>
-    <p class="retirement-sim__note">
+    <p class="retirement-sim__note" data-i18n="rsim.note">
       Informational estimate only — not financial, tax, or legal advice. Conversion factors (מקדמי המרה) are approximations; your fund sets the actual multiplier at retirement. Tax uses a simplified 35% on the taxable lump-sum portion above the ~₪1.14M exemption.
     </p>
   </section>
 
   <section class="card" id="rsu-card">
     <div class="card__header">
-      <h2>RSU Grants <span class="h2-count" id="rsu-count">0</span> <button class="help-btn" data-help="rsu" title="What is this section?" aria-label="About RSU Grants">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-rsu-btn">+ Add grant</button>
+      <h2><span data-i18n="section.rsu">RSU Grants</span> <span class="h2-count" id="rsu-count">0</span> <button class="help-btn" data-help="rsu" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.rsu.title" title="What is this section?" aria-label="About RSU Grants">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-rsu-btn" data-i18n="rsu.add">+ Add grant</button>
     </div>
     <div id="rsu-list" class="holdings-list"></div>
     <div id="add-rsu-panel" class="add-panel" hidden>
@@ -1581,16 +1632,16 @@ body.chat-open .chat-backdrop { display: block; }
       </div>
       <p class="chart-caption">Override only if your company reported a different FMV (e.g. 30-day average or board-approved value). Leave blank to use Yahoo's closing price on the grant date — that's the cost basis Yahoo and most US brokers use.</p>
       <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-rsu-cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-rsu-save">Save grant</button>
+        <button class="btn btn--ghost btn--small" id="add-rsu-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-rsu-save" data-i18n="rsu.save">Save grant</button>
       </div>
     </div>
   </section>
 
   <section class="card" id="espp-card">
     <div class="card__header">
-      <h2>ESPP Plans <span class="h2-count" id="espp-count">0</span> <button class="help-btn" data-help="espp" title="What is this section?" aria-label="About ESPP">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-espp-btn">+ Add plan</button>
+      <h2><span data-i18n="section.espp">ESPP Plans</span> <span class="h2-count" id="espp-count">0</span> <button class="help-btn" data-help="espp" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.espp.title" title="What is this section?" aria-label="About ESPP">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-espp-btn" data-i18n="espp.add">+ Add plan</button>
     </div>
     <div id="espp-list" class="holdings-list"></div>
     <div id="add-espp-panel" class="add-panel" hidden>
@@ -1621,16 +1672,16 @@ body.chat-open .chat-backdrop { display: block; }
         </div>
       </div>
       <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-espp-cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-espp-save">Save plan</button>
+        <button class="btn btn--ghost btn--small" id="add-espp-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-espp-save" data-i18n="espp.save">Save plan</button>
       </div>
     </div>
   </section>
 
   <section class="card" id="cash-card">
     <div class="card__header">
-      <h2>Cash &amp; non-invested <span class="h2-count" id="cash-count">0</span> <button class="help-btn" data-help="cash" title="What is this section?" aria-label="About Cash">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-cash-btn">+ Add cash</button>
+      <h2><span data-i18n="section.cash">Cash &amp; non-invested</span> <span class="h2-count" id="cash-count">0</span> <button class="help-btn" data-help="cash" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.cash.title" title="What is this section?" aria-label="About Cash">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-cash-btn" data-i18n="cash.add">+ Add cash</button>
     </div>
     <div id="cash-list" class="holdings-list"></div>
     <div id="add-cash-panel" class="add-panel" hidden>
@@ -1656,98 +1707,98 @@ body.chat-open .chat-backdrop { display: block; }
         </div>
       </div>
       <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-cash-cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-cash-save">Save</button>
+        <button class="btn btn--ghost btn--small" id="add-cash-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-cash-save" data-i18n="common.save">Save</button>
       </div>
     </div>
   </section>
 
   <section class="card" id="settings-card">
     <div class="card__header">
-      <h2>Settings <button class="help-btn" data-help="settings" title="What is this section?" aria-label="About Settings">?</button></h2>
+      <h2><span data-i18n="section.settings">Settings</span> <button class="help-btn" data-help="settings" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.settings.title" title="What is this section?" aria-label="About Settings">?</button></h2>
       <button class="btn btn--ghost btn--small" id="settings-toggle" aria-expanded="false">Show</button>
     </div>
     <div id="settings-body" hidden>
       <div class="settings-grid">
         <div class="field">
-          <label for="setting-theme">Appearance</label>
+          <label for="setting-theme" data-i18n="settings.appearance">Appearance</label>
           <select id="setting-theme" style="width:100%;padding:0.5rem 0.75rem;font:inherit;font-size:0.875rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-sm);color:var(--color-text);">
-            <option value="system">System (match device)</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
+            <option value="system" data-i18n="settings.theme.system">System (match device)</option>
+            <option value="light" data-i18n="settings.theme.light">Light</option>
+            <option value="dark" data-i18n="settings.theme.dark">Dark</option>
           </select>
         </div>
         <div class="field field--inline">
           <input type="checkbox" id="setting-net-of-fees">
-          <label for="setting-net-of-fees">Default: MONTHLY_YIELD is net of fees</label>
+          <label for="setting-net-of-fees" data-i18n="settings.netOfFees">Default: MONTHLY_YIELD is net of fees</label>
         </div>
         <div class="field">
-          <label for="setting-usdils">USDILS rate override</label>
-          <input type="number" id="setting-usdils" step="0.0001" placeholder="leave blank to use Yahoo">
+          <label for="setting-usdils" data-i18n="settings.usdilsOverride">USDILS rate override</label>
+          <input type="number" id="setting-usdils" step="0.0001" data-i18n-placeholder="settings.usdilsPlaceholder" placeholder="leave blank to use Yahoo">
         </div>
       </div>
       <div class="actions-row" style="margin-top:1rem">
-        <button class="btn btn--ghost btn--small" id="export-btn">Export JSON</button>
-        <button class="btn btn--ghost btn--small" id="import-btn">Import JSON</button>
+        <button class="btn btn--ghost btn--small" id="export-btn" data-i18n="settings.exportJson">Export JSON</button>
+        <button class="btn btn--ghost btn--small" id="import-btn" data-i18n="settings.importJson">Import JSON</button>
         <input type="file" id="import-file" accept="application/json" hidden>
-        <button class="btn btn--ghost btn--small" id="change-password-btn" type="button">Change password</button>
-        <button class="btn btn--danger btn--small" id="clear-cache-btn">Clear cache</button>
+        <button class="btn btn--ghost btn--small" id="change-password-btn" type="button" data-i18n="settings.changePassword">Change password</button>
+        <button class="btn btn--danger btn--small" id="clear-cache-btn" data-i18n="settings.clearCache">Clear cache</button>
       </div>
       <p class="chart-caption" id="cache-info" style="margin-top:0.75rem;"></p>
       <div class="danger-zone" style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--color-border);">
-        <p class="chart-caption" style="margin:0 0 0.75rem;"><strong>Danger zone</strong> — permanent actions</p>
-        <button class="btn btn--danger btn--small" id="delete-account-btn" type="button">Delete my account</button>
-        <p class="chart-caption" style="margin:0.5rem 0 0;">Permanently deletes your login and <strong>all personal data</strong> stored in the database (holdings, grants, cash, settings, and cached prices). This cannot be undone.</p>
+        <p class="chart-caption" style="margin:0 0 0.75rem;" data-i18n="settings.dangerZone" data-i18n-html><strong>Danger zone</strong> — permanent actions</p>
+        <button class="btn btn--danger btn--small" id="delete-account-btn" type="button" data-i18n="settings.deleteAccount">Delete my account</button>
+        <p class="chart-caption" style="margin:0.5rem 0 0;" data-i18n="settings.deleteAccountBlurb" data-i18n-html>Permanently deletes your login and <strong>all personal data</strong> stored in the database (holdings, grants, cash, settings, and cached prices). This cannot be undone.</p>
       </div>
     </div>
   </section>
 
   <p class="chart-caption" style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--color-border); text-align:center;">
-    Saving Tracker — personal, non-commercial software. Not affiliated with fund managers, brokers, or data providers.
+    <span data-i18n="footer.credit">Saving Tracker — personal, non-commercial software. Not affiliated with fund managers, brokers, or data providers.</span>
   </p>
 </main>
 
 <div class="toast-stack" id="toast-stack"></div>
 
-<button type="button" class="chat-fab" id="chat-fab" hidden title="Open AI chat" aria-label="Open AI chat" aria-controls="chat-panel">AI</button>
+<button type="button" class="chat-fab" id="chat-fab" hidden data-i18n-title="chrome.openAiChat" data-i18n-aria-label="chrome.openAiChat" title="Open AI chat" aria-label="Open AI chat" aria-controls="chat-panel">AI</button>
 
 <div class="chat-backdrop" id="chat-backdrop" aria-hidden="true"></div>
 
-<aside class="chat-panel" id="chat-panel" hidden aria-label="AI portfolio chat" aria-hidden="true">
+<aside class="chat-panel" id="chat-panel" hidden data-i18n-aria-label="chat.panelAria" aria-label="AI portfolio chat" aria-hidden="true">
   <div class="chat-panel__header">
     <h2 class="chat-panel__title">
       <span class="chat-panel__title-badge" aria-hidden="true">AI</span>
-      Portfolio chat
-      <button class="help-btn" data-help="chat" title="What is this?" aria-label="About AI chat">?</button>
+      <span data-i18n="chat.title">Portfolio chat</span>
+      <button class="help-btn" data-help="chat" data-i18n-title="help.chat.title" data-i18n-aria-label="help.chat.title" title="What is this?" aria-label="About AI chat">?</button>
     </h2>
     <div class="chat-panel__header-actions">
-      <button class="btn btn--ghost btn--small" id="chat-clear-btn" type="button" title="Clear conversation">Clear</button>
-      <button class="btn btn--ghost btn--small" id="chat-close-btn" type="button" title="Close chat" aria-label="Close chat">✕</button>
+      <button class="btn btn--ghost btn--small" id="chat-clear-btn" type="button" data-i18n="chat.clear" data-i18n-title="chat.clearTitle" title="Clear conversation">Clear</button>
+      <button class="btn btn--ghost btn--small" id="chat-close-btn" type="button" data-i18n-title="chat.close" data-i18n-aria-label="chat.close" title="Close chat" aria-label="Close chat">✕</button>
     </div>
   </div>
   <div class="chat-panel__body">
-    <p class="chat-disclaimer" id="chat-disclaimer">
+    <p class="chat-disclaimer" id="chat-disclaimer" data-i18n="chat.disclaimer" data-i18n-html>
       <strong>AI chat disclaimer.</strong> Answers are generated by Google Gemini from a summary of your portfolio data.
       They are for personal education only — not financial, tax, investment, or legal advice.
       Figures may be incomplete or wrong; always verify against official statements.
       Messages and portfolio context are sent to Google’s API (free-tier terms may allow use to improve their products).
       Use at your own risk.
     </p>
-    <div class="chat-suggestions" id="chat-suggestions" aria-label="Suggested questions">
-      <button type="button" data-prompt="What can I do with this app? Summarize the main features and how to use them with my portfolio.">What can I do with this app?</button>
-      <button type="button" data-prompt="Where am I concentrated across funds, RSU, ESPP, and cash?">Where am I concentrated?</button>
-      <button type="button" data-prompt="Suggest concrete improvements based on my portfolio allocation, contributions, and vesting.">Improve my allocation?</button>
-      <button type="button" data-prompt="If my funds grow 8%/year, what is my projected portfolio total and change vs today by May 2030?">Project to May 2030 @ 8%</button>
+    <div class="chat-suggestions" id="chat-suggestions" data-i18n-aria-label="chat.suggestionsAria" aria-label="Suggested questions">
+      <button type="button" data-i18n="chat.chip.features" data-i18n-prompt="chat.prompt.features" data-prompt="What can I do with this app? Summarize the main features and how to use them with my portfolio.">What can I do with this app?</button>
+      <button type="button" data-i18n="chat.chip.concentration" data-i18n-prompt="chat.prompt.concentration" data-prompt="Where am I concentrated across funds, RSU, ESPP, and cash?">Where am I concentrated?</button>
+      <button type="button" data-i18n="chat.chip.improve" data-i18n-prompt="chat.prompt.improve" data-prompt="Suggest concrete improvements based on my portfolio allocation, contributions, and vesting.">Improve my allocation?</button>
+      <button type="button" data-i18n="chat.chip.project" data-i18n-prompt="chat.prompt.project" data-prompt="If my funds grow 8%/year, what is my projected portfolio total and change vs today by May 2030?">Project to May 2030 @ 8%</button>
     </div>
     <div class="chat-thread" id="chat-thread" role="log" aria-live="polite" aria-relevant="additions">
-      <div class="chat-empty" id="chat-empty">Ask about your holdings, yields, allocation, or what to improve.</div>
+      <div class="chat-empty" id="chat-empty" data-i18n="chat.empty">Ask about your holdings, yields, allocation, or what to improve.</div>
     </div>
   </div>
   <div class="chat-panel__footer">
     <p class="chat-error" id="chat-error" hidden></p>
     <div class="chat-composer">
-      <textarea id="chat-input" rows="2" placeholder="Ask about your portfolio…" maxlength="4000" aria-label="Chat message"></textarea>
-      <button class="chat-composer__send" id="chat-send-btn" type="button" title="Send" aria-label="Send message">↑</button>
+      <textarea id="chat-input" rows="2" data-i18n-placeholder="chat.placeholder" data-i18n-aria-label="chat.placeholder" placeholder="Ask about your portfolio…" maxlength="4000" aria-label="Chat message"></textarea>
+      <button class="chat-composer__send" id="chat-send-btn" type="button" data-i18n-title="chat.send" data-i18n-aria-label="chat.sendAria" title="Send" aria-label="Send message">↑</button>
     </div>
   </div>
 </aside>
@@ -1928,7 +1979,7 @@ function clearPortfolioUi() {
   const settingsBody = document.getElementById('settings-body');
   if (settingsBody) settingsBody.hidden = true;
   const settingsToggle = document.getElementById('settings-toggle');
-  if (settingsToggle) settingsToggle.textContent = 'Show';
+  if (settingsToggle) settingsToggle.textContent = t('common.show');
   resetChatSession({ hide: true });
 }
 
@@ -1995,12 +2046,12 @@ async function api(method, path, body, { retries = 1 } = {}) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       if (attempt > 0) {
-        setStatus('pending', 'Waking up server…');
+        setStatus('pending', t('status.wakingServer'));
         await new Promise(r => setTimeout(r, 3000));
       }
       const r = await fetch(apiUrl(path), opts);
       if (r.status === 401) {
-        logout('Session expired. Please sign in again.');
+        logout(t('toast.sessionExpired'));
         return { ok: false, error: 'Unauthorized' };
       }
       if (!r.ok && r.status >= 500) {
@@ -2026,7 +2077,7 @@ async function login(username, password) {
     hideLogin();
     return true;
   }
-  document.getElementById('login-error').textContent = j.error || 'Sign in failed';
+  document.getElementById('login-error').textContent = j.error || t('auth.error.signInFailed');
   return false;
 }
 
@@ -2035,14 +2086,14 @@ let authMode = 'login';
 function setAuthMode(mode) {
   authMode = mode;
   const isLogin = mode === 'login';
-  document.getElementById('auth-title').textContent = isLogin ? 'Sign in' : 'Create account';
+  document.getElementById('auth-title').textContent = isLogin ? t('auth.title.login') : t('auth.title.register');
   document.getElementById('auth-subtitle').textContent = isLogin
-    ? 'Enter your email and password to access your portfolio.'
-    : 'Enter a valid email address and password. An admin must approve new accounts.';
-  document.getElementById('login-btn').textContent = isLogin ? 'Sign in' : 'Create account';
+    ? t('auth.subtitle.login')
+    : t('auth.subtitle.register');
+  document.getElementById('login-btn').textContent = isLogin ? t('auth.submit.login') : t('auth.submit.register');
   document.getElementById('auth-toggle-btn').textContent = isLogin
-    ? 'Create an account'
-    : 'Already have an account? Sign in';
+    ? t('auth.toggle.toRegister')
+    : t('auth.toggle.toLogin');
   document.getElementById('login-password').autocomplete = isLogin ? 'current-password' : 'new-password';
   document.getElementById('login-error').textContent = '';
   const forgot = document.getElementById('forgot-password-note');
@@ -2052,12 +2103,12 @@ function setAuthMode(mode) {
 async function register(username, password) {
   const j = await api('POST', '/api/register', { username, password }, { retries: 2 });
   if (j.ok) {
-    toast(j.message || 'Account created. An admin must approve your account before you can sign in.', 'info', 6000);
+    toast(j.message || t('auth.toast.accountCreated'), 'info', 6000);
     setAuthMode('login');
     document.getElementById('login-password').value = '';
     return true;
   }
-  document.getElementById('login-error').textContent = j.error || 'Registration failed';
+  document.getElementById('login-error').textContent = j.error || t('auth.error.registerFailed');
   return false;
 }
 
@@ -2072,33 +2123,67 @@ function dataQuery() {
 async function fetchData(showSpinner = false) {
   const epoch = SESSION_EPOCH;
   if (!getToken()) return;
-  if (showSpinner) setStatus('pending', 'Loading…');
+  if (showSpinner) setStatus('pending', t('status.loading'));
   const j = await api('GET', `/api/data?${dataQuery()}`);
   if (epoch !== SESSION_EPOCH) return;
   if (j.ok === false) {
-    setStatus('error', j.error || 'Failed to load data');
+    setStatus('error', j.error || t('status.failedLoad'));
     return;
   }
   APP = j;
-  setStatus('ok', `Loaded · USDILS ${(j.cache_status.current_usdils || 0).toFixed(3)}`);
+  setStatus('ok', t('status.loadedUsdils', { rate: (j.cache_status.current_usdils || 0).toFixed(3) }));
   renderAll();
 }
 
 async function runSync() {
   const epoch = SESSION_EPOCH;
   if (!getToken()) return;
-  setStatus('pending', 'Syncing…');
+  setStatus('pending', t('status.syncing'));
   const j = await api('POST', `/api/sync?${dataQuery()}`, {});
   if (epoch !== SESSION_EPOCH) return;
   if (j.ok === false) {
-    setStatus('error', j.error || 'Sync failed');
-    toast(j.error || 'Sync failed', 'error');
+    setStatus('error', j.error || t('status.syncFailed'));
+    toast(j.error || t('toast.syncFailed'), 'error');
     return;
   }
   APP = j;
-  setStatus('ok', 'Synced');
-  toast('Synced from data.gov.il + Yahoo', 'info');
+  setStatus('ok', t('status.synced'));
+  toast(t('toast.synced'), 'info');
   renderAll();
+}
+
+var CHAT_OPEN = false;
+
+function t(key, vars) {
+  return (window.I18N && I18N.t) ? I18N.t(key, vars) : key;
+}
+
+function refreshI18nDynamic() {
+  if (window.I18N) I18N.applyI18n(document);
+  setAuthMode(authMode);
+  const settingsToggle = document.getElementById('settings-toggle');
+  const settingsBody = document.getElementById('settings-body');
+  if (settingsToggle && settingsBody) {
+    settingsToggle.textContent = settingsBody.hidden ? t('common.show') : t('common.hide');
+  }
+  updateChatToggleLabel();
+  if (typeof updateStatusDataMonth === 'function') updateStatusDataMonth();
+  if (typeof renderChatThread === 'function') renderChatThread();
+  if (APP && getToken() && typeof renderAll === 'function') renderAll();
+}
+
+function updateChatToggleLabel() {
+  const toggle = document.getElementById('chat-toggle-btn');
+  if (!toggle) return;
+  if (CHAT_OPEN) {
+    toggle.textContent = t('chrome.hideAi');
+    toggle.title = t('chrome.hideAi');
+    toggle.setAttribute('aria-label', t('chrome.hideAi'));
+  } else {
+    toggle.textContent = t('chrome.aiChat');
+    toggle.title = t('chrome.openAiChat');
+    toggle.setAttribute('aria-label', t('chrome.openAiChat'));
+  }
 }
 
 // ── Status / toast ──
@@ -2123,7 +2208,7 @@ function updateStatusDataMonth() {
     period = max > 0 ? max : null;
   }
   if (period) {
-    el.textContent = `Yields · ${periodMonthYearLabel(period)}`;
+    el.textContent = t('status.yields', { label: periodMonthYearLabel(period) });
     el.hidden = false;
   } else {
     el.textContent = '';
@@ -2155,7 +2240,7 @@ function renderPensionDashboardNote() {
     if (chartWrap) dash.insertBefore(note, chartWrap);
     else dash.appendChild(note);
   }
-  note.innerHTML = `<span>🔒</span><span><strong>Pension (${fmtILS.format(summary.total_value_ils)})</strong> is tracked separately below — not included in this total or the chart. The growth assumption above still applies to it, shown per row.</span>`;
+  note.innerHTML = t('dashboard.pensionNote', { amount: fmtILS.format(summary.total_value_ils) });
 }
 
 function renderAll() {
@@ -3684,6 +3769,42 @@ function renderSettings() {
   document.getElementById('cache-info').textContent = parts.join(' · ');
 }
 
+
+const HELP_TITLE_KEYS = {
+  dashboard: 'help.dashboard.title',
+  chat: 'help.chat.title',
+  funds: 'help.funds.title',
+  pension: 'help.pension.title',
+  'retirement-sim': 'help.retirementSim.title',
+  rsu: 'help.rsu.title',
+  espp: 'help.espp.title',
+  cash: 'help.cash.title',
+  settings: 'help.settings.title',
+};
+const HELP_BODY_KEYS = {
+  dashboard: 'help.dashboard.body',
+  chat: 'help.chat.body',
+  funds: 'help.funds.body',
+  pension: 'help.pension.body',
+  'retirement-sim': 'help.retirementSim.body',
+  rsu: 'help.rsu.body',
+  espp: 'help.espp.body',
+  cash: 'help.cash.body',
+  settings: 'help.settings.body',
+};
+function getHelpContent(key) {
+  const base = HELP_CONTENT[key];
+  if (!base) return null;
+  const titleKey = HELP_TITLE_KEYS[key];
+  const bodyKey = HELP_BODY_KEYS[key];
+  return {
+    title: titleKey ? t(titleKey) : base.title,
+    body: (bodyKey && window.I18N && I18N.STRINGS[I18N.getLang()] && I18N.STRINGS[I18N.getLang()][bodyKey] != null)
+      ? t(bodyKey)
+      : base.body,
+  };
+}
+
 // ── Section help content ──
 const HELP_CONTENT = {
   dashboard: {
@@ -3784,7 +3905,8 @@ const HELP_CONTENT = {
 };
 
 // ── Modal (replaces native prompt/confirm) ──
-function _openModal({ title, description = '', body = '', okLabel = 'Save', danger = false, hideOk = false }) {
+function _openModal({ title, description = '', body = '', okLabel = null, danger = false, hideOk = false }) {
+  if (okLabel == null) okLabel = t('common.save');
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.className = 'modal';
@@ -3796,7 +3918,7 @@ function _openModal({ title, description = '', body = '', okLabel = 'Save', dang
         ${description ? `<p class="modal__desc">${escapeHtml(description)}</p>` : ''}
         <div class="modal__body">${body}</div>
         <div class="modal__actions">
-          <button class="btn btn--ghost btn--small" data-act="cancel" type="button">Cancel</button>
+          <button class="btn btn--ghost btn--small" data-act="cancel" type="button">${t('common.cancel')}</button>
           ${hideOk ? '' : `<button class="btn ${danger ? 'btn--danger' : 'btn--primary'} btn--small" data-act="ok" type="button">${escapeHtml(okLabel)}</button>`}
         </div>
       </div>
@@ -4424,12 +4546,12 @@ function init() {
     if (!nickname || !amount && amount !== 0) { toast('Nickname and amount required', 'error'); return; }
     const j = await api('POST', '/api/cash', { nickname, amount, currency, note });
     if (j.ok) {
-      toast('Cash added', 'info');
+      toast(t('toast.cashAdded'), 'info');
       ['cash-nickname','cash-amount','cash-note'].forEach(id => document.getElementById(id).value = '');
       document.getElementById('cash-currency').value = 'ILS';
       document.getElementById('add-cash-panel').hidden = true;
       fetchData();
-    } else toast(j.error || 'Failed', 'error');
+    } else toast(j.error || t('common.failed'), 'error');
   });
 
   document.getElementById('add-rsu-btn').addEventListener('click', () => {
@@ -4464,7 +4586,7 @@ function init() {
   document.getElementById('settings-toggle').addEventListener('click', () => {
     const body = document.getElementById('settings-body');
     body.hidden = !body.hidden;
-    document.getElementById('settings-toggle').textContent = body.hidden ? 'Show' : 'Hide';
+    document.getElementById('settings-toggle').textContent = body.hidden ? t('common.show') : t('common.hide');
   });
   document.getElementById('setting-theme').value = getThemePreference();
   document.getElementById('setting-theme').addEventListener('change', (e) => {
@@ -4488,7 +4610,7 @@ function init() {
     const r = await fetch(apiUrl('/api/export'), {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!r.ok) { toast('Export failed', 'error'); return; }
+    if (!r.ok) { toast(t('toast.exportFailed'), 'error'); return; }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4505,9 +4627,9 @@ function init() {
     if (!f) return;
     const text = await f.text();
     let payload;
-    try { payload = JSON.parse(text); } catch { toast('Invalid JSON', 'error'); return; }
+    try { payload = JSON.parse(text); } catch { toast(t('toast.invalidJson'), 'error'); return; }
     const j = await api('POST', '/api/import', payload);
-    if (j.ok) { toast('Imported', 'info'); fetchData(); }
+    if (j.ok) { toast(t('toast.imported'), 'info'); fetchData(); }
     else toast(j.error || 'Import failed', 'error');
   });
   document.getElementById('change-password-btn').addEventListener('click', async () => {
@@ -4523,14 +4645,14 @@ function init() {
     });
     if (!r) return;
     if (!r.new_password || r.new_password !== r.confirm_password) {
-      toast('New passwords do not match', 'error');
+      toast(t('toast.passwordsMismatch'), 'error');
       return;
     }
     const j = await api('POST', '/api/account/password', {
       current_password: r.current_password,
       new_password: r.new_password,
     });
-    if (j.ok) toast(j.message || 'Password updated', 'info');
+    if (j.ok) toast(j.message || t('toast.passwordUpdated'), 'info');
     else toast(j.error || 'Could not update password', 'error');
   });
   document.getElementById('clear-cache-btn').addEventListener('click', async () => {
@@ -4542,7 +4664,7 @@ function init() {
     });
     if (!ok) return;
     await api('POST', '/api/cache/clear', {});
-    toast('Cache cleared. Click Refresh to resync.', 'info');
+    toast(t('toast.cacheCleared'), 'info');
     fetchData();
   });
   document.getElementById('delete-account-btn').addEventListener('click', async () => {
@@ -4556,11 +4678,11 @@ function init() {
       danger: true,
     });
     if (!r || !r.password) return;
-    setStatus('pending', 'Deleting account…');
+    setStatus('pending', t('status.deletingAccount'));
     const j = await api('DELETE', '/api/account', { password: r.password });
     if (j.ok) {
       returnToLoginScreen();
-      toast('Your account was deleted. All personal data has been removed.', 'info', 6000);
+      toast(t('toast.accountDeleted'), 'info', 6000);
     } else {
       setStatus('error', j.error || 'Could not delete account');
       toast(j.error || 'Could not delete account', 'error', 6000);
@@ -4573,12 +4695,12 @@ function init() {
     if (helpBtn) {
       e.preventDefault(); e.stopPropagation();
       const key = helpBtn.dataset.help;
-      const c = HELP_CONTENT[key];
+            const c = getHelpContent(key);
       if (c) {
         await _openModal({
           title: c.title,
           body: `<div class="help-body">${c.body}</div>`,
-          okLabel: 'Got it',
+          okLabel: t('common.gotIt'),
           hideOk: false,
         });
       }
@@ -4604,7 +4726,7 @@ function init() {
         date, kind, note, amount_ils: amount,
       });
       if (j.ok) { toast('Event added', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const addRuleBtn = e.target.closest('[data-add-rule]');
@@ -4637,7 +4759,7 @@ function init() {
         toast('Rule saved', 'info');
         document.getElementById(`rule-form-${hid}`).hidden = true;
         fetchData();
-      } else toast(j.error || 'Failed', 'error');
+      } else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const ruleDelBtn = e.target.closest('[data-rule-del]');
@@ -4652,7 +4774,7 @@ function init() {
       if (!ok) return;
       const j = await api('DELETE', `${ruleHoldingBaseUrl(hid)}/${hid}/rules/${rid}`);
       if (j.ok) { toast('Rule deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const ruleEndBtn = e.target.closest('[data-rule-end]');
@@ -4667,8 +4789,8 @@ function init() {
       });
       if (v === null) return;
       const j = await api('PATCH', `${ruleHoldingBaseUrl(hid)}/${hid}/rules/${rid}`, { end_date: (v || '').trim() || null });
-      if (j.ok) { toast('Updated', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delEvBtn = e.target.closest('[data-del-event]');
@@ -4676,7 +4798,7 @@ function init() {
       const [hid, eid] = delEvBtn.dataset.delEvent.split(':');
       const j = await api('DELETE', `/api/fund-holdings/${hid}/events/${eid}`);
       if (j.ok) { toast('Event deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delFundBtn = e.target.closest('[data-delete-fund]');
@@ -4691,8 +4813,8 @@ function init() {
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/fund-holdings/${id}`);
-      if (j.ok) { toast('Deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      if (j.ok) { toast(t('common.deleted'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delRSUBtn = e.target.closest('[data-delete-rsu]');
@@ -4707,8 +4829,8 @@ function init() {
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/rsu-grants/${id}`);
-      if (j.ok) { toast('Deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      if (j.ok) { toast(t('common.deleted'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const renFundBtn = e.target.closest('[data-edit-nickname-fund]');
@@ -4739,7 +4861,7 @@ function init() {
       });
       if (v === null) return;
       const j = await api('PATCH', `/api/fund-holdings/${id}`, { anchor_balance_ils: +v });
-      if (j.ok) { toast('Updated', 'info'); fetchData(); }
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
       return;
     }
     const delPensionBtn = e.target.closest('[data-del-pension]');
@@ -4754,7 +4876,7 @@ function init() {
       if (!ok) return;
       const j = await api('DELETE', `/api/pension-holdings/${id}`);
       if (j.ok) { toast('Pension deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const renPensionBtn = e.target.closest('[data-rename-pension]');
@@ -4799,7 +4921,7 @@ function init() {
       });
       if (v === null) return;
       const j = await api('PATCH', `/api/pension-holdings/${id}`, { anchor_balance_ils: +v });
-      if (j.ok) { toast('Updated', 'info'); fetchData(); }
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
       return;
     }
     const renRSUBtn = e.target.closest('[data-edit-nickname-rsu]');
@@ -4832,8 +4954,8 @@ function init() {
       });
       if (!result) return;
       const j = await api('PATCH', `/api/cash/${id}`, result);
-      if (j.ok) { toast('Updated', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delCashBtn = e.target.closest('[data-delete-cash]');
@@ -4848,8 +4970,8 @@ function init() {
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/cash/${id}`);
-      if (j.ok) { toast('Deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      if (j.ok) { toast(t('common.deleted'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const sharesBtn = e.target.closest('[data-edit-shares-rsu]');
@@ -4865,7 +4987,7 @@ function init() {
       });
       if (v === null) return;
       const j = await api('PATCH', `/api/rsu-grants/${id}`, { total_shares: +v });
-      if (j.ok) { toast('Updated', 'info'); fetchData(); }
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
       return;
     }
     const addSaleBtn = e.target.closest('[data-add-sale]');
@@ -4880,7 +5002,7 @@ function init() {
         date, shares_sold: shares, sale_price_usd: price, note,
       });
       if (j.ok) { toast('Sale recorded', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delSaleBtn = e.target.closest('[data-del-sale]');
@@ -4895,7 +5017,7 @@ function init() {
       if (!ok) return;
       const j = await api('DELETE', `/api/rsu-grants/${gid}/sales/${sid}`);
       if (j.ok) { toast('Sale deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const gpBtn = e.target.closest('[data-edit-grantprice-rsu]');
@@ -4915,8 +5037,8 @@ function init() {
       if (v === null) return;
       const payload = { grant_price_override_usd: (v === '' || v == null) ? null : +v };
       const j = await api('PATCH', `/api/rsu-grants/${id}`, payload);
-      if (j.ok) { toast('Updated', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
 
@@ -4943,7 +5065,7 @@ function init() {
         const lbHint = j.lookback_bonus_usd > 0 ? ` (lookback +${fmtUSD.format(j.lookback_bonus_usd)})` : '';
         toast(`Logged ${j.shares.toFixed(2)} shares · captured ${fmtUSD.format(j.discount_captured_usd)}${lbHint}`, 'info');
         fetchData();
-      } else toast(j.error || 'Failed', 'error');
+      } else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delEspBuyBtn = e.target.closest('[data-del-espp-purchase]');
@@ -4958,7 +5080,7 @@ function init() {
       if (!ok) return;
       const j = await api('DELETE', `/api/espp-plans/${pid}/purchases/${prid}`);
       if (j.ok) { toast('Purchase deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const addEspSaleBtn = e.target.closest('[data-add-espp-sale]');
@@ -4973,7 +5095,7 @@ function init() {
         date, shares_sold: shares, sale_price_usd: price, note,
       });
       if (j.ok) { toast('Sale recorded', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delEspSaleBtn = e.target.closest('[data-del-espp-sale]');
@@ -4988,7 +5110,7 @@ function init() {
       if (!ok) return;
       const j = await api('DELETE', `/api/espp-plans/${pid}/sales/${sid}`);
       if (j.ok) { toast('Sale deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const editEspBtn = e.target.closest('[data-edit-espp]');
@@ -5002,8 +5124,8 @@ function init() {
       });
       if (newName === null) return;
       const j = await api('PATCH', `/api/espp-plans/${id}`, { nickname: newName });
-      if (j.ok) { toast('Updated', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const archiveEspBtn = e.target.closest('[data-archive-espp]');
@@ -5012,7 +5134,7 @@ function init() {
       const plan = APP.espp_plans.find(x => x.id === id);
       const j = await api('PATCH', `/api/espp-plans/${id}`, { archived: !plan.archived });
       if (j.ok) { toast(plan.archived ? 'Unarchived' : 'Archived', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delEspBtn = e.target.closest('[data-delete-espp]');
@@ -5027,7 +5149,7 @@ function init() {
       if (!ok) return;
       const j = await api('DELETE', `/api/espp-plans/${id}`);
       if (j.ok) { toast('Plan deleted', 'info'); fetchData(); }
-      else toast(j.error || 'Failed', 'error');
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
   });
@@ -5151,12 +5273,12 @@ async function saveFundHolding() {
   });
   document.getElementById('add-fund-save').disabled = false;
   if (j.ok) {
-    toast('Fund added', 'info');
+    toast(t('toast.fundAdded'), 'info');
     resetAddFund();
     document.getElementById('add-fund-panel').hidden = true;
     fetchData();
   } else {
-    toast(j.error || 'Failed', 'error');
+    toast(j.error || t('common.failed'), 'error');
     setStatus('error', j.error || 'Add failed');
   }
 }
@@ -5266,12 +5388,12 @@ async function savePensionHolding() {
   });
   document.getElementById('add-pension-save').disabled = false;
   if (j.ok) {
-    toast('Pension added', 'info');
+    toast(t('toast.pensionAdded'), 'info');
     resetAddPension();
     document.getElementById('add-pension-panel').hidden = true;
     fetchData();
   } else {
-    toast(j.error || 'Failed', 'error');
+    toast(j.error || t('common.failed'), 'error');
     setStatus('error', j.error || 'Add failed');
   }
 }
@@ -5364,12 +5486,12 @@ async function saveRSUGrant() {
   });
   document.getElementById('add-rsu-save').disabled = false;
   if (j.ok) {
-    toast('Grant added', 'info');
+    toast(t('toast.grantAdded'), 'info');
     document.getElementById('add-rsu-panel').hidden = true;
     resetAddRSU();
     fetchData();
   } else {
-    toast(j.error || 'Failed', 'error');
+    toast(j.error || t('common.failed'), 'error');
     setStatus('error', j.error || 'Add failed');
   }
 }
@@ -5456,21 +5578,32 @@ async function saveESPPPlan() {
   });
   document.getElementById('add-espp-save').disabled = false;
   if (j.ok) {
-    toast('ESPP plan added', 'info');
+    toast(t('toast.esppAdded'), 'info');
     document.getElementById('add-espp-panel').hidden = true;
     resetAddESPP();
     fetchData();
   } else {
-    toast(j.error || 'Failed', 'error');
+    toast(j.error || t('common.failed'), 'error');
     setStatus('error', j.error || 'Add failed');
   }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  if (window.I18N) {
+    I18N.initLangBoot();
+    I18N.applyI18n(document);
+    document.querySelectorAll('[data-lang-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        I18N.toggleLang({ onChange: () => refreshI18nDynamic() });
+      });
+    });
+  }
   init();
   initChatUi();
   setAuthMode('login');
+  const st = document.getElementById('settings-toggle');
+  if (st) st.textContent = t('common.show');
 
   document.getElementById('auth-toggle-btn').addEventListener('click', () => {
     setAuthMode(authMode === 'login' ? 'register' : 'login');
@@ -5509,7 +5642,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function startApp() {
   clearPortfolioUi();
   APP = null;
-  setStatus('pending', 'Loading…');
+  setStatus('pending', t('status.loading'));
   fetchData(true).then(() => {
     if (!getToken() || !APP) return;
     refreshChatAvailability();
@@ -5524,7 +5657,6 @@ let CHAT_MESSAGES = [];
 let CHAT_BUSY = false;
 let CHAT_ENABLED = false;
 let CHAT_STATUS_FETCHED = false;
-let CHAT_OPEN = false;
 
 function setChatChromeVisible(visible) {
   document.body.classList.toggle('chat-available', !!visible);
@@ -5547,8 +5679,7 @@ function setChatOpen(open) {
   }
   if (toggle) {
     toggle.setAttribute('aria-expanded', CHAT_OPEN ? 'true' : 'false');
-    toggle.textContent = CHAT_OPEN ? 'Hide AI' : 'AI chat';
-    toggle.title = CHAT_OPEN ? 'Hide AI chat' : 'Open AI chat';
+    updateChatToggleLabel();
   }
   if (CHAT_OPEN) {
     const input = document.getElementById('chat-input');
@@ -5619,7 +5750,7 @@ function renderChatThread() {
     wrap.className = `chat-msg chat-msg--${m.role}${m.pending ? ' chat-msg--pending' : ''}`;
     const role = document.createElement('div');
     role.className = 'chat-msg__role';
-    role.textContent = m.role === 'user' ? 'You' : 'Assistant';
+    role.textContent = m.role === 'user' ? t('chat.role.you') : t('chat.role.assistant');
     const bubble = document.createElement('div');
     bubble.className = 'chat-msg__bubble';
     bubble.textContent = m.content;
@@ -5636,7 +5767,7 @@ async function sendChatMessage(text) {
   if (!CHAT_OPEN) setChatOpen(true);
   setChatError('');
   CHAT_MESSAGES.push({ role: 'user', content });
-  CHAT_MESSAGES.push({ role: 'assistant', content: 'Thinking…', pending: true });
+  CHAT_MESSAGES.push({ role: 'assistant', content: t('chat.thinking'), pending: true });
   CHAT_BUSY = true;
   const sendBtn = document.getElementById('chat-send-btn');
   const input = document.getElementById('chat-input');
@@ -5658,12 +5789,12 @@ async function sendChatMessage(text) {
     if (err === 'chat_disabled') {
       CHAT_ENABLED = false;
       setChatChromeVisible(false);
-      setChatError('Chat is disabled on the server.');
+      setChatError(t('chat.disabled'));
     } else {
       setChatError(err);
       CHAT_MESSAGES.push({
         role: 'assistant',
-        content: `Sorry — I could not answer that (${err}).`,
+        content: t('chat.sorry', { error: err }),
       });
     }
   }
