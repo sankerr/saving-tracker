@@ -598,13 +598,10 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
   document.getElementById('next').addEventListener('click', next);
   document.getElementById('prev').addEventListener('click', prev);
   langBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleLang(); });
+  // "Back to login" is a plain anchor to the app root — it always navigates
+  // this tab to the login page (robust even if the original tab was closed).
   var backBtn = document.getElementById('back-to-login');
-  if (backBtn) backBtn.addEventListener('click', function (e) {
-    e.stopPropagation();
-    // Try to close this tab (opened from the login page). If the browser
-    // blocks it, the anchor's href navigates back to the login page instead.
-    window.close();
-  });
+  if (backBtn) backBtn.addEventListener('click', function (e) { e.stopPropagation(); });
   stage.addEventListener('click', function (e) {
     // Tap-to-advance fights scrolling on touch screens; use the arrows there.
     if (MOBILE.matches) return;
