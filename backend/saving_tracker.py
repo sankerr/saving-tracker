@@ -3821,7 +3821,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return
                 try:
                     state = compose_state(24, None)
-                    result = portfolio_chat.run_chat(state, body.get("messages"))
+                    result = portfolio_chat.run_chat(
+                        state,
+                        body.get("messages"),
+                        compose_fn=compose_state,
+                    )
                 except Exception as ex:
                     self._json(500, {"ok": False, "error": str(ex)})
                     return

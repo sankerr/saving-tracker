@@ -1726,7 +1726,7 @@ body.chat-open .chat-backdrop { display: block; }
     <div class="chat-suggestions" id="chat-suggestions" aria-label="Suggested questions">
       <button type="button" data-prompt="Where am I concentrated across funds, RSU, ESPP, and cash?">Where am I concentrated?</button>
       <button type="button" data-prompt="Compare my fund fees and suggest what to watch.">Compare my fees</button>
-      <button type="button" data-prompt="Suggest improvements based on my portfolio and typical gemelnet / pension practices.">Improve my allocation?</button>
+      <button type="button" data-prompt="If my funds grow 8%/year, what is my projected portfolio total and change vs today by May 2030?">Project to May 2030 @ 8%</button>
     </div>
     <div class="chat-thread" id="chat-thread" role="log" aria-live="polite" aria-relevant="additions">
       <div class="chat-empty" id="chat-empty">Ask about your holdings, yields, fees, or what to improve.</div>
@@ -3690,6 +3690,7 @@ const HELP_CONTENT = {
     title: 'About AI chat',
     body: `
       <p>Optional assistant powered by <strong>Google Gemini</strong>. When enabled on the server, it opens as a right-side panel (Fly-style dock) with a compact summary of your portfolio so it can answer questions and suggest educational improvements.</p>
+      <p>For future “what if / profit by date” questions it can call the same backend projection used by the dashboard. If you don’t give an annual growth %, it should ask — or can run on historical fund averages.</p>
       <p>Open it with <strong>AI chat</strong> in the status bar (desktop) or the floating <strong>AI</strong> button (mobile). Chat history stays in this browser tab for the session only — use <strong>Clear</strong> to start over.</p>
       <p><strong>Not advice.</strong> Replies are for personal education. They can be wrong or incomplete. Messages and portfolio context are sent to Google’s API. Read the on-panel disclaimer before using.</p>
     `,
