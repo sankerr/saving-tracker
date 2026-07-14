@@ -103,6 +103,16 @@ small { color: var(--st-muted); font-size: 15px; }
 .pill--accent { border-color: rgba(77,205,205,0.5); color: var(--st-accent); }
 .pill--primary { border-color: rgba(110,95,224,0.6); color: #B7AEF6; }
 
+.deck-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 24px; border-radius: 10px; font-size: 16px; font-weight: 600;
+  cursor: pointer; text-decoration: none; border: 1px solid transparent;
+  font-family: var(--font-body);
+  background: linear-gradient(135deg, var(--st-primary), var(--st-primary-strong)); color: #fff;
+  transition: filter 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.deck-cta:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
 .split {
   display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 34px;
   align-items: center; text-align: start; width: 100%;
@@ -392,7 +402,10 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
       <span class="eyebrow" data-i18n="eyebrow.close">Private · Free · Personal</span>
       <h1 class="gradient-text" data-i18n="app.name">Saving Tracker</h1>
       <p class="subtitle" data-i18n="close.subtitle">See your whole savings picture — and where it's heading.</p>
-      <p><small data-i18n="close.disclaimer">Personal, non-commercial software. Not financial, tax, or investment advice.</small></p>
+      <div class="pill-row" style="margin-top:26px;">
+        <a class="deck-cta" href="../" id="back-to-login" data-i18n="close.backToLogin">Back to login</a>
+      </div>
+      <p style="margin-top:26px;"><small data-i18n="close.disclaimer">Personal, non-commercial software. Not financial, tax, or investment advice.</small></p>
     </section>
 
   </div>
@@ -496,6 +509,7 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
 
       'eyebrow.close': 'פרטי · חינמי · אישי',
       'close.subtitle': 'ראו את כל תמונת החיסכון — ולאן היא מתקדמת.',
+      'close.backToLogin': 'חזרה למסך הכניסה',
       'close.disclaimer': 'תוכנה אישית ולא מסחרית. לא ייעוץ פיננסי, מס או השקעות.',
 
       'hint': '→ ← · רווח · Home/End · F מסך מלא'
@@ -584,10 +598,17 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
   document.getElementById('next').addEventListener('click', next);
   document.getElementById('prev').addEventListener('click', prev);
   langBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleLang(); });
+  var backBtn = document.getElementById('back-to-login');
+  if (backBtn) backBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    // Try to close this tab (opened from the login page). If the browser
+    // blocks it, the anchor's href navigates back to the login page instead.
+    window.close();
+  });
   stage.addEventListener('click', function (e) {
     // Tap-to-advance fights scrolling on touch screens; use the arrows there.
     if (MOBILE.matches) return;
-    if (e.target.closest('a, .nav-btn, #lang-toggle')) return;
+    if (e.target.closest('a, .nav-btn, #lang-toggle, .deck-cta')) return;
     if (e.clientX > window.innerWidth / 2) next(); else prev();
   });
   document.addEventListener('keydown', function (e) {
