@@ -877,13 +877,20 @@ h2 {
 
 /* ── AI chat (right dock, Fly-style layout + app colors) ── */
 :root {
-  --chat-panel-width: min(400px, 100vw);
+  --chat-panel-width: min(360px, 100vw);
 }
 body.chat-available main {
-  transition: padding-right 0.22s ease;
+  transition: max-width 0.22s ease, margin 0.22s ease;
 }
-body.chat-open main {
-  padding-right: calc(var(--chat-panel-width) + 0.5rem);
+/* Desktop: use the full leftover viewport beside the dock (often wider than 1080). */
+@media (min-width: 901px) {
+  body.chat-open main {
+    max-width: calc(100vw - var(--chat-panel-width) - 1rem);
+    width: 100%;
+    margin-left: auto;
+    margin-right: var(--chat-panel-width);
+    box-sizing: border-box;
+  }
 }
 #chat-toggle-btn[hidden],
 #chat-fab[hidden] { display: none !important; }
@@ -1138,8 +1145,11 @@ body.chat-open .chat-fab { display: none; }
 body.chat-open .chat-backdrop { display: block; }
 
 @media (max-width: 900px) {
+  /* Mobile: chat overlays; keep main full width. */
   body.chat-open main {
-    padding-right: 0;
+    max-width: 1080px;
+    margin-left: auto;
+    margin-right: auto;
   }
   .chat-panel {
     width: min(100vw, 420px);
