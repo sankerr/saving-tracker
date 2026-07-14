@@ -895,8 +895,10 @@ body.chat-available main {
   body.chat-open main {
     max-width: min(1480px, calc(100vw - var(--chat-panel-width) - 1.5rem));
     width: 100%;
-    margin-inline-start: 0;
-    margin-inline-end: var(--chat-panel-width);
+    /* Panel is always physically docked right (both LTR and RTL),
+       so reserve the gap on the physical right regardless of text direction. */
+    margin-left: 0;
+    margin-right: var(--chat-panel-width);
     padding-inline: clamp(1rem, 2.5vw, 1.75rem);
     box-sizing: border-box;
   }
