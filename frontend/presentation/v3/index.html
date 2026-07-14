@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Saving Tracker — Deck</title>
+<style>
+/* ============================================================
+   Saving Tracker — standalone slide deck · v3
+   Full-bleed image slideshow (12 rendered slides). Self-contained,
+   no external deps. Keyboard / click / touch nav, fullscreen, mobile.
+   ============================================================ */
+:root {
+  --bg: #070b16;
+  --accent: #8AA0FF;
+  --muted: #8891ad;
+  --border: rgba(255,255,255,0.14);
+  --surface: rgba(255,255,255,0.06);
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: #fff;
+  font-family: var(--font); overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background:
+    radial-gradient(1200px 700px at 15% -10%, rgba(80,110,220,0.18), transparent 55%),
+    radial-gradient(1200px 700px at 85% 110%, rgba(60,200,180,0.12), transparent 55%),
+    var(--bg);
+}
+
+#stage { position: fixed; inset: 0; display: grid; place-items: center; }
+.slide {
+  position: absolute; inset: 0;
+  display: none; place-items: center;
+  opacity: 0; transition: opacity 0.35s ease;
+  padding: 0;
+}
+.slide.active { display: grid; opacity: 1; }
+.slide img {
+  max-width: 100%; max-height: 100%;
+  width: auto; height: auto;
+  object-fit: contain; display: block;
+  box-shadow: 0 30px 90px rgba(0,0,0,0.55);
+}
+
+#progress {
+  position: fixed; top: 0; inset-inline: 0; height: 3px; z-index: 20;
+  background: linear-gradient(90deg, #8B7BF6, #43D6E8, #34E5A4);
+  width: 0; transition: width 0.35s ease; box-shadow: 0 0 14px rgba(67,214,232,0.5);
+}
+#counter {
+  position: fixed; bottom: 16px; inset-inline-end: 20px; z-index: 20;
+  font-size: 13px; color: var(--muted); direction: ltr;
+  font-variant-numeric: tabular-nums;
+}
+.nav-btn {
+  position: fixed; bottom: 14px; z-index: 20;
+  width: 42px; height: 42px; border-radius: 11px;
+  border: 1px solid var(--border); color: #fff;
+  background: var(--surface);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  font-size: 20px; cursor: pointer; display: grid; place-items: center;
+}
+.nav-btn:hover { border-color: var(--accent); }
+.nav-btn:disabled { opacity: 0.35; cursor: default; }
+#prev { inset-inline-start: 20px; }
+#next { inset-inline-start: 70px; }
+#fs {
+  position: fixed; top: 14px; inset-inline-end: 16px; z-index: 20;
+  width: 40px; height: 40px; border-radius: 10px;
+  border: 1px solid var(--border); color: #fff; background: var(--surface);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  cursor: pointer; display: grid; place-items: center; font-size: 17px;
+}
+#fs:hover { border-color: var(--accent); }
+.hint {
+  position: fixed; bottom: 20px; inset-inline: 0; text-align: center;
+  font-size: 12px; color: var(--muted); z-index: 10; pointer-events: none;
+}
+
+@media (max-width: 820px) {
+  .slide { padding: 0 6px; }
+  .slide img { box-shadow: 0 14px 40px rgba(0,0,0,0.5); border-radius: 8px; }
+  .hint { display: none; }
+  #counter { bottom: 12px; inset-inline-end: 12px; }
+  .nav-btn { bottom: 12px; width: 48px; height: 48px; font-size: 22px; }
+  #prev { inset-inline-start: 12px; }
+  #next { inset-inline-start: 68px; }
+  #fs { top: 10px; inset-inline-end: 12px; }
+}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<button id="fs" type="button" aria-label="Toggle fullscreen">⛶</button>
+<div id="stage">
+  <div class="slide"><img src="slides/slide1.png" alt="Slide 1 — The cure for the spreadsheet headache"></div>
+  <div class="slide"><img src="slides/slide2.png" alt="Slide 2 — How much will I actually have?"></div>
+  <div class="slide"><img src="slides/slide3.png" alt="Slide 3"></div>
+  <div class="slide"><img src="slides/slide4.png" alt="Slide 4"></div>
+  <div class="slide"><img src="slides/slide5.png" alt="Slide 5"></div>
+  <div class="slide"><img src="slides/slide6.png" alt="Slide 6 — Live gemelnet yields"></div>
+  <div class="slide"><img src="slides/slide7.png" alt="Slide 7"></div>
+  <div class="slide"><img src="slides/slide8.png" alt="Slide 8"></div>
+  <div class="slide"><img src="slides/slide9.png" alt="Slide 9"></div>
+  <div class="slide"><img src="slides/slide10.png" alt="Slide 10"></div>
+  <div class="slide"><img src="slides/slide11.png" alt="Slide 11"></div>
+  <div class="slide"><img src="slides/slide12.png" alt="Slide 12 — Ready to cure the spreadsheet headache?"></div>
+</div>
+
+<button class="nav-btn" id="prev" aria-label="Previous slide">‹</button>
+<button class="nav-btn" id="next" aria-label="Next slide">›</button>
+<div id="counter">1 / 1</div>
+<div class="hint">← → · Space · Home/End · F fullscreen</div>
+
+<script>
+(function () {
+  'use strict';
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var progress = document.getElementById('progress');
+  var counter = document.getElementById('counter');
+  var prevBtn = document.getElementById('prev');
+  var nextBtn = document.getElementById('next');
+  var fsBtn = document.getElementById('fs');
+  var idx = 0;
+
+  // Preload every slide so navigation is instant.
+  slides.forEach(function (s) {
+    var src = s.querySelector('img').getAttribute('src');
+    var im = new Image(); im.src = src;
+  });
+
+  function clamp(n) { return Math.max(0, Math.min(slides.length - 1, n)); }
+  function render() {
+    slides.forEach(function (s, i) { s.classList.toggle('active', i === idx); });
+    counter.textContent = (idx + 1) + ' / ' + slides.length;
+    progress.style.width = (slides.length > 1 ? (idx / (slides.length - 1)) * 100 : 100) + '%';
+    prevBtn.disabled = idx === 0;
+    nextBtn.disabled = idx === slides.length - 1;
+    if (location.hash !== '#' + (idx + 1)) history.replaceState(null, '', '#' + (idx + 1));
+  }
+  function go(n) { idx = clamp(n); render(); }
+  function next() { go(idx + 1); }
+  function prev() { go(idx - 1); }
+
+  nextBtn.addEventListener('click', function (e) { e.stopPropagation(); next(); });
+  prevBtn.addEventListener('click', function (e) { e.stopPropagation(); prev(); });
+  fsBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || function(){})(); }
+    else if (document.exitFullscreen) { document.exitFullscreen(); }
+  });
+
+  document.getElementById('stage').addEventListener('click', function (e) {
+    if (e.target.closest('.nav-btn, #fs')) return;
+    if (e.clientX > window.innerWidth / 2) next(); else prev();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    switch (e.key) {
+      case 'ArrowRight': case ' ': case 'PageDown': next(); e.preventDefault(); break;
+      case 'ArrowLeft': case 'PageUp': prev(); e.preventDefault(); break;
+      case 'Home': go(0); break;
+      case 'End': go(slides.length - 1); break;
+      case 'f': case 'F':
+        if (!document.fullscreenElement) { (document.documentElement.requestFullscreen || function(){})(); }
+        else if (document.exitFullscreen) { document.exitFullscreen(); }
+        break;
+    }
+  });
+
+  // Touch swipe on phones.
+  var tsx = 0, tsy = 0;
+  document.addEventListener('touchstart', function (e) {
+    tsx = e.changedTouches[0].clientX; tsy = e.changedTouches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    var dx = e.changedTouches[0].clientX - tsx;
+    var dy = e.changedTouches[0].clientY - tsy;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) { dx < 0 ? next() : prev(); }
+  }, { passive: true });
+
+  window.addEventListener('hashchange', function () {
+    var n = parseInt(location.hash.slice(1), 10);
+    if (!isNaN(n)) go(n - 1);
+  });
+
+  var start = parseInt(location.hash.slice(1), 10);
+  idx = isNaN(start) ? 0 : clamp(start - 1);
+  render();
+})();
+</script>
+</body>
+</html>
