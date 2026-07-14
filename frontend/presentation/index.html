@@ -113,8 +113,10 @@ small { color: var(--st-muted); font-size: 15px; }
 .split li { font-size: 21px; color: var(--st-text); }
 
 .shot {
-  width: 100%; border-radius: 14px; border: 1px solid var(--st-border);
+  width: 100%; height: auto; max-height: 66vh; object-fit: contain;
+  border-radius: 14px; border: 1px solid var(--st-border);
   box-shadow: 0 24px 60px rgba(0,0,0,0.5); background: var(--st-surface); display: block;
+  margin-inline: auto;
 }
 .placeholder {
   display: grid; place-items: center; min-height: 340px; border-radius: 14px;
