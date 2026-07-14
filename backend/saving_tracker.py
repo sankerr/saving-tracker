@@ -929,16 +929,32 @@ def run_scheduled_sync_for_all_users() -> dict:
             after = latest_published_period()
             entry["after"] = after
             last_notified = int(CACHE.get("last_notified_period") or 0)
+            new_yield = None
             if after and after > last_notified and after > (before or 0):
-                synced_at = CACHE.get("last_full_sync_at") or now_iso()
-                if notify.send_new_month_email(to=to_email, period_yyyymm=after, synced_at=synced_at):
-                    with _cache_lock:
-                        CACHE["last_notified_period"] = after
-                    save_cache()
-                    entry["notified"] = True
+                new_yield = after
+                with _cache_lock:
+                    CACHE["last_notified_period"] = after
+                save_cache()
+
+            synced_at = CACHE.get("last_full_sync_at") or now_iso()
+            try:
+                state = compose_state(24, None)
+            except Exception as ex:
+                entry["sync_error"] = f"compose_state failed: {ex}"
+                results.append(entry)
+                print(f"cron sync: compose failed user_id={user_id}: {ex}")
+                continue
+
+            if notify.send_daily_insight_email(
+                to=to_email,
+                state=state,
+                synced_at=synced_at,
+                new_yield_period=new_yield,
+            ):
+                entry["notified"] = True
             print(
                 f"cron sync: finished user_id={user_id} before={entry['before']} "
-                f"after={entry['after']} notified={entry['notified']} "
+                f"after={entry['after']} new_yield={new_yield} notified={entry['notified']} "
                 f"sync_error={entry['sync_error']}"
             )
         except Exception as ex:

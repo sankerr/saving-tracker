@@ -48,9 +48,13 @@ Future value / profit questions (e.g. "what will my profit be in May 2030?"):
 3. After the tool returns, explain projected total, change vs today, and assumptions. Never invent projected numbers.
 4. Say clearly that projections are estimates, not guarantees, and not tax/financial advice.
 
+When asked what the app can do / how to use it:
+- Call describe_backend_apis if helpful, then explain in plain language: track gemelnet/provident funds, pension (separate), RSU, ESPP, cash; dashboard projections/what-if; spot-check; sync; AI chat for questions and projections. Keep it short and numbered.
+
 Guidelines:
 - Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP.
-- Suggest concrete educational improvements when asked. Keep replies concise.
+- Suggest concrete educational improvements when asked (allocation, concentration, contributions, vesting, growth assumptions). Keep replies concise.
+- Do NOT discuss management fees, deposit fees, or "~mgmt fees paid" as features of this app — the app does not calculate fees for advice. Prefer allocation and growth topics instead.
 - Match the user's language (Hebrew or English).
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
 - This app does not model Israeli tax. Dashboard total excludes pension (tracked separately)."""
@@ -159,14 +163,9 @@ def _holding_summary(h: dict, kind: str) -> dict:
         "last_month_return_pct": _round_or_none(computed.get("last_month_return_pct"), 4),
         "ytd_return_pct": _round_or_none(computed.get("ytd_return_pct"), 4),
         "twelve_m_return_pct": _round_or_none(computed.get("twelve_m_return_pct"), 4),
-        "cumulative_mgmt_fee_ils": _round_or_none(computed.get("cumulative_mgmt_fee_ils")),
         "last_period": computed.get("last_period"),
     }
     if metrics:
-        out["avg_annual_management_fee_pct"] = _round_or_none(
-            metrics.get("avg_annual_management_fee_pct"), 4
-        )
-        out["avg_deposit_fee_pct"] = _round_or_none(metrics.get("avg_deposit_fee_pct"), 4)
         out["specialization"] = metrics.get("specialization")
         out["stock_market_exposure_pct"] = _round_or_none(
             metrics.get("stock_market_exposure_pct"), 2
@@ -666,3 +665,53 @@ def run_chat(
     except Exception as ex:
         return {"ok": False, "error": str(ex)}
     return {"ok": True, "reply": reply, "model": _gemini_model()}
+
+
+DAILY_INSIGHTS_PROMPT = """You write a short daily email insight for a personal Israeli savings tracker.
+Use ONLY the portfolio JSON provided. Educational only — not financial, tax, or legal advice.
+Do NOT discuss management fees or deposit fees. Focus on allocation, recent returns if present, concentration, vesting/RSU/ESPP, cash buffer, and one optional observation about growth.
+Write 3 short bullet points (plain text with leading "- "). Max ~80 words total. Match the language of any Hebrew nicknames if the data is mostly Hebrew; otherwise English."""
+
+
+def generate_daily_insights(context: dict) -> str:
+    """One-shot Gemini text for daily email. Requires GEMINI_API_KEY only (not CHAT_ENABLED)."""
+    api_key = _gemini_api_key()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not configured")
+
+    model = _gemini_model()
+    context_json = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+    body = {
+        "systemInstruction": {"parts": [{"text": DAILY_INSIGHTS_PROMPT}]},
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": (
+                            "Write today's portfolio insights from this JSON:\n"
+                            f"{context_json}"
+                        )
+                    }
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": 280,
+        },
+    }
+    r = requests.post(
+        GEMINI_URL.format(model=model),
+        params={"key": api_key},
+        headers={"Content-Type": "application/json"},
+        json=body,
+        timeout=REQUEST_TIMEOUT,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:400]}")
+    parts = _extract_candidate_parts(r.json())
+    text = _parts_text(parts)
+    if not text:
+        raise RuntimeError("Gemini returned empty insights")
+    return text
