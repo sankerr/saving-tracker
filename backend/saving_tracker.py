@@ -17,6 +17,9 @@ Env:
     CORS_ORIGIN        Frontend origin, e.g. https://your-app.pages.dev
     ADMIN_USERNAME     Seed user on first boot (optional if user exists)
     ADMIN_PASSWORD     Seed password on first boot
+    CHAT_ENABLED       Set true to enable portfolio AI chat (requires GEMINI_API_KEY)
+    GEMINI_API_KEY     Google AI Studio API key for Gemini chat
+    GEMINI_MODEL       Optional model id (default: gemini-3.1-flash-lite)
 
 Usage:
     ./saving-tracker.py           # or: python3 saving-tracker.py
@@ -50,6 +53,7 @@ from urllib.parse import parse_qs, urlparse
 import requests
 
 import auth
+import chat as portfolio_chat
 import db
 import notify
 
@@ -3706,6 +3710,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(200, {"ok": True, "status": dict(_sync_status)})
             return
 
+        if path == "/api/chat/status":
+            self._json(200, {
+                "ok": True,
+                "enabled": portfolio_chat.chat_enabled(),
+            })
+            return
+
         if path == "/api/export":
             with _data_lock:
                 body = json.dumps(DATA, ensure_ascii=False, indent=2).encode("utf-8")
@@ -3804,6 +3815,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             _activate_user(user_id)
 
         try:
+            if method == "POST" and path == "/api/chat":
+                if not portfolio_chat.chat_enabled():
+                    self._json(404, {"ok": False, "error": "chat_disabled"})
+                    return
+                try:
+                    state = compose_state(24, None)
+                    result = portfolio_chat.run_chat(state, body.get("messages"))
+                except Exception as ex:
+                    self._json(500, {"ok": False, "error": str(ex)})
+                    return
+                if not result.get("ok"):
+                    code = 404 if result.get("error") == "chat_disabled" else 400
+                    self._json(code, result)
+                    return
+                self._json(200, result)
+                return
+
             if method == "POST" and path == "/api/sync":
                 # Run sync synchronously in a worker thread; the request waits.
                 # Simpler than streaming for v1.

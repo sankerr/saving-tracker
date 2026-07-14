@@ -23,5 +23,11 @@ services:
         sync: false
       - key: NOTIFY_FROM
         sync: false
+      - key: CHAT_ENABLED
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
       - key: NO_BROWSER
         value: "1"

@@ -17,3 +17,5 @@ data/
 # Env secrets
 .env
 .env.*
+.fly/
+.cursor/rules/fly-decision-records.mdc
