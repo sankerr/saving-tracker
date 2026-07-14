@@ -255,7 +255,7 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
     <!-- 6. Dashboard -->
     <section class="slide">
       <div class="split">
-        <div><img class="shot" src="assets/dashboard.png" alt="Dashboard"></div>
+        <div><img class="shot" data-shot="dashboard" src="assets/en/dashboard.png" alt="Dashboard"></div>
         <div>
           <span class="eyebrow" data-i18n="eyebrow.dashboard">Dashboard</span>
           <h2 data-i18n="dash.title">Your whole net worth, forward</h2>
@@ -282,14 +282,14 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
             <li data-i18n="funds.b4">Pension tracked separately — excluded from the spendable total</li>
           </ul>
         </div>
-        <div><img class="shot" src="assets/funds.png" alt="Funds and pension"></div>
+        <div><img class="shot" data-shot="funds" src="assets/en/funds.png" alt="Funds and pension"></div>
       </div>
     </section>
 
     <!-- 8. RSU & ESPP -->
     <section class="slide">
       <div class="split">
-        <div><img class="shot" src="assets/rsu.png" alt="RSU and ESPP"></div>
+        <div><img class="shot" data-shot="rsu" src="assets/en/rsu.png" alt="RSU and ESPP"></div>
         <div>
           <span class="eyebrow" data-i18n="eyebrow.equity">Equity</span>
           <h2 data-i18n="rsu.title">RSU &amp; ESPP, priced live</h2>
@@ -315,14 +315,14 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
             <li data-i18n="retire.b3">Standalone what-if — nothing is saved to your account</li>
           </ul>
         </div>
-        <div><img class="shot" src="assets/retirement-sim.png" alt="Retirement simulator"></div>
+        <div><img class="shot" data-shot="retirement-sim" src="assets/en/retirement-sim.png" alt="Retirement simulator"></div>
       </div>
     </section>
 
     <!-- 10. AI chat -->
     <section class="slide bg-accent">
       <div class="split">
-        <div><img class="shot" src="assets/ai-chat.png" alt="AI portfolio chat"></div>
+        <div><img class="shot" data-shot="ai-chat" src="assets/en/ai-chat.png" alt="AI portfolio chat"></div>
         <div>
           <span class="eyebrow" data-i18n="eyebrow.signature">Signature feature</span>
           <h2 data-i18n="chat.title">Ask your portfolio anything</h2>
@@ -490,19 +490,35 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
       var val = (lang === 'he' && STRINGS.he[key] != null) ? STRINGS.he[key] : EN[key];
       if (val != null) el.innerHTML = val;
     });
+    shotNodes.forEach(function (img) {
+      var name = img.getAttribute('data-shot');
+      if (name) img.src = 'assets/' + lang + '/' + name + '.png';
+    });
     langBtn.textContent = lang === 'he' ? 'EN' : 'עב';
     try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
   }
   function toggleLang() { applyLang(getLang() === 'he' ? 'en' : 'he'); }
 
-  // Missing screenshots -> styled placeholder (offline-safe).
-  document.querySelectorAll('img.shot').forEach(function (img) {
-    img.addEventListener('error', function () {
-      var ph = document.createElement('div');
-      ph.className = 'placeholder';
-      ph.textContent = (img.getAttribute('alt') || 'screenshot') + ' — assets/' + img.getAttribute('src').split('/').pop();
-      img.replaceWith(ph);
-    });
+  // Missing screenshots -> styled placeholder (offline-safe, retries on lang swap).
+  var shotNodes = Array.prototype.slice.call(document.querySelectorAll('img.shot'));
+  shotNodes.forEach(function (img) {
+    var ph = document.createElement('div');
+    ph.className = 'placeholder';
+    ph.style.display = 'none';
+    img.parentNode.insertBefore(ph, img.nextSibling);
+    function showError() {
+      ph.textContent = (img.getAttribute('alt') || 'screenshot') + ' — ' + (img.getAttribute('src') || '');
+      ph.style.display = '';
+      img.style.display = 'none';
+    }
+    function showImage() {
+      ph.style.display = 'none';
+      img.style.display = '';
+    }
+    img.addEventListener('error', showError);
+    img.addEventListener('load', showImage);
+    // Handle images that already finished loading before listeners attached (cache).
+    if (img.complete) { (img.naturalWidth > 0 ? showImage : showError)(); }
   });
 
   function clamp(n) { return Math.max(0, Math.min(slides.length - 1, n)); }
