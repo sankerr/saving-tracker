@@ -855,6 +855,12 @@ h2 {
   color: var(--color-danger); font-size: 0.875rem;
   margin-bottom: 1rem; min-height: 1.25rem;
 }
+.tour-link {
+  font-size: 0.8125rem; font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.tour-link:hover { text-decoration: underline; color: var(--color-primary-strong); }
 
 .disclaimer-banner {
   background: var(--color-surface);
@@ -1337,6 +1343,9 @@ html[dir="rtl"] .chat-panel {
     <p id="forgot-password-note" data-i18n="auth.forgotNote" style="margin:0.75rem 0 0;font-size:0.8125rem;text-align:center;color:var(--color-muted);line-height:1.45;">
       Forgot password? Sign in with a new account or ask your admin to reset it in the database.
     </p>
+    <p style="margin:1rem 0 0;padding-top:0.85rem;border-top:1px solid var(--color-border);text-align:center;">
+      <a href="presentation/" id="tour-link" class="tour-link" data-i18n="auth.viewTour" target="_blank" rel="noopener">New here? Take a 2-minute tour →</a>
+    </p>
   </div>
 </div>
 <main id="app-main">
@@ -1423,7 +1432,7 @@ html[dir="rtl"] .chat-panel {
     <p id="range-summary" hidden style="margin:0.5rem 0 0 0; padding:0.5rem 0.875rem;
         background:rgb(110 95 224 / 0.08); border-left:3px solid var(--color-primary);
         border-radius:var(--radius-sm); font-size:0.875rem;"></p>
-    <p class="chart-caption">Default view shows the current month forward through your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.</p>
+    <p class="chart-caption" data-i18n="dashboard.caption">Default view shows the current month forward through your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.</p>
   </section>
 
   <section class="card" id="funds-card">
@@ -1434,38 +1443,38 @@ html[dir="rtl"] .chat-panel {
     <div id="funds-list" class="holdings-list"></div>
     <div id="add-fund-panel" class="add-panel" hidden>
       <div class="field">
-        <label for="fund-search">Search by name, manager, or FUND_ID</label>
+        <label for="fund-search" data-i18n="common.searchFund">Search by name, manager, or FUND_ID</label>
         <input type="text" id="fund-search" autocomplete="off" placeholder="מגדל, הראל, 76…">
-        <div style="font-size:0.75rem; color:var(--color-muted); margin-top:0.25rem;">Includes קופת גמל, קרן השתלמות, and פוליסות חיסכון (ביטוח-נט).</div>
+        <div style="font-size:0.75rem; color:var(--color-muted); margin-top:0.25rem;" data-i18n="funds.searchHint">Includes קופת גמל, קרן השתלמות, and פוליסות חיסכון (ביטוח-נט).</div>
       </div>
       <div id="fund-search-results"></div>
       <div id="fund-selected-row" hidden>
         <div class="field-grid">
           <div class="field">
-            <label>Selected fund</label>
+            <label data-i18n="common.selectedFund">Selected fund</label>
             <div id="fund-selected-pill"></div>
           </div>
           <div class="field">
-            <label for="fund-nickname">Nickname</label>
+            <label for="fund-nickname" data-i18n="common.nickname">Nickname</label>
             <input type="text" id="fund-nickname" placeholder="הקרן הראשית">
           </div>
           <div class="field">
-            <label for="fund-balance">Balance (₪)</label>
+            <label for="fund-balance" data-i18n="common.balanceIls">Balance (₪)</label>
             <input type="number" id="fund-balance" min="0" step="0.01" placeholder="250000">
-            <div style="font-size:0.75rem; color:var(--color-muted); margin-top:0.25rem;">Use 0 if you're just starting this fund.</div>
+            <div style="font-size:0.75rem; color:var(--color-muted); margin-top:0.25rem;" data-i18n="funds.balanceHint">Use 0 if you're just starting this fund.</div>
           </div>
           <div class="field">
-            <label for="fund-anchor-period">As of period</label>
+            <label for="fund-anchor-period" data-i18n="common.asOfPeriod">As of period</label>
             <select id="fund-anchor-period" disabled>
-              <option>loading…</option>
+              <option data-i18n="common.loadingOption">loading…</option>
             </select>
           </div>
           <div class="field field--inline">
             <input type="checkbox" id="fund-net-of-fees" checked>
-            <label for="fund-net-of-fees">MONTHLY_YIELD is net of fees</label>
+            <label for="fund-net-of-fees" data-i18n="common.netOfFees">MONTHLY_YIELD is net of fees</label>
           </div>
         </div>
-        <p class="chart-caption" id="fund-anchor-hint">
+        <p class="chart-caption" id="fund-anchor-hint" data-i18n="funds.anchorHint">
           Pick the month your reported balance is for. Most pension/provident
           statements are end-of-previous-month — that's the default.
         </p>
@@ -1482,9 +1491,9 @@ html[dir="rtl"] .chat-panel {
       <h2><span data-i18n="section.pension">Pension</span> <span class="h2-count" id="pension-count">0</span> <button class="help-btn" data-help="pension" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.pension.title" title="What is this section?" aria-label="About Pension">?</button></h2>
       <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
         <span class="subtotal-pill" id="pension-subtotal-pill" hidden>
-          <span class="subtotal-pill__label">Subtotal</span>
+          <span class="subtotal-pill__label" data-i18n="pension.subtotal">Subtotal</span>
           <span class="subtotal-pill__value" id="pension-subtotal-value">₪ 0</span>
-          <span class="subtotal-pill__sub">excluded from dashboard total</span>
+          <span class="subtotal-pill__sub" data-i18n="pension.excludedFromTotal">excluded from dashboard total</span>
         </span>
         <button class="btn btn--primary btn--small" id="add-pension-btn" data-i18n="pension.add">+ Add pension</button>
       </div>
@@ -1495,36 +1504,36 @@ html[dir="rtl"] .chat-panel {
     <div id="pension-list" class="holdings-list"></div>
     <div id="add-pension-panel" class="add-panel" hidden>
       <div class="field">
-        <label for="pension-search">Search by name, manager, or FUND_ID</label>
+        <label for="pension-search" data-i18n="common.searchFund">Search by name, manager, or FUND_ID</label>
         <input type="text" id="pension-search" autocomplete="off" placeholder="מיטב, הראל, הפניקס, 1560...">
       </div>
       <div id="pension-search-results"></div>
       <div id="pension-selected-row" hidden>
         <div class="field-grid">
           <div class="field">
-            <label>Selected fund</label>
+            <label data-i18n="common.selectedFund">Selected fund</label>
             <div id="pension-selected-pill"></div>
           </div>
           <div class="field">
-            <label for="pension-nickname">Nickname</label>
+            <label for="pension-nickname" data-i18n="common.nickname">Nickname</label>
             <input type="text" id="pension-nickname" placeholder="הפנסיה שלי">
           </div>
           <div class="field">
-            <label for="pension-balance">Balance (₪)</label>
+            <label for="pension-balance" data-i18n="common.balanceIls">Balance (₪)</label>
             <input type="number" id="pension-balance" min="0" step="0.01" placeholder="350000">
           </div>
           <div class="field">
-            <label for="pension-anchor-period">As of period</label>
+            <label for="pension-anchor-period" data-i18n="common.asOfPeriod">As of period</label>
             <select id="pension-anchor-period" disabled>
-              <option>loading…</option>
+              <option data-i18n="common.loadingOption">loading…</option>
             </select>
           </div>
           <div class="field field--inline">
             <input type="checkbox" id="pension-net-of-fees" checked>
-            <label for="pension-net-of-fees">MONTHLY_YIELD is net of fees</label>
+            <label for="pension-net-of-fees" data-i18n="common.netOfFees">MONTHLY_YIELD is net of fees</label>
           </div>
         </div>
-        <p class="chart-caption">
+        <p class="chart-caption" data-i18n="pension.anchorHint">
           Same anchor convention as Funds. v1 doesn't model recurring payroll deposits — re-anchor periodically when you get a new statement.
         </p>
       </div>
@@ -1591,48 +1600,48 @@ html[dir="rtl"] .chat-panel {
     <div id="add-rsu-panel" class="add-panel" hidden>
       <div class="field-grid">
         <div class="field" style="grid-column: 1 / -1">
-          <label for="rsu-ticker-search">Ticker (search by symbol or company name)</label>
+          <label for="rsu-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
           <input type="text" id="rsu-ticker-search" placeholder="apple, microsoft, AAPL…" autocomplete="off">
           <div id="rsu-ticker-results"></div>
           <div id="rsu-ticker-selected" hidden style="margin-top:0.4rem"></div>
         </div>
         <div class="field">
-          <label for="rsu-nickname">Nickname</label>
+          <label for="rsu-nickname" data-i18n="common.nickname">Nickname</label>
           <input type="text" id="rsu-nickname" placeholder="Q1 2024 grant">
         </div>
         <div class="field">
-          <label for="rsu-grant-date">Grant date</label>
+          <label for="rsu-grant-date" data-i18n="rsu.grantDate">Grant date</label>
           <input type="date" id="rsu-grant-date">
         </div>
         <div class="field">
-          <label for="rsu-shares">Total shares</label>
+          <label for="rsu-shares" data-i18n="rsu.totalShares">Total shares</label>
           <input type="number" id="rsu-shares" min="1" step="1" placeholder="1200">
         </div>
         <div class="field">
-          <label for="rsu-vesting-start">Vesting start</label>
+          <label for="rsu-vesting-start" data-i18n="rsu.vestingStart">Vesting start</label>
           <input type="date" id="rsu-vesting-start">
         </div>
         <div class="field">
-          <label for="rsu-vesting-months">Vesting months</label>
+          <label for="rsu-vesting-months" data-i18n="rsu.vestingMonths">Vesting months</label>
           <input type="number" id="rsu-vesting-months" min="1" step="1" value="48">
         </div>
         <div class="field">
-          <label for="rsu-cliff-months">Cliff months</label>
+          <label for="rsu-cliff-months" data-i18n="rsu.cliffMonths">Cliff months</label>
           <input type="number" id="rsu-cliff-months" min="0" step="1" value="12">
         </div>
         <div class="field">
-          <label for="rsu-cadence">Cadence</label>
+          <label for="rsu-cadence" data-i18n="rsu.cadence">Cadence</label>
           <select id="rsu-cadence">
-            <option value="monthly" selected>monthly</option>
-            <option value="quarterly">quarterly</option>
+            <option value="monthly" selected data-i18n="rsu.cadence.monthly">monthly</option>
+            <option value="quarterly" data-i18n="rsu.cadence.quarterly">quarterly</option>
           </select>
         </div>
         <div class="field">
-          <label for="rsu-grant-price-override">Grant price override (USD/share)</label>
-          <input type="number" id="rsu-grant-price-override" min="0" step="0.0001" placeholder="blank = market close on grant date">
+          <label for="rsu-grant-price-override" data-i18n="rsu.grantPriceOverride">Grant price override (USD/share)</label>
+          <input type="number" id="rsu-grant-price-override" min="0" step="0.0001" data-i18n-placeholder="rsu.grantPricePlaceholder" placeholder="blank = market close on grant date">
         </div>
       </div>
-      <p class="chart-caption">Override only if your company reported a different FMV (e.g. 30-day average or board-approved value). Leave blank to use Yahoo's closing price on the grant date — that's the cost basis Yahoo and most US brokers use.</p>
+      <p class="chart-caption" data-i18n="rsu.overrideHint">Override only if your company reported a different FMV (e.g. 30-day average or board-approved value). Leave blank to use Yahoo's closing price on the grant date — that's the cost basis Yahoo and most US brokers use.</p>
       <div class="actions-row">
         <button class="btn btn--ghost btn--small" id="add-rsu-cancel" data-i18n="common.cancel">Cancel</button>
         <button class="btn btn--primary btn--small" id="add-rsu-save" data-i18n="rsu.save">Save grant</button>
@@ -1649,27 +1658,27 @@ html[dir="rtl"] .chat-panel {
     <div id="add-espp-panel" class="add-panel" hidden>
       <div class="field-grid">
         <div class="field" style="grid-column: 1 / -1">
-          <label for="espp-ticker-search">Ticker (search by symbol or company name)</label>
+          <label for="espp-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
           <input type="text" id="espp-ticker-search" placeholder="apple, microsoft, AAPL…" autocomplete="off">
           <div id="espp-ticker-results"></div>
           <div id="espp-ticker-selected" hidden style="margin-top:0.4rem"></div>
         </div>
         <div class="field">
-          <label for="espp-nickname">Nickname</label>
+          <label for="espp-nickname" data-i18n="common.nickname">Nickname</label>
           <input type="text" id="espp-nickname" placeholder="Employer ESPP">
         </div>
         <div class="field">
-          <label for="espp-discount">Discount %</label>
+          <label for="espp-discount" data-i18n="espp.discount">Discount %</label>
           <input type="number" id="espp-discount" min="0" max="50" step="0.5" value="15">
         </div>
         <div class="field">
-          <label for="espp-offering">Offering length (months)</label>
+          <label for="espp-offering" data-i18n="espp.offering">Offering length (months)</label>
           <input type="number" id="espp-offering" min="1" max="24" step="1" value="6">
         </div>
         <div class="field" style="grid-column: 1 / -1">
           <label class="form-checkbox" style="font-size:0.875rem">
             <input type="checkbox" id="espp-lookback" checked>
-            <span>Plan has lookback (discount applied to lower of period-start / period-end price)</span>
+            <span data-i18n="espp.lookback">Plan has lookback (discount applied to lower of period-start / period-end price)</span>
           </label>
         </div>
       </div>
@@ -1689,22 +1698,22 @@ html[dir="rtl"] .chat-panel {
     <div id="add-cash-panel" class="add-panel" hidden>
       <div class="field-grid">
         <div class="field">
-          <label for="cash-nickname">Nickname</label>
+          <label for="cash-nickname" data-i18n="common.nickname">Nickname</label>
           <input type="text" id="cash-nickname" placeholder="Bank Hapoalim checking">
         </div>
         <div class="field">
-          <label for="cash-amount">Amount</label>
+          <label for="cash-amount" data-i18n="cash.amount">Amount</label>
           <input type="number" id="cash-amount" min="0" step="0.01" placeholder="50000">
         </div>
         <div class="field">
-          <label for="cash-currency">Currency</label>
+          <label for="cash-currency" data-i18n="cash.currency">Currency</label>
           <select id="cash-currency">
             <option value="ILS" selected>ILS</option>
             <option value="USD">USD</option>
           </select>
         </div>
         <div class="field">
-          <label for="cash-note">Note</label>
+          <label for="cash-note" data-i18n="cash.note">Note</label>
           <input type="text" id="cash-note">
         </div>
       </div>
