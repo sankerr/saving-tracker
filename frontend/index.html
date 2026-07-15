@@ -2377,7 +2377,7 @@ function drawDashboardChart() {
   // stacked Funds area outruns the "If funds grow X%/yr" line at conservative rates.
   let fundsFuture;
   if (wf && wf.paths && wf.paths.length) {
-    const holdings = (APP.fund_holdings || []).filter(h => !h.archived && h.what_if && h.what_if.paths);
+    const holdings = (APP.fund_holdings || []).filter(h => !h.archived && h.included_in_dashboard !== false && h.what_if && h.what_if.paths);
     fundsFuture = [];
     for (let i = 0; i < horizonMonths; i++) {
       fundsFuture.push(holdings.reduce((s, h) => s + (h.what_if.paths[i] || 0), 0));
@@ -2580,6 +2580,7 @@ function renderFundRow(h) {
   const lastPeriod = c.last_period;
   const lastMonthLabel = lastPeriod ? periodMonthShort(lastPeriod) : '';
   const archivedBadge = h.archived ? `<span class="badge badge--archived">archived</span>` : '';
+  const excludedBadge = h.included_in_dashboard === false ? `<span class="badge" style="background:rgb(148 163 184 / 0.18); color:var(--color-muted)">${t('funds.excludedBadge')}</span>` : '';
   const profitClass = (c.profit_ils || 0) >= 0 ? 'pos' : 'neg';
   const profitSign = (c.profit_ils || 0) >= 0 ? '+' : '';
   const srcBadge = h.data_source === 'insurance' ? `<span class="badge" style="background:rgb(110 95 224 / 0.12); color:var(--color-primary)">פוליסת חיסכון</span>` : '';
@@ -2587,7 +2588,7 @@ function renderFundRow(h) {
   <div class="holding-row" data-id="${h.id}" data-archived="${!!h.archived}" data-expanded="${expanded}">
     <div class="holding-row__head" data-toggle="fund:${h.id}">
       <div>
-        <p class="holding-row__title" dir="auto">${escapeHtml(h.nickname || h.fund_name_snapshot)} <span class="badge badge--funds">FUND ${h.fund_id}</span> ${srcBadge} ${archivedBadge}</p>
+        <p class="holding-row__title" dir="auto">${escapeHtml(h.nickname || h.fund_name_snapshot)} <span class="badge badge--funds">FUND ${h.fund_id}</span> ${srcBadge} ${archivedBadge} ${excludedBadge}</p>
         <p class="holding-row__sub" dir="auto">
           <span>${escapeHtml(h.fund_name_snapshot || '')}</span>
           <span class="holding-row__sub-sep">·</span>
@@ -2692,6 +2693,7 @@ function renderFundDetail(h) {
     <div class="actions-row" style="margin-top:1rem">
       <button class="btn btn--ghost btn--small" data-edit-nickname-fund="${h.id}">Rename</button>
       <button class="btn btn--ghost btn--small" data-edit-balance-fund="${h.id}">Edit anchor balance</button>
+      <button class="btn btn--ghost btn--small" data-toggle-dashboard-fund="${h.id}">${h.included_in_dashboard === false ? t('funds.includeInDashboard') : t('funds.excludeFromDashboard')}</button>
       <button class="btn btn--ghost btn--small" data-spot-check-fund="${h.id}">Spot-check yield ↗</button>
       <button class="btn btn--danger btn--small" data-delete-fund="${h.id}">Delete</button>
     </div>
@@ -3502,7 +3504,7 @@ function drawRsuStockHistoryChart(canvasId, grant) {
 
 function portfolioFundsAnnualPct(proj) {
   if (proj && proj.funds_annual_pct != null) return proj.funds_annual_pct;
-  const holdings = (APP.fund_holdings || []).filter((h) => !h.archived && h.projection?.annual_pct != null);
+  const holdings = (APP.fund_holdings || []).filter((h) => !h.archived && h.included_in_dashboard !== false && h.projection?.annual_pct != null);
   let total = 0;
   let weighted = 0;
   for (const h of holdings) {
@@ -4873,6 +4875,16 @@ function init() {
       if (v === null) return;
       const j = await api('PATCH', `/api/fund-holdings/${id}`, { anchor_balance_ils: +v });
       if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
+      return;
+    }
+    const toggleDashFundBtn = e.target.closest('[data-toggle-dashboard-fund]');
+    if (toggleDashFundBtn) {
+      const id = toggleDashFundBtn.dataset.toggleDashboardFund;
+      const h = APP.fund_holdings.find(x => x.id === id);
+      const nextIncluded = !(h.included_in_dashboard !== false);
+      const j = await api('PATCH', `/api/fund-holdings/${id}`, { included_in_dashboard: nextIncluded });
+      if (j.ok) { toast(nextIncluded ? t('funds.includedToast') : t('funds.excludedToast'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delPensionBtn = e.target.closest('[data-del-pension]');

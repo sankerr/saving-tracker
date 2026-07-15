@@ -2401,6 +2401,10 @@ def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_m
 
 def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_annual_pct=None, cash: list = None, espp: list = None) -> dict:
     espp = espp or []
+    # Funds toggled off from the dashboard are excluded from the headline total,
+    # the historical stack, the projection cone, and the what-if line. They stay
+    # visible in the Funds section. Missing flag means included (default on).
+    funds = [h for h in (funds or []) if h.get("included_in_dashboard", True)]
     # Build a unified monthly axis from earliest holding/grant/plan to today.
     if not funds and not grants and not espp:
         return {
@@ -2762,6 +2766,7 @@ def add_fund_holding(payload: dict) -> dict:
         "events": [],
         "recurring_rules": [],
         "archived": False,
+        "included_in_dashboard": True,
     }
     with _data_lock:
         DATA["fund_holdings"].append(holding)
@@ -2896,7 +2901,7 @@ def update_fund_holding(holding_id: str, patch: dict) -> dict:
     with _data_lock:
         for h in DATA["fund_holdings"]:
             if h["id"] == holding_id:
-                for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived"):
+                for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived", "included_in_dashboard"):
                     if k in patch:
                         h[k] = patch[k]
                 save_data()
