@@ -128,14 +128,26 @@ jobs:
               print(f"ERROR: cron job error: {status['error']}", file=sys.stderr)
               sys.exit(1)
           results = (status.get("results") or {}).get("users") or []
+          failed_notify = False
           for row in results:
               print(
                   f"user_id={row.get('user_id')} "
                   f"before={row.get('before')} after={row.get('after')} "
-                  f"notified={row.get('notified')} sync_error={row.get('sync_error')}"
+                  f"notified={row.get('notified')} "
+                  f"notify_error={row.get('notify_error')} "
+                  f"sync_error={row.get('sync_error')}"
               )
+              if row.get("sync_error"):
+                  print(f"ERROR: sync failed for user_id={row.get('user_id')}: {row.get('sync_error')}", file=sys.stderr)
+                  sys.exit(1)
+              if not row.get("notified"):
+                  failed_notify = True
+                  err = row.get("notify_error") or "email not sent (no error detail from server — redeploy backend)"
+                  print(f"ERROR: notify failed for user_id={row.get('user_id')}: {err}", file=sys.stderr)
           if not results:
               print("WARN: no approved users synced.")
+          if failed_notify:
+              sys.exit(1)
           PY
               exit 0
             fi

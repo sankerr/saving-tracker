@@ -9,6 +9,7 @@ COPY saving_tracker.py db.py auth.py notify.py chat.py .
 
 ENV PORT=8000
 ENV NO_BROWSER=1
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 

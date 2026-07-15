@@ -914,6 +914,7 @@ def run_scheduled_sync_for_all_users() -> dict:
             "before": None,
             "after": None,
             "notified": False,
+            "notify_error": None,
             "sync_error": None,
         }
         try:
@@ -945,17 +946,19 @@ def run_scheduled_sync_for_all_users() -> dict:
                 print(f"cron sync: compose failed user_id={user_id}: {ex}")
                 continue
 
-            if notify.send_daily_insight_email(
+            notify_result = notify.send_daily_insight_email(
                 to=to_email,
                 state=state,
                 synced_at=synced_at,
                 new_yield_period=new_yield,
-            ):
-                entry["notified"] = True
+            )
+            entry["notified"] = notify_result.ok
+            entry["notify_error"] = notify_result.error
             print(
                 f"cron sync: finished user_id={user_id} before={entry['before']} "
                 f"after={entry['after']} new_yield={new_yield} notified={entry['notified']} "
-                f"sync_error={entry['sync_error']}"
+                f"notify_error={entry['notify_error']} sync_error={entry['sync_error']}",
+                flush=True,
             )
         except Exception as ex:
             entry["sync_error"] = str(ex)

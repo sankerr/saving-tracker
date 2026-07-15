@@ -4,15 +4,31 @@ from __future__ import annotations
 
 import html
 import os
+from dataclasses import dataclass
 from typing import Any, Optional
 
 import requests
 
 import chat as portfolio_chat
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-NOTIFY_FROM = os.environ.get("NOTIFY_FROM", "")
 RESEND_URL = "https://api.resend.com/emails"
+
+
+@dataclass(frozen=True)
+class NotifyResult:
+    ok: bool
+    error: Optional[str] = None
+
+
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def _resend_config() -> tuple[str, str]:
+    """Read env at send time so redeploys / dashboard edits are picked up."""
+    key = (os.environ.get("RESEND_API_KEY") or "").strip()
+    from_addr = (os.environ.get("NOTIFY_FROM") or "").strip()
+    return key, from_addr
 
 
 def _period_label(period_yyyymm: int) -> str:
@@ -218,19 +234,27 @@ def _build_dashboard_html(
 </body></html>"""
 
 
-def _send_resend(*, to: str, subject: str, html_body: str) -> bool:
-    if not RESEND_API_KEY or not NOTIFY_FROM:
-        print(f"notify: skipping email to {to} — RESEND_API_KEY or NOTIFY_FROM not set")
-        return False
+def _send_resend(*, to: str, subject: str, html_body: str) -> NotifyResult:
+    api_key, notify_from = _resend_config()
+    if not api_key or not notify_from:
+        missing = []
+        if not api_key:
+            missing.append("RESEND_API_KEY")
+        if not notify_from:
+            missing.append("NOTIFY_FROM")
+        err = f"missing env: {', '.join(missing)}"
+        _log(f"notify: skipping email to {to} — {err}")
+        return NotifyResult(ok=False, error=err)
     try:
+        _log(f"notify: sending email to {to} subject={subject!r} from={notify_from!r}")
         r = requests.post(
             RESEND_URL,
             headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={
-                "from": NOTIFY_FROM,
+                "from": notify_from,
                 "to": [to],
                 "subject": subject,
                 "html": html_body,
@@ -238,12 +262,15 @@ def _send_resend(*, to: str, subject: str, html_body: str) -> bool:
             timeout=40,
         )
         if r.status_code >= 400:
-            print(f"notify: Resend error {r.status_code} for {to}: {r.text}")
-            return False
-        return True
+            err = f"Resend HTTP {r.status_code}: {r.text[:300]}"
+            _log(f"notify: {err} (to={to})")
+            return NotifyResult(ok=False, error=err)
+        _log(f"notify: sent email to {to} (HTTP {r.status_code})")
+        return NotifyResult(ok=True)
     except requests.RequestException as ex:
-        print(f"notify: failed to send email to {to}: {ex}")
-        return False
+        err = f"Resend request failed: {ex}"
+        _log(f"notify: {err} (to={to})")
+        return NotifyResult(ok=False, error=err)
 
 
 def send_daily_insight_email(
@@ -252,29 +279,34 @@ def send_daily_insight_email(
     state: dict,
     synced_at: str,
     new_yield_period: Optional[int] = None,
-) -> bool:
+) -> NotifyResult:
     """Daily snapshot + Gemini insights. Works with GEMINI_API_KEY (CHAT_ENABLED not required)."""
-    context = portfolio_chat.build_portfolio_context(state)
     try:
-        insights = portfolio_chat.generate_daily_insights(context)
+        context = portfolio_chat.build_portfolio_context(state)
+        try:
+            insights = portfolio_chat.generate_daily_insights(context)
+        except Exception as ex:
+            _log(f"notify: Gemini insights failed for {to}: {ex}")
+            insights = "Insights unavailable today — open Saving Tracker for the full dashboard."
+
+        subject = "Saving Tracker — daily snapshot"
+        if new_yield_period:
+            subject += f" · new yields {_period_label(new_yield_period)}"
+
+        html_body = _build_dashboard_html(
+            state=state,
+            synced_at=synced_at,
+            new_yield_period=new_yield_period,
+            insights_text=insights,
+        )
+        return _send_resend(to=to, subject=subject, html_body=html_body)
     except Exception as ex:
-        print(f"notify: Gemini insights failed for {to}: {ex}")
-        insights = "Insights unavailable today — open Saving Tracker for the full dashboard."
-
-    subject = "Saving Tracker — daily snapshot"
-    if new_yield_period:
-        subject += f" · new yields {_period_label(new_yield_period)}"
-
-    html_body = _build_dashboard_html(
-        state=state,
-        synced_at=synced_at,
-        new_yield_period=new_yield_period,
-        insights_text=insights,
-    )
-    return _send_resend(to=to, subject=subject, html_body=html_body)
+        err = f"daily insight build failed: {ex}"
+        _log(f"notify: {err} (to={to})")
+        return NotifyResult(ok=False, error=err)
 
 
-def send_new_month_email(*, to: str, period_yyyymm: int, synced_at: str) -> bool:
+def send_new_month_email(*, to: str, period_yyyymm: int, synced_at: str) -> NotifyResult:
     """Legacy simple new-yield notice (no portfolio snapshot). Prefer send_daily_insight_email."""
     period_label = _period_label(period_yyyymm)
     html_body = (
