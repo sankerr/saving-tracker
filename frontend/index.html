@@ -312,6 +312,10 @@ h2 {
 }
 .holding-row:hover { box-shadow: var(--shadow-sm); }
 .holding-row[data-archived="true"] { opacity: 0.55; }
+.funds-group-label {
+  margin: 1.125rem 0 0.5rem; font-size: 0.75rem; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-muted);
+}
 .holding-row__head {
   display: grid;
   grid-template-columns: 1fr auto auto;
@@ -2562,7 +2566,13 @@ function renderFunds() {
     list.innerHTML = `<div class="empty-state"><strong>No funds yet</strong>Add a Israeli pension/provident/study fund to start tracking.</div>`;
     return;
   }
-  list.innerHTML = holdings.map(h => renderFundRow(h)).join('');
+  // Keep dashboard-included funds on top; group excluded ones under a sub-header
+  // so they sink to the bottom of the list.
+  const included = holdings.filter(h => h.included_in_dashboard !== false);
+  const excluded = holdings.filter(h => h.included_in_dashboard === false);
+  const subhead = `<div class="funds-group-label">${escapeHtml(t('funds.excludedGroupLabel'))}</div>`;
+  list.innerHTML = included.map(h => renderFundRow(h)).join('')
+    + (excluded.length ? subhead + excluded.map(h => renderFundRow(h)).join('') : '');
   holdings.forEach(h => {
     drawSparkline(`spark-fund-${h.id}`, (h.computed.time_series || []).map(p => p.value_ils));
     if (EXPANDED.has(`fund:${h.id}`)) {
