@@ -1637,9 +1637,10 @@ html[dir="rtl"] .chat-panel {
           <button class="btn btn--ghost btn--small" id="range-reset" hidden data-i18n="dashboard.resetRange">Reset range</button>
         </div>
         <div class="chart-controls__group">
-          <span data-i18n="dashboard.whatIfGrow" title="Applied to funds only. Cash, RSU vesting, and ESPP are added flat on top.">If funds grow %/yr:</span>
+          <span data-i18n="dashboard.whatIfGrow" data-i18n-title="dashboard.whatIfGrowTitle" title="Applied to funds only. Cash, RSU vesting, and ESPP are added flat on top.">If funds grow %/yr:</span>
           <input type="number" id="what-if-input" class="control-input control-input--number" step="0.5" min="-50" max="200"
                  placeholder="15"
+                 data-i18n-title="dashboard.whatIfInputTitle"
                  title="Annual growth rate applied to funds only. Cash, RSU vesting, and ESPP are added flat on top — they don't compound at this rate.">
           <button class="btn btn--ghost btn--small" id="what-if-clear" hidden>×</button>
           <span class="chart-controls__hint" data-i18n="dashboard.whatIfHint">funds only · cash + RSU + ESPP held flat</span>
@@ -1850,13 +1851,13 @@ html[dir="rtl"] .chat-panel {
       <div class="field-grid">
         <div class="field" style="grid-column: 1 / -1">
           <label for="rsu-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
-          <input type="text" id="rsu-ticker-search" placeholder="apple, microsoft, AAPL…" autocomplete="off">
+          <input type="text" id="rsu-ticker-search" data-i18n-placeholder="common.tickerSearchPlaceholder" placeholder="apple, microsoft, AAPL…" autocomplete="off">
           <div id="rsu-ticker-results"></div>
           <div id="rsu-ticker-selected" hidden style="margin-top:0.4rem"></div>
         </div>
         <div class="field">
           <label for="rsu-nickname" data-i18n="common.nickname">Nickname</label>
-          <input type="text" id="rsu-nickname" placeholder="Q1 2024 grant">
+          <input type="text" id="rsu-nickname" data-i18n-placeholder="rsu.nicknamePlaceholder" placeholder="Q1 2024 grant">
         </div>
         <div class="field">
           <label for="rsu-grant-date" data-i18n="rsu.grantDate">Grant date</label>
@@ -1908,13 +1909,13 @@ html[dir="rtl"] .chat-panel {
       <div class="field-grid">
         <div class="field" style="grid-column: 1 / -1">
           <label for="espp-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
-          <input type="text" id="espp-ticker-search" placeholder="apple, microsoft, AAPL…" autocomplete="off">
+          <input type="text" id="espp-ticker-search" data-i18n-placeholder="common.tickerSearchPlaceholder" placeholder="apple, microsoft, AAPL…" autocomplete="off">
           <div id="espp-ticker-results"></div>
           <div id="espp-ticker-selected" hidden style="margin-top:0.4rem"></div>
         </div>
         <div class="field">
           <label for="espp-nickname" data-i18n="common.nickname">Nickname</label>
-          <input type="text" id="espp-nickname" placeholder="Employer ESPP">
+          <input type="text" id="espp-nickname" data-i18n-placeholder="espp.nicknamePlaceholder" placeholder="Employer ESPP">
         </div>
         <div class="field">
           <label for="espp-discount" data-i18n="espp.discount">Discount %</label>
@@ -1948,7 +1949,7 @@ html[dir="rtl"] .chat-panel {
       <div class="field-grid">
         <div class="field">
           <label for="cash-nickname" data-i18n="common.nickname">Nickname</label>
-          <input type="text" id="cash-nickname" placeholder="Bank Hapoalim checking">
+          <input type="text" id="cash-nickname" data-i18n-placeholder="cash.nicknamePlaceholder" placeholder="Bank Hapoalim checking">
         </div>
         <div class="field">
           <label for="cash-amount" data-i18n="cash.amount">Amount</label>
@@ -2087,13 +2088,13 @@ function fmtPctSigned(n, digits = 2) {
   return (n >= 0 ? '+' : '') + (n * 100).toFixed(digits) + '%';
 }
 function timeAgo(iso) {
-  if (!iso) return 'never';
+  if (!iso) return t('time.never');
   const d = new Date(iso);
   const sec = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (sec < 60) return 'just now';
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
+  if (sec < 60) return t('time.justNow');
+  if (sec < 3600) return t('time.minAgo', { n: Math.floor(sec / 60) });
+  if (sec < 86400) return t('time.hAgo', { n: Math.floor(sec / 3600) });
+  return t('time.dAgo', { n: Math.floor(sec / 86400) });
 }
 
 let APP = null;
@@ -2314,19 +2315,19 @@ async function api(method, path, body, { retries = 1 } = {}) {
       const r = await fetch(apiUrl(path), opts);
       if (r.status === 401) {
         logout(t('toast.sessionExpired'));
-        return { ok: false, error: 'Unauthorized' };
+        return { ok: false, error: t('api.unauthorized') };
       }
       if (!r.ok && r.status >= 500) {
         lastError = `HTTP ${r.status}`;
         continue;
       }
       try { return await r.json(); }
-      catch { return { ok: false, error: 'Invalid JSON response' }; }
+      catch { return { ok: false, error: t('api.invalidJson') }; }
     } catch (err) {
-      lastError = err.message || 'Network error';
+      lastError = err.message || t('api.networkError');
     }
   }
-  return { ok: false, error: lastError || 'Request failed' };
+  return { ok: false, error: lastError || t('api.requestFailed') };
 }
 
 async function login(username, password) {
@@ -2448,6 +2449,7 @@ function refreshI18nDynamic() {
   updateChatToggleLabel();
   if (typeof updateStatusDataMonth === 'function') updateStatusDataMonth();
   if (typeof renderChatThread === 'function') renderChatThread();
+  if (typeof renderRetirementSimulator === 'function' && window.PensionRetirementSim) renderRetirementSimulator();
   if (APP && getToken() && typeof renderAll === 'function') renderAll();
   // Gemini insights are generated text, not static i18n strings, so re-fetch
   // them in the newly selected language once they've been shown.
@@ -2558,13 +2560,13 @@ function renderDashboard() {
   profitChip.textContent = `${profit >= 0 ? '+' : ''}${fmtILS.format(profit)} (${fmtPctSigned(profitPct)})`;
   const rsuUSD = p.rsu_value_usd || 0;
   const esppUSD = p.espp_value_usd || 0;
-  let subline = `Funds <strong>${fmtILS.format(p.funds_value_ils || 0)}</strong> · ` +
-                `RSU <strong>${fmtUSD.format(rsuUSD)}</strong> ≈ <strong>${fmtILS.format(p.rsu_value_ils || 0)}</strong>`;
+  let subline = `${t('label.funds')} <strong>${fmtILS.format(p.funds_value_ils || 0)}</strong> · ` +
+                `${t('label.rsu')} <strong>${fmtUSD.format(rsuUSD)}</strong> ≈ <strong>${fmtILS.format(p.rsu_value_ils || 0)}</strong>`;
   if ((p.espp_value_ils || 0) > 0 || esppUSD > 0) {
-    subline += ` · ESPP <strong>${fmtUSD.format(esppUSD)}</strong> ≈ <strong>${fmtILS.format(p.espp_value_ils || 0)}</strong>`;
+    subline += ` · ${t('label.espp')} <strong>${fmtUSD.format(esppUSD)}</strong> ≈ <strong>${fmtILS.format(p.espp_value_ils || 0)}</strong>`;
   }
   if ((p.cash_value_ils || 0) > 0) {
-    subline += ` · Cash <strong>${fmtILS.format(p.cash_value_ils)}</strong>`;
+    subline += ` · ${t('label.cash')} <strong>${fmtILS.format(p.cash_value_ils)}</strong>`;
   }
   document.getElementById('dash-subline').innerHTML = subline;
   renderAllocation();
@@ -2574,8 +2576,13 @@ function renderDashboard() {
   if (wf && wf.end_value_ils != null) {
     const delta = wf.end_value_ils - (wf.current_value_ils || 0);
     const sign = delta >= 0 ? '+' : '';
-    wfBox.innerHTML = `<strong>If funds grow ${wf.annual_pct}%/year</strong> for ${wf.horizon_months} months → <strong>${fmtILS.format(wf.end_value_ils)}</strong> ` +
-                      `<span style="color:var(--color-muted)">(${sign}${fmtILS.format(delta)} from today · cash + RSU + ESPP held flat)</span>`;
+    wfBox.innerHTML = t('dash.whatIfSummary', {
+      pct: wf.annual_pct,
+      months: wf.horizon_months,
+      end: fmtILS.format(wf.end_value_ils),
+      sign,
+      delta: fmtILS.format(delta),
+    });
     wfBox.hidden = false;
   } else {
     wfBox.hidden = true;
@@ -2590,12 +2597,18 @@ function renderDashboard() {
     const sign = delta >= 0 ? '+' : '';
     const annual = portfolioFundsAnnualPct(proj);
     const ratePart = annual != null
-      ? `Funds grow at a <strong>value-weighted ~${annual.toFixed(1)}%/yr</strong> historical average`
-      : 'Funds use each holding\'s historical average return';
-    const contrib = proj.funds_includes_recurring ? ' (including recurring contributions)' : '';
-    projBox.innerHTML = `<strong>${dashboardProjectionMeanLabel(proj)}</strong> over ${horizon} months → <strong>${fmtILS.format(endVal)}</strong> ` +
-      `<span style="color:var(--color-muted)">(${sign}${fmtILS.format(delta)} from today)</span>. ` +
-      `<span style="color:var(--color-muted)">${ratePart}${contrib}; RSU vesting + flat ESPP/cash included in total.</span>`;
+      ? t('proj.rateWeighted', { pct: annual.toFixed(1) })
+      : t('proj.rateEachHolding');
+    const contrib = proj.funds_includes_recurring ? t('proj.includingRecurring') : '';
+    projBox.innerHTML = t('dash.projSummary', {
+      meanLabel: dashboardProjectionMeanLabel(proj),
+      months: horizon,
+      end: fmtILS.format(endVal),
+      sign,
+      delta: fmtILS.format(delta),
+      ratePart,
+      contrib,
+    });
     projBox.hidden = false;
   } else {
     projBox.hidden = true;
@@ -2781,7 +2794,7 @@ function drawDashboardChart() {
     for (let i = 0; i < wf.paths.length && (todayIdx + 1 + i) < labels.length; i++) {
       whatIfData[todayIdx + 1 + i] = wf.paths[i];
     }
-    whatIfLabel = `If funds grow ${wf.annual_pct}%/yr`;
+    whatIfLabel = t('chart.ifFundsGrow', { pct: wf.annual_pct });
   }
 
   // Historical projection total — sum of per-holding projection means (funds + RSU + ESPP + cash).
@@ -2835,10 +2848,10 @@ function drawDashboardChart() {
     data: {
       labels,
       datasets: [
-        { label: 'Cash', data: cashData, borderColor: 'rgba(176,175,194,1)', backgroundColor: 'rgba(176,175,194,0.45)', fill: 'origin', tension: 0.25, pointRadius: 0, stack: 'a' },
-        { label: wf && wf.annual_pct != null ? `Funds (at ${wf.annual_pct}%/yr)` : 'Funds', data: fundsData, borderColor: 'rgba(110,95,224,1)', backgroundColor: 'rgba(110,95,224,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
-        { label: 'RSU', data: rsuData, borderColor: 'rgba(77,205,205,1)', backgroundColor: 'rgba(77,205,205,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
-        { label: 'ESPP', data: esppData, borderColor: 'rgba(224,151,95,1)', backgroundColor: 'rgba(224,151,95,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
+        { label: t('label.cash'), data: cashData, borderColor: 'rgba(176,175,194,1)', backgroundColor: 'rgba(176,175,194,0.45)', fill: 'origin', tension: 0.25, pointRadius: 0, stack: 'a' },
+        { label: wf && wf.annual_pct != null ? t('chart.fundsAtRate', { pct: wf.annual_pct }) : t('label.funds'), data: fundsData, borderColor: 'rgba(110,95,224,1)', backgroundColor: 'rgba(110,95,224,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
+        { label: t('label.rsu'), data: rsuData, borderColor: 'rgba(77,205,205,1)', backgroundColor: 'rgba(77,205,205,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
+        { label: t('label.espp'), data: esppData, borderColor: 'rgba(224,151,95,1)', backgroundColor: 'rgba(224,151,95,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
         ...(whatIfData.length ? [{
           label: whatIfLabel,
           data: whatIfData,
@@ -2894,8 +2907,8 @@ function updateRangeSummary() {
   if (!DASH_CHART) { box.hidden = true; return; }
   const labels = DASH_CHART.data.labels;
   // Total = sum of all stacked component datasets (Cash + Funds + RSU + ESPP).
-  const stackLabels = ['Cash', 'Funds', 'RSU', 'ESPP'];
-  const stacks = DASH_CHART.data.datasets.filter(d => stackLabels.includes(d.label));
+  // Match on the stack id (not translated labels) so it works in any language.
+  const stacks = DASH_CHART.data.datasets.filter(d => d.stack === 'a');
   const total = labels.map((_, i) => stacks.reduce((sum, d) => sum + (d.data[i] || 0), 0));
   if (!DASH_RANGE) { box.hidden = true; return; }
   const startIdx = labels.indexOf(DASH_RANGE.startLabel);
@@ -2904,11 +2917,14 @@ function updateRangeSummary() {
   const startVal = total[startIdx], endVal = total[endIdx];
   const delta = endVal - startVal;
   const sign = delta >= 0 ? '+' : '';
-  box.innerHTML =
-    `<strong>${labels[startIdx]}</strong> → <strong>${labels[endIdx]}</strong> · ` +
-    `Total at start: <strong>${fmtILS.format(startVal)}</strong> · ` +
-    `Total at end: <strong>${fmtILS.format(endVal)}</strong> ` +
-    `<span style="color:var(--color-muted)">(${sign}${fmtILS.format(delta)})</span>`;
+  box.innerHTML = t('dash.rangeSummary', {
+    start: labels[startIdx],
+    end: labels[endIdx],
+    startVal: fmtILS.format(startVal),
+    endVal: fmtILS.format(endVal),
+    sign,
+    delta: fmtILS.format(delta),
+  });
   box.hidden = false;
 }
 
@@ -2929,7 +2945,7 @@ function renderFunds() {
     .sort((a, b) => (b.computed?.current_value_ils || 0) - (a.computed?.current_value_ils || 0));
   document.getElementById('funds-count').textContent = holdings.length;
   if (!holdings.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No funds yet</strong>Add a Israeli pension/provident/study fund to start tracking.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-fund-btn">${escapeHtml(t('funds.add'))}</button></div></div>`;
+    list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.funds.title'))}</strong>${escapeHtml(t('empty.funds.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-fund-btn">${escapeHtml(t('funds.add'))}</button></div></div>`;
     return;
   }
   // Keep dashboard-included funds on top; group excluded ones under a sub-header
@@ -2955,7 +2971,7 @@ function renderFundRow(h) {
   const ytdYear = c.ytd_year;
   const lastPeriod = c.last_period;
   const lastMonthLabel = lastPeriod ? periodMonthShort(lastPeriod) : '';
-  const archivedBadge = h.archived ? `<span class="badge badge--archived">archived</span>` : '';
+  const archivedBadge = h.archived ? `<span class="badge badge--archived">${t('badge.archived')}</span>` : '';
   const excludedBadge = h.included_in_dashboard === false ? `<span class="badge" style="background:rgb(148 163 184 / 0.18); color:var(--color-muted)">${t('funds.excludedBadge')}</span>` : '';
   const profitClass = (c.profit_ils || 0) >= 0 ? 'pos' : 'neg';
   const profitSign = (c.profit_ils || 0) >= 0 ? '+' : '';
@@ -2970,9 +2986,9 @@ function renderFundRow(h) {
           <span class="holding-row__sub-sep">·</span>
           <span>${escapeHtml(h.managing_corporation_snapshot || '')}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span>${lastMonthLabel || 'last'} ${lastM !== null && lastM !== undefined ? fmtPctSigned(lastM/100) : '—'}</span>
+          <span>${lastMonthLabel || t('row.last')} ${lastM !== null && lastM !== undefined ? fmtPctSigned(lastM/100) : '—'}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span title="${ytdYear ? `As of ${ytdYear} year-to-date` : ''}">YTD${ytdYear ? ' ' + ytdYear : ''} ${ytd !== null && ytd !== undefined ? fmtPctSigned(ytd) : '—'}</span>
+          <span title="${ytdYear ? t('row.ytdAsOf', { year: ytdYear }) : ''}">YTD${ytdYear ? ' ' + ytdYear : ''} ${ytd !== null && ytd !== undefined ? fmtPctSigned(ytd) : '—'}</span>
         </p>
       </div>
       <svg class="holding-row__sparkline" id="spark-fund-${h.id}"></svg>
@@ -2995,16 +3011,16 @@ function renderFundDetail(h) {
   return `
   <div class="holding-row__detail">
     <dl class="detail-grid">
-      <div><dt>Anchor period</dt><dd>${periodLabel(h.anchor_period)}</dd></div>
-      <div><dt>Anchor balance</dt><dd>${fmtILS.format(h.anchor_balance_ils || 0)}</dd></div>
-      <div><dt>Deposited (total)</dt><dd>${fmtILS.format(c.total_deposited_ils || 0)}</dd></div>
-      <div><dt>From rules: you / employer</dt><dd style="font-size:0.875rem">${fmtILS.format(empTotal)} / ${fmtILS.format(emprTotal)}</dd></div>
-      <div><dt>Withdrawn</dt><dd>${fmtILS.format(c.total_withdrawn_ils || 0)}</dd></div>
-      <div><dt title="דמי ניהול מצבירה — estimated cumulative management fees paid over the holding period (already baked into the published net yield by default)">~Mgmt fees paid</dt><dd>${fmtILS.format(c.cumulative_mgmt_fee_ils || 0)}</dd></div>
-      <div><dt>Last sync</dt><dd>${timeAgo(h.last_synced)}</dd></div>
+      <div><dt>${t('detail.anchorPeriod')}</dt><dd>${periodLabel(h.anchor_period)}</dd></div>
+      <div><dt>${t('detail.anchorBalance')}</dt><dd>${fmtILS.format(h.anchor_balance_ils || 0)}</dd></div>
+      <div><dt>${t('detail.depositedTotal')}</dt><dd>${fmtILS.format(c.total_deposited_ils || 0)}</dd></div>
+      <div><dt>${t('detail.fromRules')}</dt><dd style="font-size:0.875rem">${fmtILS.format(empTotal)} / ${fmtILS.format(emprTotal)}</dd></div>
+      <div><dt>${t('detail.withdrawn')}</dt><dd>${fmtILS.format(c.total_withdrawn_ils || 0)}</dd></div>
+      <div><dt title="${escapeHtml(t('detail.mgmtFeesTitle'))}">${t('detail.mgmtFeesPaid')}</dt><dd>${fmtILS.format(c.cumulative_mgmt_fee_ils || 0)}</dd></div>
+      <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(h.last_synced)}</dd></div>
     </dl>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Returns (chained from monthly yields)</h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.returnsChained')}</h3>
     <dl class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
       <div><dt>3m</dt><dd>${c.three_m_return_pct !== null && c.three_m_return_pct !== undefined ? fmtPctSigned(c.three_m_return_pct) : '—'}</dd></div>
       <div><dt>6m</dt><dd>${c.six_m_return_pct !== null && c.six_m_return_pct !== undefined ? fmtPctSigned(c.six_m_return_pct) : '—'}</dd></div>
@@ -3018,60 +3034,60 @@ function renderFundDetail(h) {
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-fund-${h.id}"></canvas></div>
     <p class="chart-caption projection-mean-caption" data-projection-caption-for="detail-fund-${h.id}" hidden></p>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Recurring contributions</h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.recurringContributions')}</h3>
     ${rules.length ? `<div class="rule-list">${rules.map(r => renderRuleRow(h.id, r)).join('')}</div>`
-                   : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">No recurring rule. Add a change point to start.</p>`}
+                   : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noRecurringRule')}</p>`}
     <div class="actions-row" style="justify-content:flex-start; margin-top:0.5rem">
-      <button class="btn btn--ghost btn--small" data-add-rule="${h.id}">+ Add change point</button>
+      <button class="btn btn--ghost btn--small" data-add-rule="${h.id}">${t('detail.addChangePoint')}</button>
     </div>
     <div id="rule-form-${h.id}" hidden>
       <div class="add-panel" style="margin-top:0.5rem">
         <div class="field-grid">
-          <div class="field"><label>Effective from</label><input type="date" id="rule-start-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-          <div class="field"><label>Effective until</label><input type="date" id="rule-end-${h.id}" placeholder="leave blank for ongoing"></div>
-          <div class="field"><label>You (₪/mo)</label><input type="number" id="rule-emp-${h.id}" min="0" step="0.01"></div>
-          <div class="field"><label>Employer (₪/mo)</label><input type="number" id="rule-empr-${h.id}" min="0" step="0.01"></div>
-          <div class="field"><label>Day of month</label><input type="number" id="rule-dom-${h.id}" min="1" max="28" value="10"></div>
-          <div class="field"><label>Note</label><input type="text" id="rule-note-${h.id}"></div>
+          <div class="field"><label>${t('rule.effectiveFrom')}</label><input type="date" id="rule-start-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div class="field"><label>${t('rule.effectiveUntil')}</label><input type="date" id="rule-end-${h.id}" placeholder="${t('rule.leaveBlankOngoing')}"></div>
+          <div class="field"><label>${t('rule.youPerMo')}</label><input type="number" id="rule-emp-${h.id}" min="0" step="0.01"></div>
+          <div class="field"><label>${t('rule.employerPerMo')}</label><input type="number" id="rule-empr-${h.id}" min="0" step="0.01"></div>
+          <div class="field"><label>${t('rule.dayOfMonth')}</label><input type="number" id="rule-dom-${h.id}" min="1" max="28" value="10"></div>
+          <div class="field"><label>${t('common.note')}</label><input type="text" id="rule-note-${h.id}"></div>
         </div>
         <div class="actions-row">
-          <button class="btn btn--ghost btn--small" data-rule-cancel="${h.id}">Cancel</button>
-          <button class="btn btn--primary btn--small" data-rule-save="${h.id}">Save rule</button>
+          <button class="btn btn--ghost btn--small" data-rule-cancel="${h.id}">${t('common.cancel')}</button>
+          <button class="btn btn--primary btn--small" data-rule-save="${h.id}">${t('rule.saveRule')}</button>
         </div>
       </div>
     </div>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Events <span class="h2-count">${expanded.length}</span></h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.events')} <span class="h2-count">${expanded.length}</span></h3>
     ${expanded.length ? `<div style="overflow-x:auto"><table class="event-table">
-      <thead><tr><th>Date</th><th>Kind</th><th>Amount</th><th>Source</th><th>Note</th><th></th></tr></thead>
+      <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('table.amount')}</th><th>${t('table.source')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${expanded.map(e => {
         const isRule = !!e.synthetic;
         return `<tr>
           <td>${e.date}</td>
           <td>${e.kind}</td>
           <td><strong>${fmtILS.format(e.amount_ils || 0)}</strong></td>
-          <td>${isRule ? `<span class="badge">rule</span>` : `<span class="badge badge--funds">manual</span>`}</td>
+          <td>${isRule ? `<span class="badge">${t('badge.rule')}</span>` : `<span class="badge badge--funds">${t('badge.manual')}</span>`}</td>
           <td dir="auto">${escapeHtml(e.note || '')}</td>
           <td>${isRule ? '' : `<button class="btn btn--danger btn--small" data-del-event="${h.id}:${e.id}">×</button>`}</td>
         </tr>`;
       }).join('')}</tbody>
-    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">No events yet. Add a recurring rule for monthly deposits, or log a one-off below.</p>`}
+    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noEvents')}</p>`}
     <div class="event-form">
-      <div class="field"><label>Date</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Kind</label><select id="ev-kind-${h.id}"><option value="deposit">deposit</option><option value="withdrawal">withdrawal</option><option value="correction">correction (set balance)</option></select></div>
-      <div class="field"><label>Amount (₪)</label><input type="number" id="ev-amount-${h.id}" min="0" step="0.01"></div>
-      <div class="field"><label>Note</label><input type="text" id="ev-note-${h.id}"></div>
-      <button class="btn btn--primary btn--small" data-add-event="${h.id}">Add</button>
+      <div class="field"><label>${t('table.date')}</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
+      <div class="field"><label>${t('ev.amountIls')}</label><input type="number" id="ev-amount-${h.id}" min="0" step="0.01"></div>
+      <div class="field"><label>${t('common.note')}</label><input type="text" id="ev-note-${h.id}"></div>
+      <button class="btn btn--primary btn--small" data-add-event="${h.id}">${t('common.add')}</button>
       <span></span>
     </div>
-    <p class="chart-caption">For monthly recurring deposits with you/employer split, use a recurring rule above. Manual events are flat amounts.</p>
+    <p class="chart-caption">${t('detail.eventCaption')}</p>
 
     <div class="actions-row" style="margin-top:1rem">
-      <button class="btn btn--ghost btn--small" data-edit-nickname-fund="${h.id}">Rename</button>
-      <button class="btn btn--ghost btn--small" data-edit-balance-fund="${h.id}">Edit anchor balance</button>
+      <button class="btn btn--ghost btn--small" data-edit-nickname-fund="${h.id}">${t('action.rename')}</button>
+      <button class="btn btn--ghost btn--small" data-edit-balance-fund="${h.id}">${t('action.editAnchorBalance')}</button>
       <button class="btn btn--ghost btn--small" data-toggle-dashboard-fund="${h.id}">${h.included_in_dashboard === false ? t('funds.includeInDashboard') : t('funds.excludeFromDashboard')}</button>
-      <button class="btn btn--ghost btn--small" data-spot-check-fund="${h.id}">Spot-check yield ↗</button>
-      <button class="btn btn--danger btn--small" data-delete-fund="${h.id}">Delete</button>
+      <button class="btn btn--ghost btn--small" data-spot-check-fund="${h.id}">${t('action.spotCheck')}</button>
+      <button class="btn btn--danger btn--small" data-delete-fund="${h.id}">${t('action.delete')}</button>
     </div>
   </div>`;
 }
@@ -3081,45 +3097,45 @@ function renderFundMetrics(m) {
   const fmtPctOrDash = (v) => (v === null || v === undefined) ? '—' : (v.toFixed(2) + '%');
   const fmtNumOrDash = (v, d=2) => (v === null || v === undefined) ? '—' : v.toFixed(d);
   return `
-  <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Fund metrics (latest report)</h3>
+  <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('metrics.title')}</h3>
   <dl class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
-    <div><dt>Mgmt fee (annual)</dt><dd>${fmtPctOrDash(m.avg_annual_management_fee_pct)}</dd></div>
-    <div><dt>Deposit fee</dt><dd>${fmtPctOrDash(m.avg_deposit_fee_pct)}</dd></div>
-    <div><dt>Std deviation</dt><dd>${fmtPctOrDash(m.std_deviation_pct)}</dd></div>
-    <div><dt>Alpha</dt><dd>${fmtNumOrDash(m.alpha)}</dd></div>
-    <div><dt>Sharpe</dt><dd>${fmtNumOrDash(m.sharpe_ratio)}</dd></div>
-    <div><dt>Stock exposure</dt><dd>${fmtPctOrDash(m.stock_market_exposure_pct)}</dd></div>
-    <div><dt>Foreign exposure</dt><dd>${fmtPctOrDash(m.foreign_exposure_pct)}</dd></div>
-    <div><dt>Liquid assets</dt><dd>${fmtPctOrDash(m.liquid_assets_pct)}</dd></div>
-    <div><dt>Total assets</dt><dd>${m.total_assets_m_ils != null ? '₪' + (m.total_assets_m_ils / 1000).toFixed(2) + 'B' : '—'}</dd></div>
-    <div><dt>Inception</dt><dd style="font-size:0.8125rem">${m.inception_date ? m.inception_date.slice(0,10) : '—'}</dd></div>
-    <div><dt>Specialization</dt><dd dir="auto" style="font-size:0.8125rem">${escapeHtml(m.specialization || '—')}</dd></div>
-    <div><dt>Sub-specialization</dt><dd dir="auto" style="font-size:0.8125rem">${escapeHtml(m.sub_specialization || '—')}</dd></div>
+    <div><dt>${t('metrics.mgmtFeeAnnual')}</dt><dd>${fmtPctOrDash(m.avg_annual_management_fee_pct)}</dd></div>
+    <div><dt>${t('metrics.depositFee')}</dt><dd>${fmtPctOrDash(m.avg_deposit_fee_pct)}</dd></div>
+    <div><dt>${t('metrics.stdDeviation')}</dt><dd>${fmtPctOrDash(m.std_deviation_pct)}</dd></div>
+    <div><dt>${t('metrics.alpha')}</dt><dd>${fmtNumOrDash(m.alpha)}</dd></div>
+    <div><dt>${t('metrics.sharpe')}</dt><dd>${fmtNumOrDash(m.sharpe_ratio)}</dd></div>
+    <div><dt>${t('metrics.stockExposure')}</dt><dd>${fmtPctOrDash(m.stock_market_exposure_pct)}</dd></div>
+    <div><dt>${t('metrics.foreignExposure')}</dt><dd>${fmtPctOrDash(m.foreign_exposure_pct)}</dd></div>
+    <div><dt>${t('metrics.liquidAssets')}</dt><dd>${fmtPctOrDash(m.liquid_assets_pct)}</dd></div>
+    <div><dt>${t('metrics.totalAssets')}</dt><dd>${m.total_assets_m_ils != null ? '₪' + (m.total_assets_m_ils / 1000).toFixed(2) + 'B' : '—'}</dd></div>
+    <div><dt>${t('metrics.inception')}</dt><dd style="font-size:0.8125rem">${m.inception_date ? m.inception_date.slice(0,10) : '—'}</dd></div>
+    <div><dt>${t('metrics.specialization')}</dt><dd dir="auto" style="font-size:0.8125rem">${escapeHtml(m.specialization || '—')}</dd></div>
+    <div><dt>${t('metrics.subSpecialization')}</dt><dd dir="auto" style="font-size:0.8125rem">${escapeHtml(m.sub_specialization || '—')}</dd></div>
   </dl>
   ${(m.upstream_3y_cumulative_pct != null || m.upstream_5y_cumulative_pct != null) ? `
-    <p class="chart-caption">Upstream gemelnet trailing yields:
-      ${m.upstream_3y_cumulative_pct != null ? `3y cumulative ${m.upstream_3y_cumulative_pct.toFixed(2)}% (${m.upstream_3y_annualized_pct != null ? m.upstream_3y_annualized_pct.toFixed(2) + '%/yr' : '—'})` : ''}
-      ${m.upstream_5y_cumulative_pct != null ? ` · 5y cumulative ${m.upstream_5y_cumulative_pct.toFixed(2)}% (${m.upstream_5y_annualized_pct != null ? m.upstream_5y_annualized_pct.toFixed(2) + '%/yr' : '—'})` : ''}
+    <p class="chart-caption">${t('metrics.upstreamYields')}
+      ${m.upstream_3y_cumulative_pct != null ? t('metrics.upstream3y', { cum: m.upstream_3y_cumulative_pct.toFixed(2), ann: m.upstream_3y_annualized_pct != null ? m.upstream_3y_annualized_pct.toFixed(2) + '%/yr' : '—' }) : ''}
+      ${m.upstream_5y_cumulative_pct != null ? ' · ' + t('metrics.upstream5y', { cum: m.upstream_5y_cumulative_pct.toFixed(2), ann: m.upstream_5y_annualized_pct != null ? m.upstream_5y_annualized_pct.toFixed(2) + '%/yr' : '—' }) : ''}
     </p>` : ''}`;
 }
 
 function renderRuleRow(holdingId, r) {
-  const range = `${r.start_date} → ${r.end_date || 'ongoing'}`;
+  const range = `${r.start_date} → ${r.end_date || t('rule.ongoing')}`;
   const total = (r.employee || 0) + (r.employer || 0);
   return `
   <div class="rule-row" data-rule-id="${r.id}">
     <div class="rule-row__main">
       <div class="rule-row__range">📅 ${range}</div>
       <div class="rule-row__amounts">
-        you <strong>${fmtILS.format(r.employee || 0)}</strong> ·
-        employer <strong>${fmtILS.format(r.employer || 0)}</strong>
-        · day ${r.day_of_month} · total <strong>${fmtILS.format(total)}</strong>/mo
+        ${t('rule.you')} <strong>${fmtILS.format(r.employee || 0)}</strong> ·
+        ${t('rule.employer')} <strong>${fmtILS.format(r.employer || 0)}</strong>
+        · ${t('rule.day')} ${r.day_of_month} · ${t('rule.total')} <strong>${fmtILS.format(total)}</strong>${t('rule.perMo')}
       </div>
       ${r.note ? `<div class="rule-row__note" dir="auto">${escapeHtml(r.note)}</div>` : ''}
     </div>
     <div class="rule-row__actions">
-      <button class="btn btn--ghost btn--small" data-rule-end="${holdingId}:${r.id}">Set end date</button>
-      <button class="btn btn--danger btn--small" data-rule-del="${holdingId}:${r.id}">Delete</button>
+      <button class="btn btn--ghost btn--small" data-rule-end="${holdingId}:${r.id}">${t('rule.setEndDate')}</button>
+      <button class="btn btn--danger btn--small" data-rule-del="${holdingId}:${r.id}">${t('action.delete')}</button>
     </div>
   </div>`;
 }
@@ -3152,19 +3168,23 @@ function renderPension() {
     const delta = pwf.end_value_ils - (pwf.current_value_ils || 0);
     const sign = delta >= 0 ? '+' : '';
     const includes = pwf.includes_recurring
-      ? 'includes recurring contributions'
-      : 'no recurring contributions';
-    pwfBox.innerHTML =
-      `<strong>If funds grow ${pwf.annual_pct}%/year</strong> for ${pwf.horizon_months} months → ` +
-      `<strong>${fmtILS.format(pwf.end_value_ils)}</strong> ` +
-      `<span style="color:var(--color-muted)">(${sign}${fmtILS.format(delta)} from today · ${includes})</span>`;
+      ? t('pension.includesRecurring')
+      : t('pension.noRecurring');
+    pwfBox.innerHTML = t('pension.whatIfSummary', {
+      pct: pwf.annual_pct,
+      months: pwf.horizon_months,
+      end: fmtILS.format(pwf.end_value_ils),
+      sign,
+      delta: fmtILS.format(delta),
+      includes,
+    });
     pwfBox.hidden = false;
   } else {
     pwfBox.hidden = true;
   }
 
   if (!holdings.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No pension funds yet</strong>Track your קרן פנסיה (קופת פנסיה) here. Same anchor + monthly-yield mechanic as Funds. Not counted toward the dashboard total.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-pension-btn">${escapeHtml(t('pension.add'))}</button></div></div>`;
+    list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.pension.title'))}</strong>${escapeHtml(t('empty.pension.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-pension-btn">${escapeHtml(t('pension.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = holdings.map(h => renderPensionRow(h)).join('');
@@ -3196,9 +3216,9 @@ function renderPensionRow(h) {
           <span class="holding-row__sub-sep">·</span>
           <span>${escapeHtml(h.managing_corporation_snapshot || '')}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span>${lastMonthLabel || 'last'} ${lastM !== null && lastM !== undefined ? fmtPctSigned(lastM/100) : '—'}</span>
+          <span>${lastMonthLabel || t('row.last')} ${lastM !== null && lastM !== undefined ? fmtPctSigned(lastM/100) : '—'}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span title="${ytdYear ? `As of ${ytdYear} year-to-date` : ''}">YTD${ytdYear ? ' ' + ytdYear : ''} ${ytd !== null && ytd !== undefined ? fmtPctSigned(ytd) : '—'}</span>
+          <span title="${ytdYear ? t('row.ytdAsOf', { year: ytdYear }) : ''}">YTD${ytdYear ? ' ' + ytdYear : ''} ${ytd !== null && ytd !== undefined ? fmtPctSigned(ytd) : '—'}</span>
         </p>
       </div>
       <svg class="holding-row__sparkline" id="spark-pension-${h.id}"></svg>
@@ -3222,25 +3242,26 @@ function renderPensionDetail(h) {
   if (wf && wf.end_value_ils != null) {
     const delta = (wf.end_value_ils || 0) - (c.current_value_ils || 0);
     const sign = delta >= 0 ? '+' : '';
-    whatIfHTML = `<div class="pension-whatif">
-      <strong>If funds grow ${wf.annual_pct}%/yr</strong> (from dashboard input) →
-      in <code>${wf.horizon_months} months</code> this pension reaches
-      <strong>${fmtILS.format(wf.end_value_ils)}</strong>
-      (${sign}${fmtILS.format(delta)} deterministic). Includes the recurring contributions below.
-    </div>`;
+    whatIfHTML = `<div class="pension-whatif">${t('pension.whatifDetail', {
+      pct: wf.annual_pct,
+      months: wf.horizon_months,
+      end: fmtILS.format(wf.end_value_ils),
+      sign,
+      delta: fmtILS.format(delta),
+    })}</div>`;
   }
   return `
   <div class="holding-row__detail">
     <dl class="detail-grid">
-      <div><dt>Anchor period</dt><dd>${periodLabel(h.anchor_period)}</dd></div>
-      <div><dt>Anchor balance</dt><dd>${fmtILS.format(h.anchor_balance_ils || 0)}</dd></div>
-      <div><dt>Deposited (total)</dt><dd>${fmtILS.format(c.total_deposited_ils || 0)}</dd></div>
-      <div><dt>From rules: you / employer</dt><dd style="font-size:0.875rem">${fmtILS.format(empTotal)} / ${fmtILS.format(emprTotal)}</dd></div>
-      <div><dt>Classification</dt><dd dir="auto">${escapeHtml(h.classification_snapshot || '—')}</dd></div>
-      <div><dt>Last sync</dt><dd>${timeAgo(h.last_synced)}</dd></div>
+      <div><dt>${t('detail.anchorPeriod')}</dt><dd>${periodLabel(h.anchor_period)}</dd></div>
+      <div><dt>${t('detail.anchorBalance')}</dt><dd>${fmtILS.format(h.anchor_balance_ils || 0)}</dd></div>
+      <div><dt>${t('detail.depositedTotal')}</dt><dd>${fmtILS.format(c.total_deposited_ils || 0)}</dd></div>
+      <div><dt>${t('detail.fromRules')}</dt><dd style="font-size:0.875rem">${fmtILS.format(empTotal)} / ${fmtILS.format(emprTotal)}</dd></div>
+      <div><dt>${t('detail.classification')}</dt><dd dir="auto">${escapeHtml(h.classification_snapshot || '—')}</dd></div>
+      <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(h.last_synced)}</dd></div>
     </dl>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Returns (chained from monthly yields)</h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.returnsChained')}</h3>
     <dl class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
       <div><dt>3m</dt><dd>${c.three_m_return_pct !== null && c.three_m_return_pct !== undefined ? fmtPctSigned(c.three_m_return_pct) : '—'}</dd></div>
       <div><dt>6m</dt><dd>${c.six_m_return_pct !== null && c.six_m_return_pct !== undefined ? fmtPctSigned(c.six_m_return_pct) : '—'}</dd></div>
@@ -3255,34 +3276,34 @@ function renderPensionDetail(h) {
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-pension-${h.id}"></canvas></div>
     <p class="chart-caption projection-mean-caption" data-projection-caption-for="detail-pension-${h.id}" hidden></p>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Recurring contributions</h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.recurringContributions')}</h3>
     ${rules.length ? `<div class="rule-list">${rules.map(r => renderRuleRow(h.id, r)).join('')}</div>`
-                   : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">No recurring rule. Add a change point to start tracking monthly contributions (e.g. payroll deposits to your פנסיה).</p>`}
+                   : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noRecurringRulePension')}</p>`}
     <div class="actions-row" style="justify-content:flex-start; margin-top:0.5rem">
-      <button class="btn btn--ghost btn--small" data-add-rule="${h.id}">+ Add change point</button>
+      <button class="btn btn--ghost btn--small" data-add-rule="${h.id}">${t('detail.addChangePoint')}</button>
     </div>
     <div id="rule-form-${h.id}" hidden>
       <div class="add-panel" style="margin-top:0.5rem">
         <div class="field-grid">
-          <div class="field"><label>Effective from</label><input type="date" id="rule-start-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-          <div class="field"><label>Effective until</label><input type="date" id="rule-end-${h.id}" placeholder="leave blank for ongoing"></div>
-          <div class="field"><label>You (₪/mo)</label><input type="number" id="rule-emp-${h.id}" min="0" step="0.01"></div>
-          <div class="field"><label>Employer (₪/mo)</label><input type="number" id="rule-empr-${h.id}" min="0" step="0.01"></div>
-          <div class="field"><label>Day of month</label><input type="number" id="rule-dom-${h.id}" min="1" max="28" value="10"></div>
-          <div class="field"><label>Note</label><input type="text" id="rule-note-${h.id}"></div>
+          <div class="field"><label>${t('rule.effectiveFrom')}</label><input type="date" id="rule-start-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div class="field"><label>${t('rule.effectiveUntil')}</label><input type="date" id="rule-end-${h.id}" placeholder="${t('rule.leaveBlankOngoing')}"></div>
+          <div class="field"><label>${t('rule.youPerMo')}</label><input type="number" id="rule-emp-${h.id}" min="0" step="0.01"></div>
+          <div class="field"><label>${t('rule.employerPerMo')}</label><input type="number" id="rule-empr-${h.id}" min="0" step="0.01"></div>
+          <div class="field"><label>${t('rule.dayOfMonth')}</label><input type="number" id="rule-dom-${h.id}" min="1" max="28" value="10"></div>
+          <div class="field"><label>${t('common.note')}</label><input type="text" id="rule-note-${h.id}"></div>
         </div>
         <div class="actions-row">
-          <button class="btn btn--ghost btn--small" data-rule-cancel="${h.id}">Cancel</button>
-          <button class="btn btn--primary btn--small" data-rule-save="${h.id}">Save rule</button>
+          <button class="btn btn--ghost btn--small" data-rule-cancel="${h.id}">${t('common.cancel')}</button>
+          <button class="btn btn--primary btn--small" data-rule-save="${h.id}">${t('rule.saveRule')}</button>
         </div>
       </div>
     </div>
 
     <div class="actions-row" style="justify-content:flex-start; margin-top:0.75rem">
-      <button class="btn btn--ghost btn--small" data-edit-pension-balance="${h.id}" data-current="${h.anchor_balance_ils}">Edit anchor balance</button>
-      <button class="btn btn--ghost btn--small" data-rename-pension="${h.id}" data-current="${escapeHtml(h.nickname || '')}">Rename</button>
-      <button class="btn btn--ghost btn--small" data-spot-check-pension="${h.id}">Spot-check yield ↗</button>
-      <button class="btn btn--danger btn--small" data-del-pension="${h.id}">Delete pension</button>
+      <button class="btn btn--ghost btn--small" data-edit-pension-balance="${h.id}" data-current="${h.anchor_balance_ils}">${t('action.editAnchorBalance')}</button>
+      <button class="btn btn--ghost btn--small" data-rename-pension="${h.id}" data-current="${escapeHtml(h.nickname || '')}">${t('action.rename')}</button>
+      <button class="btn btn--ghost btn--small" data-spot-check-pension="${h.id}">${t('action.spotCheck')}</button>
+      <button class="btn btn--danger btn--small" data-del-pension="${h.id}">${t('action.deletePension')}</button>
     </div>
   </div>`;
 }
@@ -3296,7 +3317,7 @@ function renderRSU() {
     .sort((a, b) => (b.computed?.current_value_ils || 0) - (a.computed?.current_value_ils || 0));
   document.getElementById('rsu-count').textContent = grants.length;
   if (!grants.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No RSU grants yet</strong>Add a grant to track its value with vesting and live prices from Yahoo Finance.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-rsu-btn">${escapeHtml(t('rsu.add'))}</button></div></div>`;
+    list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.rsu.title'))}</strong>${escapeHtml(t('empty.rsu.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-rsu-btn">${escapeHtml(t('rsu.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = grants.map(g => renderRSURow(g)).join('');
@@ -3312,15 +3333,15 @@ function renderRSU() {
 function renderRSURow(g) {
   const c = g.computed || {};
   const expanded = EXPANDED.has(`rsu:${g.id}`);
-  const archivedBadge = g.archived ? `<span class="badge badge--archived">archived</span>` : '';
-  const noDataBadge = c.no_data ? `<span class="badge badge--pending">no price data</span>` : '';
+  const archivedBadge = g.archived ? `<span class="badge badge--archived">${t('badge.archived')}</span>` : '';
+  const noDataBadge = c.no_data ? `<span class="badge badge--pending">${t('badge.noPriceData')}</span>` : '';
   const profitClass = (c.profit_usd || 0) >= 0 ? 'success' : 'danger';
   const profitSign = (c.profit_usd || 0) >= 0 ? '+' : '';
   const sold = c.shares_sold_total || 0;
   const held = c.shares_held_now != null ? c.shares_held_now : (c.vested_shares_now || 0);
   const vestedSubLabel = sold > 0
-    ? `Held ${fmtNum.format(held)} (vested ${fmtNum.format(c.vested_shares_now || 0)}, sold ${fmtNum.format(sold)}) / ${fmtNum.format(g.total_shares || 0)}`
-    : `Vested ${fmtNum.format(c.vested_shares_now || 0)} / ${fmtNum.format(g.total_shares || 0)}`;
+    ? t('rsu.heldSub', { held: fmtNum.format(held), vested: fmtNum.format(c.vested_shares_now || 0), sold: fmtNum.format(sold), total: fmtNum.format(g.total_shares || 0) })
+    : t('rsu.vestedSub', { vested: fmtNum.format(c.vested_shares_now || 0), total: fmtNum.format(g.total_shares || 0) });
   return `
   <div class="holding-row" data-id="${g.id}" data-archived="${!!g.archived}" data-expanded="${expanded}">
     <div class="holding-row__head" data-toggle="rsu:${g.id}">
@@ -3329,9 +3350,9 @@ function renderRSURow(g) {
         <p class="holding-row__sub">
           <span>${vestedSubLabel}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span>Granted ${g.grant_date}</span>
+          <span>${t('rsu.granted', { date: g.grant_date })}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span>Vests ${g.vesting_months}m, cliff ${g.cliff_months}m</span>
+          <span>${t('rsu.vestsSub', { months: g.vesting_months, cliff: g.cliff_months })}</span>
         </p>
       </div>
       <svg class="holding-row__sparkline" id="spark-rsu-${g.id}"></svg>
@@ -3339,8 +3360,8 @@ function renderRSURow(g) {
         <div class="holding-row__value">${fmtUSD.format(c.current_value_usd || 0)}</div>
         <div class="holding-row__value-sub">≈ ${fmtILS.format(c.current_value_ils || 0)}</div>
         ${(c.vested_shares_now === 0 && c.potential_full_vest_usd) ? `
-          <div class="holding-row__value-sub" style="color: var(--color-muted)" title="If all ${fmtNum.format(g.total_shares)} shares were vested at today's price">
-            potential ${fmtUSD.format(c.potential_full_vest_usd)}
+          <div class="holding-row__value-sub" style="color: var(--color-muted)" title="${escapeHtml(t('rsu.potentialTitle', { shares: fmtNum.format(g.total_shares) }))}">
+            ${t('rsu.potential', { value: fmtUSD.format(c.potential_full_vest_usd) })}
           </div>` : `<div class="holding-row__value-sub" style="color: var(--color-${profitClass})">${profitSign}${fmtUSD.format(c.profit_usd || 0)} / ${profitSign}${fmtILS.format(c.profit_ils || 0)}</div>`}
         <span class="holding-row__chev">▾</span>
       </div>
@@ -3352,34 +3373,34 @@ function renderRSURow(g) {
 function renderRSUDetail(g) {
   const c = g.computed || {};
   const cbPerShare = c.cost_basis_per_share_usd;
-  const overrideTag = c.uses_override_price ? `<span class="badge">override</span>` : '';
+  const overrideTag = c.uses_override_price ? `<span class="badge">${t('badge.override')}</span>` : '';
   return `
   <div class="holding-row__detail">
     <dl class="detail-grid">
-      <div><dt>Current price</dt><dd>${c.current_price_usd ? fmtUSDPrec.format(c.current_price_usd) : '—'}</dd></div>
+      <div><dt>${t('rsu.currentPrice')}</dt><dd>${c.current_price_usd ? fmtUSDPrec.format(c.current_price_usd) : '—'}</dd></div>
       <div><dt>USDILS</dt><dd>${(c.current_usdils || 0).toFixed(4)}</dd></div>
-      <div><dt>Cost basis / share ${overrideTag}</dt><dd>${cbPerShare ? fmtUSDPrec.format(cbPerShare) : '—'}</dd></div>
-      <div><dt>Cost basis (vested)</dt><dd>${fmtUSDPrec.format(c.cost_basis_total_usd || 0)} ≈ ${fmtILS.format(c.cost_basis_total_ils || 0)}</dd></div>
-      <div><dt>Grant-date market close</dt><dd>${c.grant_close_usd ? fmtUSDPrec.format(c.grant_close_usd) : '—'}</dd></div>
-      <div><dt>Grant USDILS</dt><dd>${(c.grant_usdils || 0).toFixed(4)}</dd></div>
-      <div><dt>Vesting cadence</dt><dd>${g.vesting_cadence}</dd></div>
-      <div><dt>Fully vested by</dt><dd>${c.full_vest_date || '—'}</dd></div>
-      <div><dt>Held now / vested / sold</dt><dd>${fmtNum.format(c.shares_held_now || 0)} / ${fmtNum.format(c.vested_shares_now || 0)} / ${fmtNum.format(c.shares_sold_total || 0)}</dd></div>
-      <div><dt>Potential at today's price</dt><dd>${fmtUSD.format(c.potential_full_vest_usd || 0)} ≈ ${fmtILS.format(c.potential_full_vest_ils || 0)}</dd></div>
-      <div><dt>Realized gain</dt><dd>${fmtUSD.format(c.realized_gain_usd || 0)} / ${fmtILS.format(c.realized_gain_ils || 0)}</dd></div>
-      <div><dt>Unrealized gain</dt><dd>${fmtUSD.format(c.unrealized_gain_usd || 0)} / ${fmtILS.format(c.unrealized_gain_ils || 0)}</dd></div>
-      <div><dt>Last sync</dt><dd>${timeAgo(g.last_synced)}</dd></div>
+      <div><dt>${t('rsu.costBasisPerShare')} ${overrideTag}</dt><dd>${cbPerShare ? fmtUSDPrec.format(cbPerShare) : '—'}</dd></div>
+      <div><dt>${t('rsu.costBasisVested')}</dt><dd>${fmtUSDPrec.format(c.cost_basis_total_usd || 0)} ≈ ${fmtILS.format(c.cost_basis_total_ils || 0)}</dd></div>
+      <div><dt>${t('rsu.grantClose')}</dt><dd>${c.grant_close_usd ? fmtUSDPrec.format(c.grant_close_usd) : '—'}</dd></div>
+      <div><dt>${t('rsu.grantUsdils')}</dt><dd>${(c.grant_usdils || 0).toFixed(4)}</dd></div>
+      <div><dt>${t('rsu.vestingCadence')}</dt><dd>${g.vesting_cadence}</dd></div>
+      <div><dt>${t('rsu.fullyVestedBy')}</dt><dd>${c.full_vest_date || '—'}</dd></div>
+      <div><dt>${t('rsu.heldVestedSold')}</dt><dd>${fmtNum.format(c.shares_held_now || 0)} / ${fmtNum.format(c.vested_shares_now || 0)} / ${fmtNum.format(c.shares_sold_total || 0)}</dd></div>
+      <div><dt>${t('rsu.potentialToday')}</dt><dd>${fmtUSD.format(c.potential_full_vest_usd || 0)} ≈ ${fmtILS.format(c.potential_full_vest_ils || 0)}</dd></div>
+      <div><dt>${t('rsu.realizedGain')}</dt><dd>${fmtUSD.format(c.realized_gain_usd || 0)} / ${fmtILS.format(c.realized_gain_ils || 0)}</dd></div>
+      <div><dt>${t('rsu.unrealizedGain')}</dt><dd>${fmtUSD.format(c.unrealized_gain_usd || 0)} / ${fmtILS.format(c.unrealized_gain_ils || 0)}</dd></div>
+      <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(g.last_synced)}</dd></div>
     </dl>
-    <p class="chart-caption">"Potential at today's price" = remaining shares × today's price. Realized gain = (sale price − cost basis) × shares sold, FX from the sale date. Unrealized = (current price − cost basis) × shares still held.</p>
+    <p class="chart-caption">${t('rsu.detailCaption')}</p>
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-rsu-${g.id}"></canvas></div>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${escapeHtml(g.ticker)} price &amp; analyst forecast <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">USD · history (6m or back to grant) → analyst 12-mo target</span></h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${escapeHtml(t('rsu.forecastHeading', { ticker: g.ticker }))} <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">${t('rsu.forecastSub')}</span></h3>
     <p class="chart-caption" id="rsu-stock-summary-${g.id}" style="margin-bottom:0.4rem"></p>
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-rsu-stock-${g.id}"></canvas></div>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Sales <span class="h2-count">${(g.sales || []).length}</span></h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('rsu.sales')} <span class="h2-count">${(g.sales || []).length}</span></h3>
     ${(g.sales || []).length ? `<div style="overflow-x:auto"><table class="event-table">
-      <thead><tr><th>Date</th><th>Shares</th><th>Sale price</th><th>Proceeds</th><th>Note</th><th></th></tr></thead>
+      <thead><tr><th>${t('table.date')}</th><th>${t('table.shares')}</th><th>${t('table.salePrice')}</th><th>${t('table.proceeds')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${(g.sales || []).slice().sort((a,b)=>a.date.localeCompare(b.date)).map(s => `<tr>
         <td>${s.date}</td>
         <td>${fmtNum.format(s.shares_sold)}</td>
@@ -3388,21 +3409,21 @@ function renderRSUDetail(g) {
         <td dir="auto">${escapeHtml(s.note || '')}</td>
         <td><button class="btn btn--danger btn--small" data-del-sale="${g.id}:${s.id}">×</button></td>
       </tr>`).join('')}</tbody>
-    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">No sales yet.</p>`}
+    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('rsu.noSales')}</p>`}
     <div class="event-form">
-      <div class="field"><label>Date</label><input type="date" id="sl-date-${g.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Shares to sell</label><input type="number" id="sl-shares-${g.id}" min="1" step="1" placeholder="max ${c.shares_held_now || 0}"></div>
-      <div class="field"><label>Sale price (USD/sh)</label><input type="number" id="sl-price-${g.id}" min="0" step="0.0001" placeholder="${c.current_price_usd ? c.current_price_usd.toFixed(2) : ''}"></div>
-      <div class="field"><label>Note</label><input type="text" id="sl-note-${g.id}"></div>
-      <button class="btn btn--primary btn--small" data-add-sale="${g.id}">Sell</button>
+      <div class="field"><label>${t('table.date')}</label><input type="date" id="sl-date-${g.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>${t('rsu.sharesToSell')}</label><input type="number" id="sl-shares-${g.id}" min="1" step="1" placeholder="max ${c.shares_held_now || 0}"></div>
+      <div class="field"><label>${t('rsu.salePriceUsd')}</label><input type="number" id="sl-price-${g.id}" min="0" step="0.0001" placeholder="${c.current_price_usd ? c.current_price_usd.toFixed(2) : ''}"></div>
+      <div class="field"><label>${t('common.note')}</label><input type="text" id="sl-note-${g.id}"></div>
+      <button class="btn btn--primary btn--small" data-add-sale="${g.id}">${t('rsu.sell')}</button>
       <span></span>
     </div>
 
     <div class="actions-row" style="margin-top:1rem">
-      <button class="btn btn--ghost btn--small" data-edit-nickname-rsu="${g.id}">Rename</button>
-      <button class="btn btn--ghost btn--small" data-edit-shares-rsu="${g.id}">Edit shares</button>
-      <button class="btn btn--ghost btn--small" data-edit-grantprice-rsu="${g.id}">Set grant price (FMV override)</button>
-      <button class="btn btn--danger btn--small" data-delete-rsu="${g.id}">Delete</button>
+      <button class="btn btn--ghost btn--small" data-edit-nickname-rsu="${g.id}">${t('action.rename')}</button>
+      <button class="btn btn--ghost btn--small" data-edit-shares-rsu="${g.id}">${t('action.editShares')}</button>
+      <button class="btn btn--ghost btn--small" data-edit-grantprice-rsu="${g.id}">${t('action.setGrantPrice')}</button>
+      <button class="btn btn--danger btn--small" data-delete-rsu="${g.id}">${t('action.delete')}</button>
     </div>
   </div>`;
 }
@@ -3416,7 +3437,7 @@ function renderESPP() {
     .sort((a, b) => (b.computed?.current_value_ils || 0) - (a.computed?.current_value_ils || 0));
   document.getElementById('espp-count').textContent = plans.length;
   if (!plans.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No ESPP plans yet</strong>Add a plan to track purchases, lookback bonuses, and discount captured each cycle.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-espp-btn">${escapeHtml(t('espp.add'))}</button></div></div>`;
+    list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.espp.title'))}</strong>${escapeHtml(t('empty.espp.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-espp-btn">${escapeHtml(t('espp.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = plans.map(p => renderESPPRow(p)).join('');
@@ -3432,9 +3453,9 @@ function renderESPP() {
 function renderESPPRow(plan) {
   const c = plan.computed || {};
   const expanded = EXPANDED.has(`espp:${plan.id}`);
-  const archivedBadge = plan.archived ? `<span class="badge badge--archived">archived</span>` : '';
-  const noDataBadge = c.no_data ? `<span class="badge badge--pending">no price data</span>` : '';
-  const lookbackBadge = plan.has_lookback ? `<span class="badge badge--lookback">lookback</span>` : '';
+  const archivedBadge = plan.archived ? `<span class="badge badge--archived">${t('badge.archived')}</span>` : '';
+  const noDataBadge = c.no_data ? `<span class="badge badge--pending">${t('badge.noPriceData')}</span>` : '';
+  const lookbackBadge = plan.has_lookback ? `<span class="badge badge--lookback">${t('badge.lookback')}</span>` : '';
   const purchaseCount = (plan.purchases || []).length;
   const saleCount = (plan.sales || []).length;
   const profit = c.profit_usd || 0;
@@ -3446,11 +3467,11 @@ function renderESPPRow(plan) {
       <div>
         <p class="holding-row__title">${escapeHtml(plan.nickname || plan.ticker)} <span class="badge badge--espp">${escapeHtml(plan.ticker)}</span> ${noDataBadge} ${lookbackBadge} ${archivedBadge}</p>
         <p class="holding-row__sub">
-          <span>${fmtNum.format(c.shares_held_now || 0)} shares held</span>
+          <span>${t('espp.sharesHeldSub', { n: fmtNum.format(c.shares_held_now || 0) })}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span>${purchaseCount} purchase${purchaseCount === 1 ? '' : 's'} · ${saleCount} sale${saleCount === 1 ? '' : 's'}</span>
+          <span>${(purchaseCount === 1 ? t('espp.purchaseCount', { n: purchaseCount }) : t('espp.purchaseCountPlural', { n: purchaseCount }))} · ${(saleCount === 1 ? t('espp.saleCount', { n: saleCount }) : t('espp.saleCountPlural', { n: saleCount }))}</span>
           <span class="holding-row__sub-sep">·</span>
-          <span>${plan.discount_pct}% discount${plan.has_lookback ? ' + lookback' : ''} · ${plan.offering_months}m</span>
+          <span>${t('espp.discountSub', { pct: plan.discount_pct, lookback: plan.has_lookback ? t('espp.plusLookback') : '', months: plan.offering_months })}</span>
         </p>
       </div>
       <svg class="holding-row__sparkline" id="spark-espp-${plan.id}"></svg>
@@ -3473,30 +3494,30 @@ function renderESPPDetail(plan) {
   return `
   <div class="holding-row__detail">
     <dl class="detail-grid">
-      <div><dt>Current price</dt><dd>${c.current_price_usd ? fmtUSDPrec.format(c.current_price_usd) : '—'} <small>${escapeHtml(plan.ticker)}</small></dd></div>
+      <div><dt>${t('espp.currentPrice')}</dt><dd>${c.current_price_usd ? fmtUSDPrec.format(c.current_price_usd) : '—'} <small>${escapeHtml(plan.ticker)}</small></dd></div>
       <div><dt>USDILS</dt><dd>${(c.current_usdils || 0).toFixed(4)}</dd></div>
-      <div><dt>Discount</dt><dd>${plan.discount_pct}% <small>${plan.has_lookback ? '+ lookback' : 'no lookback'}</small></dd></div>
-      <div><dt>Offering length</dt><dd>${plan.offering_months} months</dd></div>
-      <div><dt>Total contributed</dt><dd>${fmtUSD.format(c.total_contributed_usd || 0)} <small>≈ ${fmtILS.format(c.total_contributed_ils || 0)}</small></dd></div>
-      <div><dt>Shares acquired</dt><dd>${fmtNum.format(c.shares_acquired_total || 0)}</dd></div>
-      <div><dt>Held / Sold</dt><dd>${fmtNum.format(c.shares_held_now || 0)} / ${fmtNum.format(c.shares_sold_total || 0)}</dd></div>
-      <div><dt>Cost basis (held)</dt><dd>${fmtUSDPrec.format(c.cost_basis_total_usd || 0)} <small>${cbPerShare ? fmtUSDPrec.format(cbPerShare) + '/sh' : ''}</small></dd></div>
-      <div><dt>Discount captured (lifetime)</dt><dd style="color:var(--color-success)">${fmtUSD.format(c.discount_captured_usd_total || 0)}</dd></div>
-      <div><dt>Of which lookback bonus</dt><dd style="color:var(--color-success)">${fmtUSD.format(c.lookback_bonus_usd_total || 0)}</dd></div>
-      <div><dt>Realized gain</dt><dd>${fmtUSD.format(c.realized_gain_usd || 0)} / ${fmtILS.format(c.realized_gain_ils || 0)}</dd></div>
-      <div><dt>Unrealized gain</dt><dd>${fmtUSD.format(c.unrealized_gain_usd || 0)} / ${fmtILS.format(c.unrealized_gain_ils || 0)}</dd></div>
-      <div><dt>Last sync</dt><dd>${timeAgo(plan.last_synced)}</dd></div>
+      <div><dt>${t('espp.discountLabel')}</dt><dd>${plan.discount_pct}% <small>${plan.has_lookback ? t('espp.plusLookback') : t('espp.noLookback')}</small></dd></div>
+      <div><dt>${t('espp.offeringLength')}</dt><dd>${plan.offering_months} ${t('espp.months')}</dd></div>
+      <div><dt>${t('espp.totalContributed')}</dt><dd>${fmtUSD.format(c.total_contributed_usd || 0)} <small>≈ ${fmtILS.format(c.total_contributed_ils || 0)}</small></dd></div>
+      <div><dt>${t('espp.sharesAcquired')}</dt><dd>${fmtNum.format(c.shares_acquired_total || 0)}</dd></div>
+      <div><dt>${t('espp.heldSold')}</dt><dd>${fmtNum.format(c.shares_held_now || 0)} / ${fmtNum.format(c.shares_sold_total || 0)}</dd></div>
+      <div><dt>${t('espp.costBasisHeld')}</dt><dd>${fmtUSDPrec.format(c.cost_basis_total_usd || 0)} <small>${cbPerShare ? fmtUSDPrec.format(cbPerShare) + '/sh' : ''}</small></dd></div>
+      <div><dt>${t('espp.discountCapturedLifetime')}</dt><dd style="color:var(--color-success)">${fmtUSD.format(c.discount_captured_usd_total || 0)}</dd></div>
+      <div><dt>${t('espp.ofWhichLookback')}</dt><dd style="color:var(--color-success)">${fmtUSD.format(c.lookback_bonus_usd_total || 0)}</dd></div>
+      <div><dt>${t('espp.realizedGain')}</dt><dd>${fmtUSD.format(c.realized_gain_usd || 0)} / ${fmtILS.format(c.realized_gain_ils || 0)}</dd></div>
+      <div><dt>${t('espp.unrealizedGain')}</dt><dd>${fmtUSD.format(c.unrealized_gain_usd || 0)} / ${fmtILS.format(c.unrealized_gain_ils || 0)}</dd></div>
+      <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(plan.last_synced)}</dd></div>
     </dl>
-    <p class="chart-caption"><strong>Discount captured</strong> = (period-end price × shares) − contribution; includes both the base discount and any lookback bonus. <strong>Realized</strong> uses FIFO across purchase lots and FX from the sale date. <strong>Unrealized</strong> = (current price − cost basis) × held shares.</p>
+    <p class="chart-caption">${t('espp.detailCaption')}</p>
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-espp-${plan.id}"></canvas></div>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${escapeHtml(plan.ticker)} price &amp; analyst forecast <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">USD · history (6m or back to first purchase) → analyst 12-mo target</span></h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${escapeHtml(t('rsu.forecastHeading', { ticker: plan.ticker }))} <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">${t('espp.forecastSub')}</span></h3>
     <p class="chart-caption" id="espp-stock-summary-${plan.id}" style="margin-bottom:0.4rem"></p>
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-espp-stock-${plan.id}"></canvas></div>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Purchases <span class="h2-count">${purchases.length}</span></h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('espp.purchases')} <span class="h2-count">${purchases.length}</span></h3>
     ${purchases.length ? `<div style="overflow-x:auto"><table class="event-table">
-      <thead><tr><th>Date</th><th>Contribution</th><th>Period start</th><th>Period end</th><th>Buy price</th><th>Shares</th><th>Discount captured</th><th>Lookback bonus</th><th>Note</th><th></th></tr></thead>
+      <thead><tr><th>${t('table.date')}</th><th>${t('table.contribution')}</th><th>${t('table.periodStart')}</th><th>${t('table.periodEnd')}</th><th>${t('table.buyPrice')}</th><th>${t('table.shares')}</th><th>${t('table.discountCaptured')}</th><th>${t('table.lookbackBonus')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${purchases.map(p => {
         const dc = (p.period_end_price_usd * p.shares) - p.contribution_usd;
         const lb = plan.has_lookback ? Math.max(0, (p.period_end_price_usd - p.period_start_price_usd) * p.shares) : 0;
@@ -3510,48 +3531,48 @@ function renderESPPDetail(plan) {
           <td style="color:var(--color-success)">${fmtUSD.format(dc)}</td>
           <td style="color:${lb > 0 ? 'var(--color-success)' : 'var(--color-muted)'}">${fmtUSD.format(lb)}</td>
           <td dir="auto">${escapeHtml(p.note || '')}</td>
-          <td><button class="btn btn--danger btn--small" data-del-espp-purchase="${plan.id}:${p.id}" title="Delete purchase (and its auto-fill sale, if any)">×</button></td>
+          <td><button class="btn btn--danger btn--small" data-del-espp-purchase="${plan.id}:${p.id}" title="${escapeHtml(t('espp.deletePurchaseTitle'))}">×</button></td>
         </tr>`;
       }).join('')}</tbody>
-    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">No purchases yet.</p>`}
+    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('espp.noPurchases')}</p>`}
     <div class="event-form">
-      <div class="field"><label>Purchase date (period end)</label><input type="date" id="ep-date-${plan.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Contribution (USD)</label><input type="number" id="ep-contrib-${plan.id}" min="0.01" step="0.01" placeholder="6000"></div>
-      <div class="field"><label>Period-start price</label><input type="number" id="ep-start-${plan.id}" min="0.01" step="0.01"></div>
-      <div class="field"><label>Period-end price</label><input type="number" id="ep-end-${plan.id}" min="0.01" step="0.01"></div>
-      <div class="field"><label>Note</label><input type="text" id="ep-note-${plan.id}"></div>
+      <div class="field"><label>${t('espp.purchaseDate')}</label><input type="date" id="ep-date-${plan.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>${t('espp.contributionUsd')}</label><input type="number" id="ep-contrib-${plan.id}" min="0.01" step="0.01" placeholder="6000"></div>
+      <div class="field"><label>${t('espp.periodStartPrice')}</label><input type="number" id="ep-start-${plan.id}" min="0.01" step="0.01"></div>
+      <div class="field"><label>${t('espp.periodEndPrice')}</label><input type="number" id="ep-end-${plan.id}" min="0.01" step="0.01"></div>
+      <div class="field"><label>${t('common.note')}</label><input type="text" id="ep-note-${plan.id}"></div>
       <label class="form-checkbox" style="font-size:0.8125rem; padding-top:1.4rem">
         <input type="checkbox" id="ep-sell-${plan.id}" checked>
-        <span>Auto-sell at period end</span>
+        <span>${t('espp.autoSell')}</span>
       </label>
-      <button class="btn btn--primary btn--small" data-add-espp-purchase="${plan.id}">Log purchase</button>
+      <button class="btn btn--primary btn--small" data-add-espp-purchase="${plan.id}">${t('espp.logPurchase')}</button>
     </div>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">Sales <span class="h2-count">${sales.length}</span></h3>
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('rsu.sales')} <span class="h2-count">${sales.length}</span></h3>
     ${sales.length ? `<div style="overflow-x:auto"><table class="event-table">
-      <thead><tr><th>Date</th><th>Shares</th><th>Sale price</th><th>Proceeds</th><th>Note</th><th></th></tr></thead>
+      <thead><tr><th>${t('table.date')}</th><th>${t('table.shares')}</th><th>${t('table.salePrice')}</th><th>${t('table.proceeds')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${sales.map(s => `<tr>
         <td>${s.date}</td>
         <td>${fmtNum.format(s.shares_sold)}</td>
         <td>${fmtUSDPrec.format(s.sale_price_usd)}</td>
         <td><strong>${fmtUSD.format(s.shares_sold * s.sale_price_usd)}</strong></td>
-        <td dir="auto">${escapeHtml(s.note || '')}${s.purchase_id ? ` <span class="badge">auto</span>` : ''}</td>
+        <td dir="auto">${escapeHtml(s.note || '')}${s.purchase_id ? ` <span class="badge">${t('badge.auto')}</span>` : ''}</td>
         <td><button class="btn btn--danger btn--small" data-del-espp-sale="${plan.id}:${s.id}">×</button></td>
       </tr>`).join('')}</tbody>
-    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">No sales yet.</p>`}
+    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('rsu.noSales')}</p>`}
     <div class="event-form">
-      <div class="field"><label>Date</label><input type="date" id="es-date-${plan.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Shares to sell</label><input type="number" id="es-shares-${plan.id}" min="0.0001" step="0.0001" placeholder="max ${(c.shares_held_now || 0).toFixed(4)}"></div>
-      <div class="field"><label>Sale price (USD/sh)</label><input type="number" id="es-price-${plan.id}" min="0" step="0.0001" placeholder="${c.current_price_usd ? c.current_price_usd.toFixed(2) : ''}"></div>
-      <div class="field"><label>Note</label><input type="text" id="es-note-${plan.id}"></div>
-      <button class="btn btn--primary btn--small" data-add-espp-sale="${plan.id}">Sell</button>
+      <div class="field"><label>${t('table.date')}</label><input type="date" id="es-date-${plan.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>${t('rsu.sharesToSell')}</label><input type="number" id="es-shares-${plan.id}" min="0.0001" step="0.0001" placeholder="max ${(c.shares_held_now || 0).toFixed(4)}"></div>
+      <div class="field"><label>${t('rsu.salePriceUsd')}</label><input type="number" id="es-price-${plan.id}" min="0" step="0.0001" placeholder="${c.current_price_usd ? c.current_price_usd.toFixed(2) : ''}"></div>
+      <div class="field"><label>${t('common.note')}</label><input type="text" id="es-note-${plan.id}"></div>
+      <button class="btn btn--primary btn--small" data-add-espp-sale="${plan.id}">${t('rsu.sell')}</button>
       <span></span>
     </div>
 
     <div class="actions-row" style="margin-top:1rem">
-      <button class="btn btn--ghost btn--small" data-edit-espp="${plan.id}">Edit plan</button>
-      <button class="btn btn--ghost btn--small" data-archive-espp="${plan.id}">${plan.archived ? 'Unarchive' : 'Archive'}</button>
-      <button class="btn btn--danger btn--small" data-delete-espp="${plan.id}">Delete plan</button>
+      <button class="btn btn--ghost btn--small" data-edit-espp="${plan.id}">${t('action.editPlan')}</button>
+      <button class="btn btn--ghost btn--small" data-archive-espp="${plan.id}">${plan.archived ? t('action.unarchive') : t('action.archive')}</button>
+      <button class="btn btn--danger btn--small" data-delete-espp="${plan.id}">${t('action.deletePlan')}</button>
     </div>
   </div>`;
 }
@@ -3566,7 +3587,7 @@ function drawEsppStockHistoryChart(canvasId, plan) {
   if (!dailyRows.length) {
     ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
     if (summaryEl) {
-      summaryEl.innerHTML = `<span style="color:var(--color-muted)">No price history cached for ${escapeHtml(plan.ticker)} yet — hit Refresh to fetch from Yahoo Finance.</span>`;
+      summaryEl.innerHTML = `<span style="color:var(--color-muted)">${escapeHtml(t('chart.noHistory', { ticker: plan.ticker }))}</span>`;
     }
     return;
   }
@@ -3592,7 +3613,7 @@ function drawEsppStockHistoryChart(canvasId, plan) {
   const histPadded = [...histData, ...new Array(FORECAST_COLUMNS).fill(null)];
 
   const datasets = [
-    { label: `${plan.ticker} close (USD)`, data: histPadded,
+    { label: t('chart.close', { ticker: plan.ticker }), data: histPadded,
       borderColor: 'rgba(224,151,95,1)',
       backgroundColor: 'rgba(224,151,95,0.10)', fill: 'origin',
       tension: 0.1, pointRadius: 0, pointHoverRadius: 4,
@@ -3613,7 +3634,7 @@ function drawEsppStockHistoryChart(canvasId, plan) {
   });
   if (anyMarker) {
     datasets.push({
-      label: `Purchase dates (${purchases.length})`,
+      label: t('chart.purchaseDates', { n: purchases.length }),
       data: markerData,
       borderColor: 'rgba(183,110,0,1)',
       backgroundColor: 'rgba(183,110,0,1)',
@@ -3634,7 +3655,7 @@ function drawEsppStockHistoryChart(canvasId, plan) {
     };
     if (tg.target_low != null) {
       datasets.push({
-        label: `Analyst low (${fmtUSDPrec.format(tg.target_low)})`,
+        label: t('chart.analystLow', { value: fmtUSDPrec.format(tg.target_low) }),
         data: buildForecastLine(tg.target_low),
         borderColor: 'rgba(31,138,76,0.55)',
         borderDash: [3, 3], borderWidth: 1,
@@ -3643,7 +3664,7 @@ function drawEsppStockHistoryChart(canvasId, plan) {
     }
     if (tg.target_high != null) {
       datasets.push({
-        label: `Analyst high (${fmtUSDPrec.format(tg.target_high)})`,
+        label: t('chart.analystHigh', { value: fmtUSDPrec.format(tg.target_high) }),
         data: buildForecastLine(tg.target_high),
         borderColor: 'rgba(31,138,76,0.55)',
         backgroundColor: 'rgba(31,138,76,0.12)',
@@ -3652,9 +3673,9 @@ function drawEsppStockHistoryChart(canvasId, plan) {
         spanGaps: true, pointRadius: 0, tension: 0,
       });
     }
-    const nAnalysts = tg.num_analysts ? `${tg.num_analysts} analysts` : 'consensus';
+    const nAnalysts = tg.num_analysts ? t('chart.analystsCount', { n: tg.num_analysts }) : t('chart.consensus');
     datasets.push({
-      label: `Analyst 12-mo target — mean ${fmtUSDPrec.format(tg.target_mean)} (${nAnalysts})`,
+      label: t('chart.analystMean', { value: fmtUSDPrec.format(tg.target_mean), analysts: nAnalysts }),
       data: buildForecastLine(tg.target_mean),
       borderColor: 'rgba(31,138,76,1)',
       borderDash: [6, 3], borderWidth: 1.75,
@@ -3664,21 +3685,21 @@ function drawEsppStockHistoryChart(canvasId, plan) {
 
   if (summaryEl) {
     const parts = [
-      `<strong style="color:rgba(224,151,95,1)">●</strong> Current close <strong>${fmtUSDPrec.format(currentClose)}</strong>`,
+      `<strong style="color:rgba(224,151,95,1)">●</strong> ${t('chart.currentClose')} <strong>${fmtUSDPrec.format(currentClose)}</strong>`,
     ];
     if (anyMarker) {
-      parts.push(`<strong style="color:rgba(183,110,0,1)">●</strong> ${purchases.length} purchase${purchases.length === 1 ? '' : 's'} marked`);
+      parts.push(`<strong style="color:rgba(183,110,0,1)">●</strong> ${purchases.length === 1 ? t('chart.purchaseMarked', { n: purchases.length }) : t('chart.purchasesMarked', { n: purchases.length })}`);
     }
     if (tg && tg.target_mean != null) {
       const delta = tg.target_mean - currentClose;
       const sign = delta >= 0 ? '+' : '';
       const pct = currentClose ? (delta / currentClose) * 100 : 0;
       const range = (tg.target_low != null && tg.target_high != null)
-        ? ` <span style="color:var(--color-muted)">(range ${fmtUSDPrec.format(tg.target_low)}–${fmtUSDPrec.format(tg.target_high)}, ${tg.num_analysts || '?'} analysts)</span>`
+        ? ` <span style="color:var(--color-muted)">${t('chart.rangeAnalysts', { low: fmtUSDPrec.format(tg.target_low), high: fmtUSDPrec.format(tg.target_high), n: tg.num_analysts || '?' })}</span>`
         : '';
-      parts.push(`<strong style="color:rgba(31,138,76,1)">●</strong> Analyst 12-mo target <strong>${fmtUSDPrec.format(tg.target_mean)}</strong> <span style="color:var(--color-muted)">(${sign}${pct.toFixed(1)}% vs current)</span>${range}`);
+      parts.push(`<strong style="color:rgba(31,138,76,1)">●</strong> ${t('chart.analystTargetSummary')} <strong>${fmtUSDPrec.format(tg.target_mean)}</strong> <span style="color:var(--color-muted)">${t('chart.vsCurrent', { sign, pct: pct.toFixed(1) })}</span>${range}`);
     } else {
-      parts.push(`<span style="color:var(--color-muted)">No analyst target available for ${escapeHtml(plan.ticker)}.</span>`);
+      parts.push(`<span style="color:var(--color-muted)">${escapeHtml(t('chart.noAnalystTarget', { ticker: plan.ticker }))}</span>`);
     }
     summaryEl.innerHTML = parts.join(' &nbsp;·&nbsp; ');
   }
@@ -3715,7 +3736,7 @@ function drawRsuStockHistoryChart(canvasId, grant) {
   if (!dailyRows.length) {
     ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
     if (summaryEl) {
-      summaryEl.innerHTML = `<span style="color:var(--color-muted)">No price history cached for ${escapeHtml(grant.ticker)} yet — hit Refresh to fetch from Yahoo Finance.</span>`;
+      summaryEl.innerHTML = `<span style="color:var(--color-muted)">${escapeHtml(t('chart.noHistory', { ticker: grant.ticker }))}</span>`;
     }
     return;
   }
@@ -3762,7 +3783,7 @@ function drawRsuStockHistoryChart(canvasId, grant) {
   // point) and the forecast endpoint.
   const tg = grant.analyst_target;
   const datasets = [
-    { label: `${grant.ticker} close (USD)`, data: histPadded,
+    { label: t('chart.close', { ticker: grant.ticker }), data: histPadded,
       borderColor: 'rgba(110,95,224,1)',
       backgroundColor: 'rgba(110,95,224,0.10)', fill: 'origin',
       tension: 0.1,
@@ -3776,7 +3797,7 @@ function drawRsuStockHistoryChart(canvasId, grant) {
 
   if (grantIdx >= 0) {
     datasets.push({
-      label: `Grant date ${grantDate} (${fmtUSDPrec.format(grantClose)})`,
+      label: t('chart.grantDate', { date: grantDate, price: fmtUSDPrec.format(grantClose) }),
       data: allLabels.map((_, i) => i === grantIdx ? histData[i] : null),
       borderColor: 'rgba(183,110,0,1)',
       backgroundColor: 'rgba(183,110,0,1)',
@@ -3798,7 +3819,7 @@ function drawRsuStockHistoryChart(canvasId, grant) {
     // BACK to the previous (low) dataset — paints the consensus band.
     if (tg.target_low != null) {
       datasets.push({
-        label: `Analyst low (${fmtUSDPrec.format(tg.target_low)})`,
+        label: t('chart.analystLow', { value: fmtUSDPrec.format(tg.target_low) }),
         data: buildForecastLine(tg.target_low),
         borderColor: 'rgba(31,138,76,0.55)',
         borderDash: [3, 3], borderWidth: 1,
@@ -3807,7 +3828,7 @@ function drawRsuStockHistoryChart(canvasId, grant) {
     }
     if (tg.target_high != null) {
       datasets.push({
-        label: `Analyst high (${fmtUSDPrec.format(tg.target_high)})`,
+        label: t('chart.analystHigh', { value: fmtUSDPrec.format(tg.target_high) }),
         data: buildForecastLine(tg.target_high),
         borderColor: 'rgba(31,138,76,0.55)',
         backgroundColor: 'rgba(31,138,76,0.12)',
@@ -3816,9 +3837,9 @@ function drawRsuStockHistoryChart(canvasId, grant) {
         spanGaps: true, pointRadius: 0, tension: 0,
       });
     }
-    const nAnalysts = tg.num_analysts ? `${tg.num_analysts} analysts` : 'consensus';
+    const nAnalysts = tg.num_analysts ? t('chart.analystsCount', { n: tg.num_analysts }) : t('chart.consensus');
     datasets.push({
-      label: `Analyst 12-mo target — mean ${fmtUSDPrec.format(tg.target_mean)} (${nAnalysts})`,
+      label: t('chart.analystMean', { value: fmtUSDPrec.format(tg.target_mean), analysts: nAnalysts }),
       data: buildForecastLine(tg.target_mean),
       borderColor: 'rgba(31,138,76,1)',
       borderDash: [6, 3], borderWidth: 1.75,
@@ -3829,24 +3850,24 @@ function drawRsuStockHistoryChart(canvasId, grant) {
   // Numeric summary above the chart — colors match dataset legend bullets.
   if (summaryEl) {
     const parts = [
-      `<strong style="color:rgba(110,95,224,1)">●</strong> Current close <strong>${fmtUSDPrec.format(currentClose)}</strong>`,
+      `<strong style="color:rgba(110,95,224,1)">●</strong> ${t('chart.currentClose')} <strong>${fmtUSDPrec.format(currentClose)}</strong>`,
     ];
     if (grantIdx >= 0) {
       const delta = currentClose - grantClose;
       const sign = delta >= 0 ? '+' : '';
       const pct = grantClose ? (delta / grantClose) * 100 : 0;
-      parts.push(`<strong style="color:rgba(183,110,0,1)">●</strong> Grant ${grantDate} <strong>${fmtUSDPrec.format(grantClose)}</strong> <span style="color:var(--color-muted)">(${sign}${fmtUSDPrec.format(delta)}, ${sign}${pct.toFixed(1)}%)</span>`);
+      parts.push(`<strong style="color:rgba(183,110,0,1)">●</strong> ${t('chart.grantSummary', { date: grantDate })} <strong>${fmtUSDPrec.format(grantClose)}</strong> <span style="color:var(--color-muted)">(${sign}${fmtUSDPrec.format(delta)}, ${sign}${pct.toFixed(1)}%)</span>`);
     }
     if (tg && tg.target_mean != null) {
       const delta = tg.target_mean - currentClose;
       const sign = delta >= 0 ? '+' : '';
       const pct = currentClose ? (delta / currentClose) * 100 : 0;
       const range = (tg.target_low != null && tg.target_high != null)
-        ? ` <span style="color:var(--color-muted)">(range ${fmtUSDPrec.format(tg.target_low)}–${fmtUSDPrec.format(tg.target_high)}, ${tg.num_analysts || '?'} analysts)</span>`
+        ? ` <span style="color:var(--color-muted)">${t('chart.rangeAnalysts', { low: fmtUSDPrec.format(tg.target_low), high: fmtUSDPrec.format(tg.target_high), n: tg.num_analysts || '?' })}</span>`
         : '';
-      parts.push(`<strong style="color:rgba(31,138,76,1)">●</strong> Analyst 12-mo target <strong>${fmtUSDPrec.format(tg.target_mean)}</strong> <span style="color:var(--color-muted)">(${sign}${pct.toFixed(1)}% vs current)</span>${range}`);
+      parts.push(`<strong style="color:rgba(31,138,76,1)">●</strong> ${t('chart.analystTargetSummary')} <strong>${fmtUSDPrec.format(tg.target_mean)}</strong> <span style="color:var(--color-muted)">${t('chart.vsCurrent', { sign, pct: pct.toFixed(1) })}</span>${range}`);
     } else {
-      parts.push(`<span style="color:var(--color-muted)">No analyst target available for ${escapeHtml(grant.ticker)} (sparse coverage or fetch pending).</span>`);
+      parts.push(`<span style="color:var(--color-muted)">${escapeHtml(t('chart.noAnalystTargetSparse', { ticker: grant.ticker }))}</span>`);
     }
     summaryEl.innerHTML = parts.join(' &nbsp;·&nbsp; ');
   }
@@ -3865,12 +3886,7 @@ function drawRsuStockHistoryChart(canvasId, grant) {
         legend: { display: true, position: 'bottom', labels: { font: { size: 11 } } },
         tooltip: {
           callbacks: {
-            label: (c) => {
-              if (c.dataset.label && c.dataset.label.startsWith('Grant date')) {
-                return `Grant date (${grantDate}): ${fmtUSDPrec.format(c.parsed.y)}`;
-              }
-              return `${c.dataset.label}: ${fmtUSDPrec.format(c.parsed.y)}`;
-            },
+            label: (c) => `${c.dataset.label}: ${fmtUSDPrec.format(c.parsed.y)}`,
           },
         },
       },
@@ -3895,27 +3911,27 @@ function portfolioFundsAnnualPct(proj) {
 function dashboardProjectionMeanLabel(proj) {
   if (!proj || !proj.paths?.mean?.length) return null;
   const annual = portfolioFundsAnnualPct(proj);
-  const contrib = proj.funds_includes_recurring ? ' + contributions' : '';
+  const contrib = proj.funds_includes_recurring ? t('proj.contribSuffix') : '';
   if (annual != null) {
-    return `Projection mean (~${annual.toFixed(1)}%/yr funds hist avg${contrib})`;
+    return t('proj.meanDashboard', { pct: annual.toFixed(1), contrib });
   }
-  return 'Projection mean';
+  return t('proj.mean');
 }
 
 function projectionMeanLabel(proj, kind) {
-  if (!proj || !proj.paths || !proj.paths.mean.length) return 'Projection mean';
+  if (!proj || !proj.paths || !proj.paths.mean.length) return t('proj.mean');
   if (kind === 'fund') {
     const annual = proj.annual_pct != null
       ? proj.annual_pct
       : (proj.mu_monthly != null ? (Math.pow(1 + proj.mu_monthly, 12) - 1) * 100 : null);
-    if (annual == null) return 'Projection mean';
+    if (annual == null) return t('proj.mean');
     const n = proj.n_samples || 0;
-    const contrib = proj.includes_recurring ? ' + contributions' : '';
-    return `Projection mean (~${annual.toFixed(1)}%/yr hist avg${contrib}, ${n} mo)`;
+    const contrib = proj.includes_recurring ? t('proj.contribSuffix') : '';
+    return t('proj.meanFund', { pct: annual.toFixed(1), contrib, n });
   }
-  if (kind === 'rsu') return 'Projection mean (vesting at today\'s price)';
-  if (kind === 'espp') return 'Projection mean (flat)';
-  return 'Projection mean';
+  if (kind === 'rsu') return t('proj.meanRsu');
+  if (kind === 'espp') return t('proj.meanEspp');
+  return t('proj.mean');
 }
 
 function drawDetailChart(canvasId, item, kind) {
@@ -4004,7 +4020,7 @@ function drawDetailChart(canvasId, item, kind) {
         if (idx === labels.length - 1) return last;
         return byMonth[lbl] != null ? byMonth[lbl] : null;
       });
-      whatIfLabel = `If funds grow ${wf.annual_pct}%/yr`;
+      whatIfLabel = t('chart.ifFundsGrow', { pct: wf.annual_pct });
     } else if (kind === 'rsu' && wf.paths_usd && wf.labels) {
       // RSU what-if has its own labels (YYYY-MM-DD); reduce to month and align
       const byMonth = {};
@@ -4016,7 +4032,7 @@ function drawDetailChart(canvasId, item, kind) {
         if (idx === labels.length - 1) return last;
         return byMonth[lbl] != null ? byMonth[lbl] : null;
       });
-      whatIfLabel = `If funds grow ${wf.annual_pct}%/yr`;
+      whatIfLabel = t('chart.ifFundsGrow', { pct: wf.annual_pct });
     }
   }
 
@@ -4025,8 +4041,8 @@ function drawDetailChart(canvasId, item, kind) {
   const capEl = document.querySelector(`[data-projection-caption-for="${canvasId}"]`);
   if (capEl) {
     if (kind === 'fund' && proj && proj.annual_pct != null) {
-      const contrib = proj.includes_recurring ? ' Includes your recurring contributions each month.' : '';
-      capEl.textContent = `Dashed line uses ~${proj.annual_pct.toFixed(1)}%/yr — the average of ${proj.n_samples || 0} historical monthly yields from the official dataset.${contrib}`;
+      const contrib = proj.includes_recurring ? t('detail.projCaptionContrib') : '';
+      capEl.textContent = t('detail.projCaption', { pct: proj.annual_pct.toFixed(1), n: proj.n_samples || 0, contrib });
       capEl.hidden = false;
     } else {
       capEl.textContent = '';
@@ -4039,10 +4055,10 @@ function drawDetailChart(canvasId, item, kind) {
     data: {
       labels: allLabels,
       datasets: [
-        { label: 'Value', data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : 'rgba(77,205,205,1)'), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : 'rgba(77,205,205,0.18)'), fill: 'origin', tension: 0.25, pointRadius: 0 },
+        { label: t('chart.value'), data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : 'rgba(77,205,205,1)'), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : 'rgba(77,205,205,0.18)'), fill: 'origin', tension: 0.25, pointRadius: 0 },
         { label: projMeanLabel, data: projMeanArr, borderColor: PROJECTION_MEAN_COLOR, backgroundColor: PROJECTION_MEAN_FILL, borderDash: [6,4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0 },
         ...(futureVestArr.length ? [{
-          label: 'Vesting at today\'s price',
+          label: t('chart.vestingAtToday'),
           data: futureVestArr,
           borderColor: 'rgba(183,110,0,1)',
           backgroundColor: 'rgba(183,110,0,0.10)',
@@ -4078,7 +4094,10 @@ function drawDetailChart(canvasId, item, kind) {
           position: 'bottom',
           labels: {
             font: { size: 11 },
-            filter: (item) => /Vesting|If funds grow|Projection mean/.test(item.text || ''),
+            filter: (item) => {
+              const shown = [projMeanLabel, whatIfLabel, t('chart.vestingAtToday')];
+              return shown.includes(item.text);
+            },
           },
         },
         tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtP.format(ctx.parsed.y || 0)}` } },
@@ -4111,16 +4130,16 @@ function renderCash() {
     .sort((a, b) => (b.computed?.value_ils || 0) - (a.computed?.value_ils || 0));
   document.getElementById('cash-count').textContent = items.length;
   if (!items.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No cash entries</strong>Add savings accounts, checking balances, or any non-invested money you want to count toward the total.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-cash-btn">${escapeHtml(t('cash.add'))}</button></div></div>`;
+    list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.cash.title'))}</strong>${escapeHtml(t('empty.cash.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-cash-btn">${escapeHtml(t('cash.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = items.map(c => {
     const cv = c.computed || {};
-    const archivedBadge = c.archived ? `<span class="badge badge--archived">archived</span>` : '';
+    const archivedBadge = c.archived ? `<span class="badge badge--archived">${t('badge.archived')}</span>` : '';
     const ccyBadge = `<span class="badge">${c.currency}</span>`;
     const nativeFmt = c.currency === 'USD' ? fmtUSD : fmtILS;
     const subline = c.currency === 'USD'
-      ? `≈ ${fmtILS.format(cv.value_ils || 0)} (USDILS ${cv.fx_used ? cv.fx_used.toFixed(4) : '—'})`
+      ? t('cash.usdilsSub', { ils: fmtILS.format(cv.value_ils || 0), fx: cv.fx_used ? cv.fx_used.toFixed(4) : '—' })
       : `${c.note ? escapeHtml(c.note) : ''}`;
     return `
     <div class="holding-row" data-id="${c.id}" data-archived="${!!c.archived}">
@@ -4134,8 +4153,8 @@ function renderCash() {
           <div class="holding-row__value">${nativeFmt.format(cv.value_native || 0)}</div>
           ${c.currency === 'USD' ? `<div class="holding-row__value-sub">${fmtILS.format(cv.value_ils || 0)}</div>` : ''}
           <div class="actions-row" style="justify-content:flex-end; gap:0.25rem; margin-top:0.4rem">
-            <button class="btn btn--ghost btn--small" data-edit-cash="${c.id}">Edit</button>
-            <button class="btn btn--danger btn--small" data-delete-cash="${c.id}">Delete</button>
+            <button class="btn btn--ghost btn--small" data-edit-cash="${c.id}">${t('cash.editLabel')}</button>
+            <button class="btn btn--danger btn--small" data-delete-cash="${c.id}">${t('action.delete')}</button>
           </div>
         </div>
       </div>
@@ -4151,9 +4170,9 @@ function renderSettings() {
   usdEl.value = s.usdils_rate_override || '';
   const cs = APP.cache_status || {};
   const parts = [];
-  if (cs.current_usdils) parts.push(`USDILS = ${cs.current_usdils.toFixed(4)}${cs.usdils_override ? ' (override)' : ''}`);
+  if (cs.current_usdils) parts.push(t('settings.usdilsInfo', { rate: cs.current_usdils.toFixed(4), override: cs.usdils_override ? t('settings.overrideSuffix') : '' }));
   if (cs.package_show_age_seconds !== null && cs.package_show_age_seconds !== undefined) {
-    parts.push(`gemelnet metadata ${Math.floor(cs.package_show_age_seconds/60)}m old`);
+    parts.push(t('settings.gemelnetAge', { n: Math.floor(cs.package_show_age_seconds/60) }));
   }
   document.getElementById('cache-info').textContent = parts.join(' · ');
 }
@@ -4302,7 +4321,7 @@ function _openModal({ title, description = '', body = '', okLabel = null, danger
     root.innerHTML = `
       <div class="modal__backdrop" data-act="cancel"></div>
       <div class="modal__panel">
-        <button class="modal__close" type="button" data-act="cancel" aria-label="Close">×</button>
+        <button class="modal__close" type="button" data-act="cancel" aria-label="${escapeHtml(t('common.close'))}">×</button>
         <h3 class="modal__title">${escapeHtml(title)}</h3>
         ${description ? `<p class="modal__desc">${escapeHtml(description)}</p>` : ''}
         <div class="modal__body">${body}</div>
@@ -4344,7 +4363,7 @@ function _openModal({ title, description = '', body = '', okLabel = null, danger
   });
 }
 
-async function modalPrompt({ title, description = '', label, type = 'text', value = '', placeholder = '', step, okLabel = 'Save' }) {
+async function modalPrompt({ title, description = '', label, type = 'text', value = '', placeholder = '', step, okLabel = t('common.save') }) {
   const safeVal = value === null || value === undefined ? '' : String(value);
   const body = `
     <div class="field">
@@ -4355,12 +4374,12 @@ async function modalPrompt({ title, description = '', label, type = 'text', valu
   return r === null ? null : r.value;
 }
 
-async function modalConfirm({ title, description = '', okLabel = 'Confirm', danger = true }) {
+async function modalConfirm({ title, description = '', okLabel = t('common.confirm'), danger = true }) {
   const r = await _openModal({ title, description, body: '', okLabel, danger });
   return r !== null;
 }
 
-async function modalForm({ title, description = '', fields, okLabel = 'Save', danger = false }) {
+async function modalForm({ title, description = '', fields, okLabel = t('common.save'), danger = false }) {
   const body = fields.map(f => {
     const safe = f.value === null || f.value === undefined ? '' : String(f.value);
     if (f.type === 'select') {
@@ -4382,7 +4401,7 @@ function openSpotCheckModal(holding, kind) {
   const c = holding.computed || {};
   const currentValue = +c.current_value_ils || 0;
   const currentPeriod = c.last_period;        // latest published month
-  const title = holding.nickname || holding.fund_name_snapshot || 'Holding';
+  const title = holding.nickname || holding.fund_name_snapshot || t('spot.title');
   // Default new-balance month = one month AFTER the latest published period
   // (the natural "fill in the next month" case).
   let defY = Math.floor((+currentPeriod || 0) / 100);
@@ -4400,32 +4419,32 @@ function openSpotCheckModal(holding, kind) {
   root.innerHTML = `
     <div class="modal__backdrop" data-act="cancel"></div>
     <div class="modal__panel modal__panel--wide">
-      <button class="modal__close" type="button" data-act="cancel" aria-label="Close">×</button>
-      <h3 class="modal__title">Spot-check yield</h3>
-      <p class="modal__desc" dir="auto">${escapeHtml(title)} · enter your actual end-of-month balance and see the implied yield for that month. Nothing is saved.</p>
+      <button class="modal__close" type="button" data-act="cancel" aria-label="${escapeHtml(t('common.close'))}">×</button>
+      <h3 class="modal__title">${t('spot.title')}</h3>
+      <p class="modal__desc" dir="auto">${t('spot.desc', { name: escapeHtml(title) })}</p>
       <div class="modal__body">
         <div class="spot-check__anchor">
-          <span>Current value (${isPension ? 'pensia-net' : 'Gemelnet'} projection)</span>
+          <span>${t('spot.currentValue', { source: isPension ? t('spot.sourcePension') : t('spot.sourceGemelnet') })}</span>
           <strong>${fmtILS.format(currentValue)} · ${periodLabel(currentPeriod)}</strong>
         </div>
         <div class="spot-check__inputs">
           <div class="field">
-            <label for="sc-balance-${holding.id}">New balance (₪)</label>
+            <label for="sc-balance-${holding.id}">${t('spot.newBalance')}</label>
             <input type="number" id="sc-balance-${holding.id}" data-field="new_balance_ils" step="0.01" min="0" value="${defaultBalance}">
           </div>
           <div class="field">
-            <label for="sc-month-${holding.id}">As of month</label>
+            <label for="sc-month-${holding.id}">${t('spot.asOfMonth')}</label>
             <input type="month" id="sc-month-${holding.id}" data-field="new_month" value="${defaultMonth}">
           </div>
         </div>
         <div class="spot-check__result" data-result>
-          <p class="spot-check__hint">Enter your actual balance and tap <strong>Recalculate</strong>.</p>
+          <p class="spot-check__hint">${t('spot.hint')}</p>
         </div>
-        <p class="modal__hint">Nothing is saved. Closing the popup discards these numbers.</p>
+        <p class="modal__hint">${t('spot.notSaved')}</p>
       </div>
       <div class="modal__actions">
-        <button class="btn btn--ghost btn--small" data-act="cancel" type="button">Close</button>
-        <button class="btn btn--primary btn--small" data-act="recalc" type="button">Recalculate</button>
+        <button class="btn btn--ghost btn--small" data-act="cancel" type="button">${t('common.close')}</button>
+        <button class="btn btn--primary btn--small" data-act="recalc" type="button">${t('spot.recalculate')}</button>
       </div>
     </div>
   `;
@@ -4439,15 +4458,15 @@ function openSpotCheckModal(holding, kind) {
     const month = monthInput.value;
     const resultEl = root.querySelector('[data-result]');
     if (!Number.isFinite(val) || val <= 0 || !month || !/^\d{4}-\d{2}$/.test(month)) {
-      resultEl.innerHTML = `<p class="spot-check__hint">Enter a positive balance + a month (YYYY-MM).</p>`;
+      resultEl.innerHTML = `<p class="spot-check__hint">${t('spot.enterPositive')}</p>`;
       return;
     }
     const [y, m] = month.split('-').map(Number);
     const newPeriod = y * 100 + m;
-    resultEl.innerHTML = `<p class="spot-check__hint">Calculating…</p>`;
+    resultEl.innerHTML = `<p class="spot-check__hint">${t('spot.calculating')}</p>`;
     const j = await api('POST', url, { new_balance_ils: val, new_period: newPeriod });
     if (!j || !j.ok) {
-      resultEl.innerHTML = `<p class="spot-check__error">${escapeHtml((j && j.error) || 'Failed')}</p>`;
+      resultEl.innerHTML = `<p class="spot-check__error">${escapeHtml((j && j.error) || t('spot.failed'))}</p>`;
       return;
     }
     resultEl.innerHTML = renderSpotCheckResult(j);
@@ -4486,54 +4505,54 @@ function renderSpotCheckResult(r) {
   if (r.tracking_gap_ils !== null && r.tracking_gap_ils !== undefined) {
     const ahead = r.tracking_gap_ils >= 0;
     const gapClass = ahead ? '' : 'spot-check__gap--negative';
-    const gemSource = 'Gemelnet';
-    const gapLabel = ahead ? `you’re ahead of ${gemSource}` : `you’re behind ${gemSource}`;
+    const gemSource = t('spot.sourceGemelnet');
+    const gapLabel = ahead ? t('spot.aheadOf', { source: gemSource }) : t('spot.behind', { source: gemSource });
     const sign = ahead ? '+' : '';
     gapHTML = `<div class="spot-check__gap ${gapClass}">
-      <span>Tracking gap vs. published yield (${gapLabel})</span>
+      <span>${t('spot.trackingGap', { label: gapLabel })}</span>
       <strong>${sign}${fmtILS.format(r.tracking_gap_ils)} (${fmtPP(r.tracking_gap_pp)})</strong>
     </div>`;
   } else {
-    gapHTML = `<p class="spot-check__warn">Published yield for ${periodLabel(r.new_period)} isn't in the cache yet — only the implied yield is shown above.</p>`;
+    gapHTML = `<p class="spot-check__warn">${t('spot.notInCache', { period: periodLabel(r.new_period) })}</p>`;
   }
 
   const eventsWarn = r.mixed_with_events
-    ? `<p class="spot-check__warn">Your deposits/withdrawals fall inside this gap — the implied yield mixes in your own contributions, so treat the comparison loosely.</p>`
+    ? `<p class="spot-check__warn">${t('spot.mixedEvents')}</p>`
     : '';
 
   const headlineYield = fmtCell(r.implied_monthly_yield_pct);
-  const monthCount = r.gap_months === 1 ? '1 month' : `${r.gap_months} months`;
+  const monthCount = r.gap_months === 1 ? t('spot.oneMonth') : t('spot.nMonths', { n: r.gap_months });
 
   return `
     <div class="spot-check__heading">${periodLabel(r.previous_period)} → ${periodLabel(r.new_period)} (${monthCount})</div>
     <div class="spot-check__compare">
       <div class="spot-check__cell">
-        <div class="spot-check__cell-label">Previous value</div>
+        <div class="spot-check__cell-label">${t('spot.previousValue')}</div>
         <div class="spot-check__cell-value">${fmtILS.format(r.previous_value_ils)}</div>
-        <div class="spot-check__cell-yield">end of ${periodLabel(r.previous_period)}</div>
+        <div class="spot-check__cell-yield">${t('spot.endOf', { period: periodLabel(r.previous_period) })}</div>
       </div>
       <div class="spot-check__cell spot-check__cell--actual">
-        <div class="spot-check__cell-label">Your new balance</div>
+        <div class="spot-check__cell-label">${t('spot.yourNewBalance')}</div>
         <div class="spot-check__cell-value">${fmtILS.format(r.new_balance_ils)}</div>
-        <div class="spot-check__cell-yield">end of ${periodLabel(r.new_period)}</div>
+        <div class="spot-check__cell-yield">${t('spot.endOf', { period: periodLabel(r.new_period) })}</div>
       </div>
     </div>
     <div class="spot-check__gap" style="background:rgb(110 95 224 / 0.08); border-left-color: var(--color-primary)">
-      <span>Implied yield for ${monthCount}</span>
-      <strong style="color:var(--color-primary-strong)">${headlineYield}${r.gap_months > 1 ? ` (${fmtCell(r.implied_monthly_yield_pct)}/mo)` : ''}</strong>
+      <span>${t('spot.impliedYield', { months: monthCount })}</span>
+      <strong style="color:var(--color-primary-strong)">${headlineYield}${r.gap_months > 1 ? t('spot.perMo', { rate: fmtCell(r.implied_monthly_yield_pct) }) : ''}</strong>
     </div>
     ${gapHTML}
     ${eventsWarn}
-    <div class="spot-check__heading" style="margin-top:0.75rem">Chained returns ending at ${periodLabel(r.new_period)}</div>
+    <div class="spot-check__heading" style="margin-top:0.75rem">${t('spot.chainedReturns', { period: periodLabel(r.new_period) })}</div>
     <table class="spot-check__returns">
       <thead>
-        <tr><th>Window</th><th>Published only</th><th></th><th>With your new balance</th></tr>
+        <tr><th>${t('spot.window')}</th><th>${t('spot.publishedOnly')}</th><th></th><th>${t('spot.withNewBalance')}</th></tr>
       </thead>
       <tbody>
         ${monthRow('3m', ur.three_m)}
         ${monthRow('6m', ur.six_m)}
         ${monthRow('12m', ur.twelve_m)}
-        ${monthRow(ur.ytd && ur.ytd.year ? ('YTD ' + ur.ytd.year) : 'YTD', ur.ytd)}
+        ${monthRow(ur.ytd && ur.ytd.year ? t('spot.ytdYear', { year: ur.ytd.year }) : t('spot.ytd'), ur.ytd)}
       </tbody>
     </table>
   `;
@@ -4555,20 +4574,23 @@ function periodLabel(p) {
   if (typeof p === 'string') return p;
   return `${Math.floor(p/100)}-${String(p%100).padStart(2,'0')}`;
 }
+function monthShortName(m) {
+  // Localized 3-letter month via the active language's locale.
+  const locale = (window.I18N && I18N.getLang && I18N.getLang() === 'he') ? 'he-IL' : 'en-US';
+  const d = new Date(2000, m - 1, 1);
+  return d.toLocaleDateString(locale, { month: 'short' });
+}
 function periodMonthShort(p) {
   if (typeof p !== 'number') return '';
-  const y = Math.floor(p/100), m = p % 100;
+  const m = p % 100;
   if (m < 1 || m > 12) return '';
-  const d = new Date(y, m - 1, 1);
-  return d.toLocaleDateString('en-US', { month: 'short' });
+  return monthShortName(m);
 }
 function periodMonthYearLabel(p) {
   if (typeof p !== 'number') return '';
   const y = Math.floor(p/100), m = p % 100;
   if (m < 1 || m > 12) return '';
-  const d = new Date(y, m - 1, 1);
-  const month = d.toLocaleDateString('en-US', { month: 'short' });
-  return `${month}-${y}`;
+  return `${monthShortName(m)}-${y}`;
 }
 
 // ── Retirement simulator (stateless, client-only) ──
@@ -4639,12 +4661,12 @@ function renderRetirementSimulator() {
     metaEl.hidden = true;
     pathsEl.hidden = true;
     warnEl.innerHTML = '';
-    boundsEl.textContent = `Min ${rsimFmt(Sim.MINIMUM_PENSION)} · max depends on balance`;
+    boundsEl.textContent = t('rsim.boundsDefault', { min: rsimFmt(Sim.MINIMUM_PENSION) });
     return;
   }
 
   if (!result.ok) {
-    errEl.textContent = result.error || 'Invalid inputs';
+    errEl.textContent = result.error || t('rsim.invalidInputs');
     metaEl.hidden = true;
     pathsEl.hidden = true;
     warnEl.innerHTML = '';
@@ -4655,7 +4677,7 @@ function renderRetirementSimulator() {
   const maxP = Math.floor(result.bounds.maxPension);
   range.min = Sim.MINIMUM_PENSION;
   range.max = Math.max(Sim.MINIMUM_PENSION, maxP);
-  boundsEl.textContent = `Min ${rsimFmt(Sim.MINIMUM_PENSION)} · max ${rsimFmt(maxP)} (full pension path)`;
+  boundsEl.textContent = t('rsim.boundsMax', { min: rsimFmt(Sim.MINIMUM_PENSION), max: rsimFmt(maxP) });
 
   let target = +targetPensionIls;
   if (Number.isNaN(target)) target = result.bounds.targetPension;
@@ -4669,68 +4691,68 @@ function renderRetirementSimulator() {
 
   metaEl.hidden = false;
   metaEl.innerHTML = `
-    <span>Retirement: <strong>${escapeHtml(result.retirementDate?.label || '—')}</strong></span>
-    <span>Current age: <strong>${result.currentAge ?? '—'}</strong></span>
-    <span>Multiplier: <strong>${result.multiplier.toFixed(1)}</strong></span>
-    <span>Total balance: <strong>${rsimFmt(result.totalBalance)}</strong></span>
+    <span>${t('rsim.retirement')} <strong>${escapeHtml(result.retirementDate?.label || '—')}</strong></span>
+    <span>${t('rsim.currentAge')} <strong>${result.currentAge ?? '—'}</strong></span>
+    <span>${t('rsim.multiplier')} <strong>${result.multiplier.toFixed(1)}</strong></span>
+    <span>${t('rsim.totalBalance')} <strong>${rsimFmt(result.totalBalance)}</strong></span>
   `;
 
   function pathTaxRows(p) {
     if (p.cashGross <= 0) return '';
     return `
-      <dt>Locked for pension</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
-      <dt>Cash (gross)</dt><dd>${rsimFmt(p.cashGross)}</dd>
-      <dt>Tax-free portion</dt><dd>${rsimFmt(p.taxFreeCash)}</dd>
-      <dt>Taxable portion</dt><dd>${rsimFmt(p.taxableCash)}</dd>
-      <dt>Est. tax (~35%)</dt><dd>${rsimFmt(p.estimatedTax)}</dd>
-      <dt>Cash (net)</dt><dd class="highlight">${rsimFmt(p.netCash)}</dd>
+      <dt>${t('rsim.lockedForPension')}</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
+      <dt>${t('rsim.cashGross')}</dt><dd>${rsimFmt(p.cashGross)}</dd>
+      <dt>${t('rsim.taxFreePortion')}</dt><dd>${rsimFmt(p.taxFreeCash)}</dd>
+      <dt>${t('rsim.taxablePortion')}</dt><dd>${rsimFmt(p.taxableCash)}</dd>
+      <dt>${t('rsim.estTax')}</dt><dd>${rsimFmt(p.estimatedTax)}</dd>
+      <dt>${t('rsim.cashNet')}</dt><dd class="highlight">${rsimFmt(p.netCash)}</dd>
     `;
   }
 
   function path4Rows(p) {
     if (p.cashGross <= 0) {
       return `
-        <dt>Locked (מקיפה)</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
-        <dt>משלימה cash</dt><dd>${rsimFmt(0)}</dd>
+        <dt>${t('rsim.lockedMakifa')}</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
+        <dt>${t('rsim.mashlimaCash')}</dt><dd>${rsimFmt(0)}</dd>
       `;
     }
     return `
-      <dt>Locked (מקיפה)</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
-      <dt>משלימה cash (gross)</dt><dd>${rsimFmt(p.cashGross)}</dd>
-      <dt>Tax-free portion</dt><dd>${rsimFmt(p.taxFreeCash)}</dd>
-      <dt>Taxable portion</dt><dd>${rsimFmt(p.taxableCash)}</dd>
-      <dt>Est. tax (~35%)</dt><dd>${rsimFmt(p.estimatedTax)}</dd>
-      <dt>משלימה cash (net)</dt><dd class="highlight">${rsimFmt(p.netCash)}</dd>
+      <dt>${t('rsim.lockedMakifa')}</dt><dd>${rsimFmt(p.lockedCapital)}</dd>
+      <dt>${t('rsim.mashlimaCashGross')}</dt><dd>${rsimFmt(p.cashGross)}</dd>
+      <dt>${t('rsim.taxFreePortion')}</dt><dd>${rsimFmt(p.taxFreeCash)}</dd>
+      <dt>${t('rsim.taxablePortion')}</dt><dd>${rsimFmt(p.taxableCash)}</dd>
+      <dt>${t('rsim.estTax')}</dt><dd>${rsimFmt(p.estimatedTax)}</dd>
+      <dt>${t('rsim.mashlimaCashNet')}</dt><dd class="highlight">${rsimFmt(p.netCash)}</dd>
     `;
   }
 
   pathsEl.hidden = false;
   pathsEl.innerHTML = `
     <div class="retirement-sim__path">
-      <h3>Path 1 — Full pension</h3>
+      <h3>${t('rsim.path1')}</h3>
       <dl>
-        <dt>Monthly pension</dt><dd class="highlight">${rsimFmt(result.path1.monthlyPension)}</dd>
-        <dt>Lump sum</dt><dd>${rsimFmt(0)}</dd>
+        <dt>${t('rsim.monthlyPension')}</dt><dd class="highlight">${rsimFmt(result.path1.monthlyPension)}</dd>
+        <dt>${t('rsim.lumpSum')}</dt><dd>${rsimFmt(0)}</dd>
       </dl>
     </div>
     <div class="retirement-sim__path">
-      <h3>Path 2 — Max cash (min pension)</h3>
+      <h3>${t('rsim.path2')}</h3>
       <dl>
-        <dt>Monthly pension</dt><dd class="highlight">${rsimFmt(result.path2.monthlyPension)}</dd>
+        <dt>${t('rsim.monthlyPension')}</dt><dd class="highlight">${rsimFmt(result.path2.monthlyPension)}</dd>
         ${pathTaxRows(result.path2)}
       </dl>
     </div>
     <div class="retirement-sim__path">
-      <h3>Path 3 — Your target pension</h3>
+      <h3>${t('rsim.path3')}</h3>
       <dl>
-        <dt>Monthly pension</dt><dd class="highlight">${rsimFmt(result.path3.monthlyPension)}</dd>
+        <dt>${t('rsim.monthlyPension')}</dt><dd class="highlight">${rsimFmt(result.path3.monthlyPension)}</dd>
         ${pathTaxRows(result.path3)}
       </dl>
     </div>
     <div class="retirement-sim__path">
-      <h3>Path 4 — Cash משלימה, max pension from מקיפה</h3>
+      <h3>${t('rsim.path4')}</h3>
       <dl>
-        <dt>Monthly pension (מקיפה)</dt><dd class="highlight">${rsimFmt(result.path4.monthlyPension)}</dd>
+        <dt>${t('rsim.monthlyPensionMakifa')}</dt><dd class="highlight">${rsimFmt(result.path4.monthlyPension)}</dd>
         ${path4Rows(result.path4)}
       </dl>
     </div>
@@ -5076,7 +5098,7 @@ function init() {
     const amount = +document.getElementById('cash-amount').value;
     const currency = document.getElementById('cash-currency').value;
     const note = document.getElementById('cash-note').value;
-    if (!nickname || !amount && amount !== 0) { toast('Nickname and amount required', 'error'); return; }
+    if (!nickname || !amount && amount !== 0) { toast(t('toast.nicknameAmountRequired'), 'error'); return; }
     const j = await api('POST', '/api/cash', { nickname, amount, currency, note });
     if (j.ok) {
       toast(t('toast.cashAdded'), 'info');
@@ -5164,18 +5186,18 @@ function init() {
     try { payload = JSON.parse(text); } catch { toast(t('toast.invalidJson'), 'error'); return; }
     const j = await api('POST', '/api/import', payload);
     if (j.ok) { toast(t('toast.imported'), 'info'); fetchData(); }
-    else toast(j.error || 'Import failed', 'error');
+    else toast(j.error || t('toast.importFailed'), 'error');
   });
   document.getElementById('change-password-btn').addEventListener('click', async () => {
     const r = await modalForm({
-      title: 'Change password',
-      description: 'Choose a new password with at least 8 characters.',
+      title: t('modal.changePassword.title'),
+      description: t('modal.changePassword.desc'),
       fields: [
-        { id: 'current_password', label: 'Current password', type: 'password' },
-        { id: 'new_password', label: 'New password', type: 'password' },
-        { id: 'confirm_password', label: 'Confirm new password', type: 'password' },
+        { id: 'current_password', label: t('modal.changePassword.current'), type: 'password' },
+        { id: 'new_password', label: t('modal.changePassword.new'), type: 'password' },
+        { id: 'confirm_password', label: t('modal.changePassword.confirm'), type: 'password' },
       ],
-      okLabel: 'Update password',
+      okLabel: t('modal.changePassword.ok'),
     });
     if (!r) return;
     if (!r.new_password || r.new_password !== r.confirm_password) {
@@ -5187,13 +5209,13 @@ function init() {
       new_password: r.new_password,
     });
     if (j.ok) toast(j.message || t('toast.passwordUpdated'), 'info');
-    else toast(j.error || 'Could not update password', 'error');
+    else toast(j.error || t('toast.couldNotUpdatePassword'), 'error');
   });
   document.getElementById('clear-cache-btn').addEventListener('click', async () => {
     const ok = await modalConfirm({
-      title: 'Clear cached data?',
-      description: 'Removes cached gemelnet and Yahoo prices. Your holdings, grants, and cash entries are NOT affected — the next Refresh will re-fetch the market data.',
-      okLabel: 'Clear cache',
+      title: t('modal.clearCache.title'),
+      description: t('modal.clearCache.desc'),
+      okLabel: t('settings.clearCache'),
       danger: true,
     });
     if (!ok) return;
@@ -5203,12 +5225,12 @@ function init() {
   });
   document.getElementById('delete-account-btn').addEventListener('click', async () => {
     const r = await modalForm({
-      title: 'Delete your account?',
-      description: 'This permanently removes your account and all personal data from the database — portfolio holdings, RSU/ESPP records, cash balances, settings, and cached market data. This action cannot be undone.',
+      title: t('modal.deleteAccount.title'),
+      description: t('modal.deleteAccount.desc'),
       fields: [
-        { id: 'password', label: 'Confirm your password', type: 'password', placeholder: 'Enter password to confirm deletion' },
+        { id: 'password', label: t('modal.deleteAccount.confirmPw'), type: 'password', placeholder: t('modal.deleteAccount.confirmPwPlaceholder') },
       ],
-      okLabel: 'Delete my account',
+      okLabel: t('modal.deleteAccount.ok'),
       danger: true,
     });
     if (!r || !r.password) return;
@@ -5218,8 +5240,8 @@ function init() {
       returnToLoginScreen();
       toast(t('toast.accountDeleted'), 'info', 6000);
     } else {
-      setStatus('error', j.error || 'Could not delete account');
-      toast(j.error || 'Could not delete account', 'error', 6000);
+      setStatus('error', j.error || t('toast.couldNotDeleteAccount'));
+      toast(j.error || t('toast.couldNotDeleteAccount'), 'error', 6000);
     }
   });
 
@@ -5261,12 +5283,12 @@ function init() {
       const kind = document.getElementById(`ev-kind-${hid}`).value;
       const amount = +document.getElementById(`ev-amount-${hid}`).value || 0;
       const note = document.getElementById(`ev-note-${hid}`).value;
-      if (!date) { toast('Date required', 'error'); return; }
-      if (!amount && kind !== 'correction') { toast('Enter an amount', 'error'); return; }
+      if (!date) { toast(t('toast.dateRequired'), 'error'); return; }
+      if (!amount && kind !== 'correction') { toast(t('toast.enterAmount'), 'error'); return; }
       const j = await api('POST', `/api/fund-holdings/${hid}/events`, {
         date, kind, note, amount_ils: amount,
       });
-      if (j.ok) { toast('Event added', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.eventAdded'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5297,7 +5319,7 @@ function init() {
       };
       const j = await api('POST', `${baseUrl}/${hid}/rules`, payload);
       if (j.ok) {
-        toast('Rule saved', 'info');
+        toast(t('toast.ruleSaved'), 'info');
         document.getElementById(`rule-form-${hid}`).hidden = true;
         fetchData();
       } else toast(j.error || t('common.failed'), 'error');
@@ -5307,14 +5329,14 @@ function init() {
     if (ruleDelBtn) {
       const [hid, rid] = ruleDelBtn.dataset.ruleDel.split(':');
       const ok = await modalConfirm({
-        title: 'Delete this recurring rule?',
-        description: 'Past events generated by this rule disappear from the timeline. The underlying balance is unchanged unless you re-anchor.',
-        okLabel: 'Delete',
+        title: t('modal.deleteRule.title'),
+        description: t('modal.deleteRule.desc'),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
       const j = await api('DELETE', `${ruleHoldingBaseUrl(hid)}/${hid}/rules/${rid}`);
-      if (j.ok) { toast('Rule deleted', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.ruleDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5322,9 +5344,9 @@ function init() {
     if (ruleEndBtn) {
       const [hid, rid] = ruleEndBtn.dataset.ruleEnd.split(':');
       const v = await modalPrompt({
-        title: 'Set rule end date',
-        description: 'When this rule should stop applying. Leave blank to clear (keeps the rule open-ended).',
-        label: 'End date',
+        title: t('modal.setRuleEnd.title'),
+        description: t('modal.setRuleEnd.desc'),
+        label: t('modal.setRuleEnd.label'),
         type: 'date',
         value: '',
       });
@@ -5338,7 +5360,7 @@ function init() {
     if (delEvBtn) {
       const [hid, eid] = delEvBtn.dataset.delEvent.split(':');
       const j = await api('DELETE', `/api/fund-holdings/${hid}/events/${eid}`);
-      if (j.ok) { toast('Event deleted', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.eventDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5347,9 +5369,9 @@ function init() {
       const id = delFundBtn.dataset.deleteFund;
       const h = APP.fund_holdings.find(x => x.id === id);
       const ok = await modalConfirm({
-        title: 'Delete this fund holding?',
-        description: `"${h.nickname}" — this is permanent. Events and recurring rules attached to it are also removed. The fund's cached gemelnet data is preserved.`,
-        okLabel: 'Delete',
+        title: t('modal.deleteFund.title'),
+        description: t('modal.deleteFund.desc', { name: h.nickname }),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
@@ -5363,9 +5385,9 @@ function init() {
       const id = delRSUBtn.dataset.deleteRsu;
       const g = APP.rsu_grants.find(x => x.id === id);
       const ok = await modalConfirm({
-        title: 'Delete this RSU grant?',
-        description: `"${g.nickname}" (${g.ticker}) — this is permanent. Sale events on this grant are also removed.`,
-        okLabel: 'Delete',
+        title: t('modal.deleteRsu.title'),
+        description: t('modal.deleteRsu.desc', { name: g.nickname, ticker: g.ticker }),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
@@ -5379,13 +5401,13 @@ function init() {
       const id = renFundBtn.dataset.editNicknameFund;
       const h = APP.fund_holdings.find(x => x.id === id);
       const v = await modalPrompt({
-        title: 'Rename fund holding',
-        label: 'Nickname',
+        title: t('modal.renameFund.title'),
+        label: t('common.nickname'),
         value: h.nickname || '',
       });
       if (v === null) return;
       const j = await api('PATCH', `/api/fund-holdings/${id}`, { nickname: v });
-      if (j.ok) { toast('Renamed', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.renamed'), 'info'); fetchData(); }
       return;
     }
     const balBtn = e.target.closest('[data-edit-balance-fund]');
@@ -5393,9 +5415,9 @@ function init() {
       const id = balBtn.dataset.editBalanceFund;
       const h = APP.fund_holdings.find(x => x.id === id);
       const v = await modalPrompt({
-        title: 'Edit anchor balance',
-        description: `Reference balance at ${periodLabel(h.anchor_period)}.`,
-        label: 'Balance (₪)',
+        title: t('modal.editAnchorBalance.title'),
+        description: t('modal.editAnchorBalance.desc', { period: periodLabel(h.anchor_period) }),
+        label: t('common.balanceIls'),
         type: 'number',
         step: '0.01',
         value: h.anchor_balance_ils || 0,
@@ -5419,14 +5441,14 @@ function init() {
     if (delPensionBtn) {
       const id = delPensionBtn.dataset.delPension;
       const ok = await modalConfirm({
-        title: 'Delete pension holding',
-        message: 'This removes the holding from your tracker. The pensia-net yield cache stays so re-adding the same fund is instant.',
-        confirmLabel: 'Delete',
+        title: t('modal.deletePension.title'),
+        description: t('modal.deletePension.desc'),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/pension-holdings/${id}`);
-      if (j.ok) { toast('Pension deleted', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.pensionDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5435,13 +5457,13 @@ function init() {
       const id = renPensionBtn.dataset.renamePension;
       const cur = renPensionBtn.dataset.current || '';
       const v = await modalPrompt({
-        title: 'Rename pension',
-        label: 'Nickname',
+        title: t('modal.renamePension.title'),
+        label: t('common.nickname'),
         value: cur,
       });
       if (v === null) return;
       const j = await api('PATCH', `/api/pension-holdings/${id}`, { nickname: v });
-      if (j.ok) { toast('Renamed', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.renamed'), 'info'); fetchData(); }
       return;
     }
     const spotFundBtn = e.target.closest('[data-spot-check-fund]');
@@ -5463,9 +5485,9 @@ function init() {
       const id = editPensionBalBtn.dataset.editPensionBalance;
       const h = APP.pension_holdings.find(x => x.id === id);
       const v = await modalPrompt({
-        title: 'Edit anchor balance',
-        description: `Reference balance at ${periodLabel(h.anchor_period)}.`,
-        label: 'Balance (₪)',
+        title: t('modal.editAnchorBalance.title'),
+        description: t('modal.editAnchorBalance.desc', { period: periodLabel(h.anchor_period) }),
+        label: t('common.balanceIls'),
         type: 'number',
         step: '0.01',
         value: h.anchor_balance_ils || 0,
@@ -5480,13 +5502,13 @@ function init() {
       const id = renRSUBtn.dataset.editNicknameRsu;
       const g = APP.rsu_grants.find(x => x.id === id);
       const v = await modalPrompt({
-        title: 'Rename RSU grant',
-        label: 'Nickname',
+        title: t('modal.renameRsu.title'),
+        label: t('common.nickname'),
         value: g.nickname || '',
       });
       if (v === null) return;
       const j = await api('PATCH', `/api/rsu-grants/${id}`, { nickname: v });
-      if (j.ok) { toast('Renamed', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.renamed'), 'info'); fetchData(); }
       return;
     }
     const editCashBtn = e.target.closest('[data-edit-cash]');
@@ -5494,13 +5516,13 @@ function init() {
       const id = editCashBtn.dataset.editCash;
       const c = APP.cash_holdings.find(x => x.id === id);
       const result = await modalForm({
-        title: 'Edit cash entry',
+        title: t('modal.editCash.title'),
         fields: [
-          { id: 'nickname', label: 'Nickname', type: 'text', value: c.nickname },
-          { id: 'amount', label: 'Amount', type: 'number', step: '0.01', value: c.amount },
-          { id: 'currency', label: 'Currency', type: 'select', value: c.currency,
+          { id: 'nickname', label: t('common.nickname'), type: 'text', value: c.nickname },
+          { id: 'amount', label: t('cash.amount'), type: 'number', step: '0.01', value: c.amount },
+          { id: 'currency', label: t('cash.currency'), type: 'select', value: c.currency,
             options: [{ value: 'ILS', label: 'ILS' }, { value: 'USD', label: 'USD' }] },
-          { id: 'note', label: 'Note', type: 'text', value: c.note || '' },
+          { id: 'note', label: t('common.note'), type: 'text', value: c.note || '' },
         ],
       });
       if (!result) return;
@@ -5514,9 +5536,9 @@ function init() {
       const id = delCashBtn.dataset.deleteCash;
       const c = APP.cash_holdings.find(x => x.id === id);
       const ok = await modalConfirm({
-        title: 'Delete this cash entry?',
-        description: `"${c.nickname}" — this is permanent.`,
-        okLabel: 'Delete',
+        title: t('modal.deleteCash.title'),
+        description: t('modal.deleteCash.desc', { name: c.nickname }),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
@@ -5530,8 +5552,8 @@ function init() {
       const id = sharesBtn.dataset.editSharesRsu;
       const g = APP.rsu_grants.find(x => x.id === id);
       const v = await modalPrompt({
-        title: 'Edit total shares',
-        label: 'Total shares',
+        title: t('modal.editShares.title'),
+        label: t('rsu.totalShares'),
         type: 'number',
         step: '1',
         value: g.total_shares || 0,
@@ -5548,11 +5570,11 @@ function init() {
       const shares = +document.getElementById(`sl-shares-${gid}`).value;
       const price = +document.getElementById(`sl-price-${gid}`).value;
       const note = document.getElementById(`sl-note-${gid}`).value;
-      if (!date || !shares || !price) { toast('Date, shares, and price required', 'error'); return; }
+      if (!date || !shares || !price) { toast(t('toast.saleSharesPriceRequired'), 'error'); return; }
       const j = await api('POST', `/api/rsu-grants/${gid}/sales`, {
         date, shares_sold: shares, sale_price_usd: price, note,
       });
-      if (j.ok) { toast('Sale recorded', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.saleRecorded'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5560,14 +5582,14 @@ function init() {
     if (delSaleBtn) {
       const [gid, sid] = delSaleBtn.dataset.delSale.split(':');
       const ok = await modalConfirm({
-        title: 'Delete this sale event?',
-        description: 'Realized proceeds and held-share count revert as if the sale never happened.',
-        okLabel: 'Delete',
+        title: t('modal.deleteSale.title'),
+        description: t('modal.deleteSale.desc'),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/rsu-grants/${gid}/sales/${sid}`);
-      if (j.ok) { toast('Sale deleted', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.saleDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5577,13 +5599,13 @@ function init() {
       const g = APP.rsu_grants.find(x => x.id === id);
       const cur = g.grant_price_override_usd;
       const v = await modalPrompt({
-        title: 'Set grant price (FMV override)',
-        description: "Override only if your company reported an FMV that differs from Yahoo's close on the grant date (e.g. 30-day average or board-approved). Leave blank to fall back to the market close.",
-        label: 'Grant price (USD per share)',
+        title: t('modal.setGrantPrice.title'),
+        description: t('modal.setGrantPrice.desc'),
+        label: t('modal.setGrantPrice.label'),
         type: 'number',
         step: '0.0001',
         value: cur != null ? String(cur) : '',
-        placeholder: 'leave blank to use market close',
+        placeholder: t('modal.setGrantPrice.placeholder'),
       });
       if (v === null) return;
       const payload = { grant_price_override_usd: (v === '' || v == null) ? null : +v };
@@ -5604,7 +5626,7 @@ function init() {
       const note = document.getElementById(`ep-note-${pid}`).value;
       const sell = document.getElementById(`ep-sell-${pid}`).checked;
       if (!date || !contrib || !start || !end) {
-        toast('Date, contribution, period start and end prices are required', 'error');
+        toast(t('toast.purchaseFieldsRequired'), 'error');
         return;
       }
       const j = await api('POST', `/api/espp-plans/${pid}/purchases`, {
@@ -5613,8 +5635,8 @@ function init() {
         sell_immediately: sell, note,
       });
       if (j.ok) {
-        const lbHint = j.lookback_bonus_usd > 0 ? ` (lookback +${fmtUSD.format(j.lookback_bonus_usd)})` : '';
-        toast(`Logged ${j.shares.toFixed(2)} shares · captured ${fmtUSD.format(j.discount_captured_usd)}${lbHint}`, 'info');
+        const lbHint = j.lookback_bonus_usd > 0 ? t('toast.lookbackHint', { amount: fmtUSD.format(j.lookback_bonus_usd) }) : '';
+        toast(t('toast.loggedShares', { shares: j.shares.toFixed(2), captured: fmtUSD.format(j.discount_captured_usd) }) + lbHint, 'info');
         fetchData();
       } else toast(j.error || t('common.failed'), 'error');
       return;
@@ -5623,14 +5645,14 @@ function init() {
     if (delEspBuyBtn) {
       const [pid, prid] = delEspBuyBtn.dataset.delEsppPurchase.split(':');
       const ok = await modalConfirm({
-        title: 'Delete this purchase?',
-        description: 'Any auto-fill sale paired with this purchase will be removed too.',
-        okLabel: 'Delete',
+        title: t('modal.deletePurchase.title'),
+        description: t('modal.deletePurchase.desc'),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/espp-plans/${pid}/purchases/${prid}`);
-      if (j.ok) { toast('Purchase deleted', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.purchaseDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5641,11 +5663,11 @@ function init() {
       const shares = +document.getElementById(`es-shares-${pid}`).value;
       const price = +document.getElementById(`es-price-${pid}`).value;
       const note = document.getElementById(`es-note-${pid}`).value;
-      if (!date || !shares || !price) { toast('Date, shares, and price required', 'error'); return; }
+      if (!date || !shares || !price) { toast(t('toast.saleSharesPriceRequired'), 'error'); return; }
       const j = await api('POST', `/api/espp-plans/${pid}/sales`, {
         date, shares_sold: shares, sale_price_usd: price, note,
       });
-      if (j.ok) { toast('Sale recorded', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.saleRecorded'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5653,14 +5675,14 @@ function init() {
     if (delEspSaleBtn) {
       const [pid, sid] = delEspSaleBtn.dataset.delEsppSale.split(':');
       const ok = await modalConfirm({
-        title: 'Delete this sale?',
-        description: 'Realized proceeds and held-share count revert as if the sale never happened.',
-        okLabel: 'Delete',
+        title: t('modal.deleteEsppSale.title'),
+        description: t('modal.deleteSale.desc'),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/espp-plans/${pid}/sales/${sid}`);
-      if (j.ok) { toast('Sale deleted', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.saleDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5669,8 +5691,8 @@ function init() {
       const id = editEspBtn.dataset.editEspp;
       const plan = APP.espp_plans.find(x => x.id === id);
       const newName = await modalPrompt({
-        title: 'Edit plan',
-        label: 'Nickname',
+        title: t('modal.editEsppPlan.title'),
+        label: t('common.nickname'),
         value: plan.nickname || '',
       });
       if (newName === null) return;
@@ -5684,7 +5706,7 @@ function init() {
       const id = archiveEspBtn.dataset.archiveEspp;
       const plan = APP.espp_plans.find(x => x.id === id);
       const j = await api('PATCH', `/api/espp-plans/${id}`, { archived: !plan.archived });
-      if (j.ok) { toast(plan.archived ? 'Unarchived' : 'Archived', 'info'); fetchData(); }
+      if (j.ok) { toast(plan.archived ? t('toast.unarchived') : t('toast.archived'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5692,14 +5714,14 @@ function init() {
     if (delEspBtn) {
       const id = delEspBtn.dataset.deleteEspp;
       const ok = await modalConfirm({
-        title: 'Delete this ESPP plan?',
-        description: 'All purchases and sales will be removed. This cannot be undone.',
-        okLabel: 'Delete',
+        title: t('modal.deleteEspp.title'),
+        description: t('modal.deleteEspp.desc'),
+        okLabel: t('action.delete'),
         danger: true,
       });
       if (!ok) return;
       const j = await api('DELETE', `/api/espp-plans/${id}`);
-      if (j.ok) { toast('Plan deleted', 'info'); fetchData(); }
+      if (j.ok) { toast(t('toast.planDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
@@ -5723,9 +5745,9 @@ function setupFundSearch() {
     searchTimer = setTimeout(async () => {
       const j = await api('GET', `/api/funds/search?q=${encodeURIComponent(q)}&limit=15`);
       const box = document.getElementById('fund-search-results');
-      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || 'Search failed')}</div>`; return; }
+      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || t('search.failed'))}</div>`; return; }
       const hits = j.results || [];
-      if (!hits.length) { box.innerHTML = `<div class="empty-state">No matches.</div>`; return; }
+      if (!hits.length) { box.innerHTML = `<div class="empty-state">${t('search.noMatches')}</div>`; return; }
       box.innerHTML = `<div class="search-results">${hits.map(h => `
         <div class="search-results__item" data-fund-id="${h.fund_id}" data-source="${escapeHtml(h.data_source || 'gemelnet')}">
           <div class="search-results__title" dir="auto">${h.fund_id} · ${escapeHtml(h.fund_name)}</div>
@@ -5756,7 +5778,7 @@ async function renderSelectedFund() {
   if (!SELECTED_FUND) return;
   const pill = document.getElementById('fund-selected-pill');
   const srcLabel = fundSourceLabel(SELECTED_FUND.data_source);
-  pill.innerHTML = `<span class="selected-pill" dir="auto">${SELECTED_FUND.fund_id} · ${escapeHtml(SELECTED_FUND.fund_name)} <span style="opacity:0.7">(${escapeHtml(srcLabel)})</span><button class="selected-pill__clear" id="fund-selected-clear" title="Clear">×</button></span>`;
+  pill.innerHTML = `<span class="selected-pill" dir="auto">${SELECTED_FUND.fund_id} · ${escapeHtml(SELECTED_FUND.fund_name)} <span style="opacity:0.7">(${escapeHtml(srcLabel)})</span><button class="selected-pill__clear" id="fund-selected-clear" title="${escapeHtml(t('search.clear'))}">×</button></span>`;
   document.getElementById('fund-selected-clear').addEventListener('click', () => {
     SELECTED_FUND = null;
     renderSelectedFund();
@@ -5767,23 +5789,23 @@ async function renderSelectedFund() {
 
   const sel = document.getElementById('fund-anchor-period');
   sel.disabled = true;
-  sel.innerHTML = '<option>syncing…</option>';
+  sel.innerHTML = `<option>${t('search.syncing')}</option>`;
   document.getElementById('add-fund-save').disabled = true;
   const j = await api('POST', `/api/funds/${SELECTED_FUND.fund_id}/prepare`, {
     data_source: SELECTED_FUND.data_source || 'gemelnet',
   });
   if (!j.ok) {
-    sel.innerHTML = `<option value="">— no data —</option>`;
-    toast(j.error || 'Could not load periods', 'error');
+    sel.innerHTML = `<option value="">${t('search.noData')}</option>`;
+    toast(j.error || t('toast.couldNotLoadPeriods'), 'error');
     return;
   }
   const periods = j.periods || [];
   if (!periods.length) {
-    sel.innerHTML = `<option value="">— no periods —</option>`;
+    sel.innerHTML = `<option value="">${t('search.noPeriods')}</option>`;
     return;
   }
   sel.innerHTML = periods.map((p, i) =>
-    `<option value="${p}" ${i === 0 ? 'selected' : ''}>${periodLabel(p)}${i === 0 ? ' · latest' : ''}</option>`
+    `<option value="${p}" ${i === 0 ? 'selected' : ''}>${periodLabel(p)}${i === 0 ? ' · ' + t('search.latest') : ''}</option>`
   ).join('');
   sel.disabled = false;
   document.getElementById('add-fund-save').disabled = false;
@@ -5797,7 +5819,7 @@ function resetAddFund() {
   document.getElementById('fund-net-of-fees').checked = true;
   document.getElementById('fund-search-results').innerHTML = '';
   const sel = document.getElementById('fund-anchor-period');
-  sel.innerHTML = '<option>loading…</option>';
+  sel.innerHTML = `<option>${t('search.loading')}</option>`;
   sel.disabled = true;
   renderSelectedFund();
 }
@@ -5810,10 +5832,10 @@ async function saveFundHolding() {
   const netOfFees = document.getElementById('fund-net-of-fees').checked;
   const anchorPeriodVal = document.getElementById('fund-anchor-period').value;
   const anchorPeriod = anchorPeriodVal ? +anchorPeriodVal : null;
-  if (!Number.isFinite(balance) || balance < 0) { toast('Balance must be 0 or higher', 'error'); return; }
-  if (!anchorPeriod) { toast('Pick the month this balance is for', 'error'); return; }
+  if (!Number.isFinite(balance) || balance < 0) { toast(t('toast.balanceNonNegative'), 'error'); return; }
+  if (!anchorPeriod) { toast(t('toast.pickBalanceMonth'), 'error'); return; }
   document.getElementById('add-fund-save').disabled = true;
-  setStatus('pending', 'Adding fund + initial sync…');
+  setStatus('pending', t('status.addingFund'));
   const j = await api('POST', '/api/fund-holdings', {
     fund_id: SELECTED_FUND.fund_id,
     data_source: SELECTED_FUND.data_source || 'gemelnet',
@@ -5830,7 +5852,7 @@ async function saveFundHolding() {
     fetchData();
   } else {
     toast(j.error || t('common.failed'), 'error');
-    setStatus('error', j.error || 'Add failed');
+    setStatus('error', j.error || t('status.addFailed'));
   }
 }
 
@@ -5846,9 +5868,9 @@ function setupPensionSearch() {
     pensionSearchTimer = setTimeout(async () => {
       const j = await api('GET', `/api/pension/search?q=${encodeURIComponent(q)}&limit=15`);
       const box = document.getElementById('pension-search-results');
-      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || 'Search failed')}</div>`; return; }
+      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || t('search.failed'))}</div>`; return; }
       const hits = j.results || [];
-      if (!hits.length) { box.innerHTML = `<div class="empty-state">No matches.</div>`; return; }
+      if (!hits.length) { box.innerHTML = `<div class="empty-state">${t('search.noMatches')}</div>`; return; }
       box.innerHTML = `<div class="search-results">${hits.map(h => `
         <div class="search-results__item" data-pension-id="${h.fund_id}">
           <div class="search-results__title" dir="auto">${h.fund_id} · ${escapeHtml(h.fund_name)}</div>
@@ -5875,7 +5897,7 @@ async function renderSelectedPension() {
   document.getElementById('add-pension-save').disabled = !SELECTED_PENSION;
   if (!SELECTED_PENSION) return;
   const pill = document.getElementById('pension-selected-pill');
-  pill.innerHTML = `<span class="selected-pill" dir="auto">${SELECTED_PENSION.fund_id} · ${escapeHtml(SELECTED_PENSION.fund_name)}<button class="selected-pill__clear" id="pension-selected-clear" title="Clear">×</button></span>`;
+  pill.innerHTML = `<span class="selected-pill" dir="auto">${SELECTED_PENSION.fund_id} · ${escapeHtml(SELECTED_PENSION.fund_name)}<button class="selected-pill__clear" id="pension-selected-clear" title="${escapeHtml(t('search.clear'))}">×</button></span>`;
   document.getElementById('pension-selected-clear').addEventListener('click', () => {
     SELECTED_PENSION = null;
     renderSelectedPension();
@@ -5885,21 +5907,21 @@ async function renderSelectedPension() {
   }
   const sel = document.getElementById('pension-anchor-period');
   sel.disabled = true;
-  sel.innerHTML = '<option>syncing…</option>';
+  sel.innerHTML = `<option>${t('search.syncing')}</option>`;
   document.getElementById('add-pension-save').disabled = true;
   const j = await api('POST', `/api/pension/${SELECTED_PENSION.fund_id}/prepare`, {});
   if (!j.ok) {
-    sel.innerHTML = `<option value="">— no data —</option>`;
-    toast(j.error || 'Could not load periods', 'error');
+    sel.innerHTML = `<option value="">${t('search.noData')}</option>`;
+    toast(j.error || t('toast.couldNotLoadPeriods'), 'error');
     return;
   }
   const periods = j.periods || [];
   if (!periods.length) {
-    sel.innerHTML = `<option value="">— no periods —</option>`;
+    sel.innerHTML = `<option value="">${t('search.noPeriods')}</option>`;
     return;
   }
   sel.innerHTML = periods.map((p, i) =>
-    `<option value="${p}" ${i === 0 ? 'selected' : ''}>${periodLabel(p)}${i === 0 ? ' · latest' : ''}</option>`
+    `<option value="${p}" ${i === 0 ? 'selected' : ''}>${periodLabel(p)}${i === 0 ? ' · ' + t('search.latest') : ''}</option>`
   ).join('');
   sel.disabled = false;
   document.getElementById('add-pension-save').disabled = false;
@@ -5913,7 +5935,7 @@ function resetAddPension() {
   document.getElementById('pension-net-of-fees').checked = true;
   document.getElementById('pension-search-results').innerHTML = '';
   const sel = document.getElementById('pension-anchor-period');
-  sel.innerHTML = '<option>loading…</option>';
+  sel.innerHTML = `<option>${t('search.loading')}</option>`;
   sel.disabled = true;
   renderSelectedPension();
 }
@@ -5926,10 +5948,10 @@ async function savePensionHolding() {
   const netOfFees = document.getElementById('pension-net-of-fees').checked;
   const anchorPeriodVal = document.getElementById('pension-anchor-period').value;
   const anchorPeriod = anchorPeriodVal ? +anchorPeriodVal : null;
-  if (!Number.isFinite(balance) || balance < 0) { toast('Balance must be 0 or higher', 'error'); return; }
-  if (!anchorPeriod) { toast('Pick the month this balance is for', 'error'); return; }
+  if (!Number.isFinite(balance) || balance < 0) { toast(t('toast.balanceNonNegative'), 'error'); return; }
+  if (!anchorPeriod) { toast(t('toast.pickBalanceMonth'), 'error'); return; }
   document.getElementById('add-pension-save').disabled = true;
-  setStatus('pending', 'Adding pension + initial sync…');
+  setStatus('pending', t('status.addingPension'));
   const j = await api('POST', '/api/pension-holdings', {
     fund_id: SELECTED_PENSION.fund_id,
     nickname,
@@ -5945,7 +5967,7 @@ async function savePensionHolding() {
     fetchData();
   } else {
     toast(j.error || t('common.failed'), 'error');
-    setStatus('error', j.error || 'Add failed');
+    setStatus('error', j.error || t('status.addFailed'));
   }
 }
 
@@ -5963,9 +5985,9 @@ function setupTickerSearch() {
     tickerSearchTimer = setTimeout(async () => {
       const j = await api('GET', `/api/tickers/search?q=${encodeURIComponent(q)}&limit=10`);
       const box = document.getElementById('rsu-ticker-results');
-      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || 'Search failed')}</div>`; return; }
+      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || t('search.failed'))}</div>`; return; }
       const hits = j.results || [];
-      if (!hits.length) { box.innerHTML = `<div class="empty-state">No matches.</div>`; return; }
+      if (!hits.length) { box.innerHTML = `<div class="empty-state">${t('search.noMatches')}</div>`; return; }
       box.innerHTML = `<div class="search-results">${hits.map(h => `
         <div class="search-results__item" data-symbol="${escapeHtml(h.symbol)}">
           <div class="search-results__title">${escapeHtml(h.symbol)} <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">· ${escapeHtml(h.name)}</span></div>
@@ -5989,7 +6011,7 @@ function renderSelectedTicker() {
   document.getElementById('rsu-ticker-results').innerHTML = '';
   if (!SELECTED_TICKER) { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = `<span class="selected-pill">${escapeHtml(SELECTED_TICKER.symbol)} · ${escapeHtml(SELECTED_TICKER.name)}<button class="selected-pill__clear" id="rsu-ticker-clear" title="Clear">×</button></span>`;
+  box.innerHTML = `<span class="selected-pill">${escapeHtml(SELECTED_TICKER.symbol)} · ${escapeHtml(SELECTED_TICKER.name)}<button class="selected-pill__clear" id="rsu-ticker-clear" title="${escapeHtml(t('search.clear'))}">×</button></span>`;
   document.getElementById('rsu-ticker-clear').addEventListener('click', () => {
     SELECTED_TICKER = null;
     document.getElementById('rsu-ticker-search').value = '';
@@ -6023,10 +6045,10 @@ async function saveRSUGrant() {
   const vestMonths = +document.getElementById('rsu-vesting-months').value;
   const cliff = +document.getElementById('rsu-cliff-months').value;
   const cadence = document.getElementById('rsu-cadence').value;
-  if (!ticker) { toast('Pick a ticker from the search results', 'error'); return; }
-  if (!grantDate || !shares) { toast('Date and shares required', 'error'); return; }
+  if (!ticker) { toast(t('toast.pickTicker'), 'error'); return; }
+  if (!grantDate || !shares) { toast(t('toast.dateSharesRequired'), 'error'); return; }
   document.getElementById('add-rsu-save').disabled = true;
-  setStatus('pending', 'Adding grant + initial sync…');
+  setStatus('pending', t('status.addingGrant'));
   const overrideRaw = document.getElementById('rsu-grant-price-override').value.trim();
   const grantPriceOverride = overrideRaw ? +overrideRaw : null;
   const j = await api('POST', '/api/rsu-grants', {
@@ -6043,7 +6065,7 @@ async function saveRSUGrant() {
     fetchData();
   } else {
     toast(j.error || t('common.failed'), 'error');
-    setStatus('error', j.error || 'Add failed');
+    setStatus('error', j.error || t('status.addFailed'));
   }
 }
 
@@ -6062,9 +6084,9 @@ function setupESPPTickerSearch() {
     esppTickerSearchTimer = setTimeout(async () => {
       const j = await api('GET', `/api/tickers/search?q=${encodeURIComponent(q)}&limit=10`);
       const box = document.getElementById('espp-ticker-results');
-      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || 'Search failed')}</div>`; return; }
+      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || t('search.failed'))}</div>`; return; }
       const hits = j.results || [];
-      if (!hits.length) { box.innerHTML = `<div class="empty-state">No matches.</div>`; return; }
+      if (!hits.length) { box.innerHTML = `<div class="empty-state">${t('search.noMatches')}</div>`; return; }
       box.innerHTML = `<div class="search-results">${hits.map(h => `
         <div class="search-results__item" data-symbol="${escapeHtml(h.symbol)}">
           <div class="search-results__title">${escapeHtml(h.symbol)} <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">· ${escapeHtml(h.name)}</span></div>
@@ -6088,7 +6110,7 @@ function renderSelectedESPPTicker() {
   document.getElementById('espp-ticker-results').innerHTML = '';
   if (!SELECTED_ESPP_TICKER) { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = `<span class="selected-pill">${escapeHtml(SELECTED_ESPP_TICKER.symbol)} · ${escapeHtml(SELECTED_ESPP_TICKER.name)}<button class="selected-pill__clear" id="espp-ticker-clear" title="Clear">×</button></span>`;
+  box.innerHTML = `<span class="selected-pill">${escapeHtml(SELECTED_ESPP_TICKER.symbol)} · ${escapeHtml(SELECTED_ESPP_TICKER.name)}<button class="selected-pill__clear" id="espp-ticker-clear" title="${escapeHtml(t('search.clear'))}">×</button></span>`;
   document.getElementById('espp-ticker-clear').addEventListener('click', () => {
     SELECTED_ESPP_TICKER = null;
     document.getElementById('espp-ticker-search').value = '';
@@ -6114,13 +6136,13 @@ async function saveESPPPlan() {
     const raw = document.getElementById('espp-ticker-search').value.trim().toUpperCase();
     if (raw && /^[A-Z0-9.\-^=]{1,12}$/.test(raw)) ticker = raw;
   }
-  if (!ticker) { toast('Pick a ticker from the search results', 'error'); return; }
+  if (!ticker) { toast(t('toast.pickTicker'), 'error'); return; }
   const nickname = document.getElementById('espp-nickname').value.trim();
   const discount = +document.getElementById('espp-discount').value;
   const offering = +document.getElementById('espp-offering').value;
   const lookback = document.getElementById('espp-lookback').checked;
   document.getElementById('add-espp-save').disabled = true;
-  setStatus('pending', 'Adding plan + initial sync…');
+  setStatus('pending', t('status.addingPlan'));
   const j = await api('POST', '/api/espp-plans', {
     ticker, nickname,
     discount_pct: discount,
@@ -6135,7 +6157,7 @@ async function saveESPPPlan() {
     fetchData();
   } else {
     toast(j.error || t('common.failed'), 'error');
-    setStatus('error', j.error || 'Add failed');
+    setStatus('error', j.error || t('status.addFailed'));
   }
 }
 
@@ -6336,7 +6358,7 @@ async function sendChatMessage(text) {
   if (j && j.ok && j.reply) {
     CHAT_MESSAGES.push({ role: 'assistant', content: j.reply });
   } else {
-    const err = (j && j.error) || 'Chat request failed';
+    const err = (j && j.error) || t('toast.chatRequestFailed');
     if (err === 'chat_disabled') {
       CHAT_ENABLED = false;
       setChatChromeVisible(false);

@@ -17,10 +17,17 @@
   };
   const MULTIPLIER_AGES = [60, 62, 65, 67];
 
-  const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-  ];
+  // Localized string lookup — delegates to the shared I18N module when present,
+  // falls back to the key otherwise (all rsim.* keys exist in i18n.js).
+  function t(key, vars) {
+    return (typeof window !== 'undefined' && window.I18N && window.I18N.t)
+      ? window.I18N.t(key, vars)
+      : key;
+  }
+
+  function monthName(monthIndex) {
+    return t('rsim.month.' + (monthIndex + 1));
+  }
 
   function parseDate(iso) {
     if (!iso) return null;
@@ -43,7 +50,7 @@
     if (!b || retirementAge == null || Number.isNaN(+retirementAge)) return null;
     const year = b.getFullYear() + Math.floor(+retirementAge);
     const month = b.getMonth() + 1;
-    const label = `${MONTH_NAMES[b.getMonth()]} ${year}`;
+    const label = `${monthName(b.getMonth())} ${year}`;
     return { year, month, day: b.getDate(), label };
   }
 
@@ -91,13 +98,13 @@
 
     const warnings = [];
     if (!birthDate) {
-      return { ok: false, error: 'Birth date is required' };
+      return { ok: false, error: t('rsim.err.birthRequired') };
     }
     if (Number.isNaN(retirementAge) || retirementAge < 55 || retirementAge > 75) {
-      return { ok: false, error: 'Retirement age must be between 55 and 75' };
+      return { ok: false, error: t('rsim.err.ageRange') };
     }
     if (totalBalance <= 0) {
-      return { ok: false, error: 'Enter at least one positive balance (מקיפה or משלימה)' };
+      return { ok: false, error: t('rsim.err.positiveBalance') };
     }
 
     const retDate = retirementDate(birthDate, retirementAge);
@@ -107,7 +114,7 @@
 
     if (retirementAge < MIN_RETIREMENT_AGE_LEGAL) {
       warnings.push(
-        `Retirement before age ${MIN_RETIREMENT_AGE_LEGAL} may incur a ${EARLY_WITHDRAWAL_PENALTY * 100}% penalty on certain withdrawals (היוון קצבה). This simulator does not model that penalty on the amounts below.`
+        t('rsim.warn.earlyRetirement', { age: MIN_RETIREMENT_AGE_LEGAL, penalty: EARLY_WITHDRAWAL_PENALTY * 100 })
       );
     }
 
@@ -133,7 +140,7 @@
       ...calcCashTax(path2CashGross),
     };
     if (path2CashGross < 0) {
-      warnings.push('Balance is too low for path 2 (minimum pension lock exceeds total balance).');
+      warnings.push(t('rsim.warn.balanceTooLow'));
     }
 
     // Path 3: custom target pension
@@ -147,7 +154,10 @@
     if (path3CashGross < 0) {
       return {
         ok: false,
-        error: `Target pension ₪${Math.round(targetPension).toLocaleString()} requires ₪${Math.round(path3Locked).toLocaleString()} locked — more than your total balance.`,
+        error: t('rsim.err.targetExceeds', {
+          target: Math.round(targetPension).toLocaleString(),
+          locked: Math.round(path3Locked).toLocaleString(),
+        }),
       };
     }
 
@@ -160,7 +170,7 @@
       ...calcCashTax(supplementaryIls),
     };
     if (supplementaryIls > 0 && comprehensiveIls <= 0) {
-      warnings.push('Path 4: no מקיפה balance — monthly pension is ₪0; all משלימה taken as cash.');
+      warnings.push(t('rsim.warn.path4NoMakifa'));
     }
 
     return {
