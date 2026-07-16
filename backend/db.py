@@ -41,6 +41,12 @@ def init_schema() -> None:
                     cache_json JSONB NOT NULL,
                     updated_at TIMESTAMPTZ DEFAULT now()
                 );
+                CREATE TABLE IF NOT EXISTS shared_cache (
+                    id INT PRIMARY KEY DEFAULT 1,
+                    cache_json JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ DEFAULT now(),
+                    CONSTRAINT shared_cache_singleton CHECK (id = 1)
+                );
                 """
             )
             cur.execute(
@@ -198,6 +204,59 @@ def delete_user(user_id: int) -> bool:
             cur.execute("DELETE FROM app_state WHERE user_id = %s", (user_id,))
             cur.execute("DELETE FROM users WHERE id = %s RETURNING id", (user_id,))
             return cur.fetchone() is not None
+
+
+def load_shared_cache() -> dict:
+    """Return the single shared market-cache blob, or {} if not yet stored."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT cache_json FROM shared_cache WHERE id = 1")
+            row = cur.fetchone()
+            if not row:
+                return {}
+            cache = row[0]
+            if isinstance(cache, str):
+                cache = json.loads(cache)
+            return cache or {}
+
+
+def save_shared_cache(cache: dict) -> None:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO shared_cache (id, cache_json, updated_at)
+                VALUES (1, %s::jsonb, now())
+                ON CONFLICT (id) DO UPDATE
+                SET cache_json = EXCLUDED.cache_json, updated_at = now()
+                """,
+                (json.dumps(cache),),
+            )
+
+
+def load_seed_cache_from_users() -> dict:
+    """Pick the most-recently-synced user's cache blob to seed the shared cache.
+
+    Used once when `shared_cache` is empty so the first cron isn't a full cold
+    refetch. Returns {} when no user has synced yet.
+    """
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT cache_json FROM app_state
+                WHERE (cache_json ->> 'last_full_sync_ts') IS NOT NULL
+                ORDER BY (cache_json ->> 'last_full_sync_ts')::float DESC
+                LIMIT 1
+                """
+            )
+            row = cur.fetchone()
+            if not row:
+                return {}
+            cache = row[0]
+            if isinstance(cache, str):
+                cache = json.loads(cache)
+            return cache or {}
 
 
 def update_password_hash(user_id: int, password_hash: str) -> bool:

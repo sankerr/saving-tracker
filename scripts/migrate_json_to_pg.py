@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
 import auth
 import db
-from saving_tracker import default_cache, default_data
 
 
 def main():

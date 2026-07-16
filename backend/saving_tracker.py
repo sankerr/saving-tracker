@@ -132,7 +132,12 @@ def default_data() -> dict:
     }
 
 
-def default_cache() -> dict:
+def default_market() -> dict:
+    """Shared, public market data — identical for every user.
+
+    Keyed by fund_id / ticker (or global), so it lives in a single shared row
+    rather than being duplicated in every user's cache blob.
+    """
     return {
         "version": 1,
         "package_show": None,
@@ -144,14 +149,23 @@ def default_cache() -> dict:
         "stock_daily": {},
         "fx": {},
         "analyst_targets": {},
+    }
+
+
+def default_user_cache() -> dict:
+    """Per-user cache metadata (small, user-specific)."""
+    return {
+        "version": 1,
         "last_full_sync_at": None,
         "last_full_sync_ts": None,
+        "last_notified_period": None,
     }
 
 
 # ── Locks & in-process state ─────────────────────────────────────────────────
 _data_lock = threading.RLock()
 _cache_lock = threading.RLock()
+_market_lock = threading.RLock()
 _user_ctx_lock = threading.RLock()
 _sync_lock = threading.Lock()
 _search_cache: dict = {}     # {query_key: (ts, [hits])}
@@ -209,22 +223,34 @@ def _save_json(path: Path, payload: dict):
 
 
 DATA: dict = default_data()
-CACHE: dict = default_cache()
+CACHE: dict = default_user_cache()
+MARKET: dict = default_market()
 
 
 def _migrate_state_payload() -> None:
-    """Forward-migrate missing keys from current defaults."""
+    """Forward-migrate missing keys for the active user's DATA + per-user CACHE."""
     for _k, _v in default_data().items():
         DATA.setdefault(_k, _v if not isinstance(_v, (list, dict)) else type(_v)())
         if isinstance(_v, list) and not isinstance(DATA.get(_k), list):
             DATA[_k] = []
-    for _k, _v in default_cache().items():
+    for _k, _v in default_user_cache().items():
+        CACHE.setdefault(_k, _v)
+    # Legacy per-user caches carried the shared market keys; they now live in
+    # MARKET. Drop them here so the next save_cache() writes the slim blob.
+    for _k in default_market():
+        if _k != "version":
+            CACHE.pop(_k, None)
+
+
+def _migrate_market_payload() -> None:
+    """Forward-migrate missing keys in the shared MARKET blob."""
+    for _k, _v in default_market().items():
         if isinstance(_v, dict):
-            CACHE.setdefault(_k, {})
+            MARKET.setdefault(_k, {})
         elif _v is None:
-            CACHE.setdefault(_k, None)
+            MARKET.setdefault(_k, None)
         else:
-            CACHE.setdefault(_k, _v)
+            MARKET.setdefault(_k, _v)
 
 
 def save_data():
@@ -239,13 +265,37 @@ def save_cache():
             db.save_cache_state(ACTIVE_USER_ID, CACHE)
 
 
+def save_market():
+    with _market_lock:
+        db.save_shared_cache(MARKET)
+
+
 def bootstrap_storage() -> None:
+    global MARKET
     if not db.DATABASE_URL:
         raise RuntimeError("DATABASE_URL is required")
     if not auth.SESSION_SECRET:
         raise RuntimeError("SESSION_SECRET is required")
 
     db.init_schema()
+
+    # Load the shared market cache once. When it doesn't exist yet, seed it from
+    # the most-recently-synced user's cache blob so the first cron isn't a full
+    # cold refetch; otherwise start blank and repopulate on first sync.
+    loaded_market = db.load_shared_cache()
+    seeded = False
+    if not loaded_market:
+        loaded_market = db.load_seed_cache_from_users()
+        seeded = bool(loaded_market)
+    with _market_lock:
+        MARKET = default_market()
+        for _k in default_market():
+            if _k != "version" and _k in loaded_market:
+                MARKET[_k] = loaded_market[_k]
+        _migrate_market_payload()
+    db.save_shared_cache(MARKET)
+    if seeded:
+        print("bootstrap: seeded shared market cache from an existing user's cache")
 
     if db.user_count() == 0:
         username = os.environ.get("ADMIN_USERNAME", "").strip()
@@ -267,7 +317,7 @@ def _activate_user(user_id: int) -> None:
     loaded_data, loaded_cache = db.load_state(user_id)
     with _data_lock:
         DATA = loaded_data if loaded_data else default_data()
-        CACHE = loaded_cache if loaded_cache else default_cache()
+        CACHE = loaded_cache if loaded_cache else default_user_cache()
         _migrate_state_payload()
         ACTIVE_USER_ID = user_id
     if not loaded_data:
@@ -304,11 +354,21 @@ def synced_today() -> bool:
     return datetime.fromtimestamp(ts).date() == date.today()
 
 
+def _ts_is_today(ts) -> bool:
+    """True when a Unix timestamp falls on the current local date."""
+    if not ts:
+        return False
+    try:
+        return datetime.fromtimestamp(float(ts)).date() == date.today()
+    except (TypeError, ValueError, OSError):
+        return False
+
+
 def latest_published_period() -> int | None:
     """Latest REPORT_PERIOD present in any synced fund/pension/insurance cache."""
     latest = 0
     for key in ("fund_monthly", "pensia_monthly", "insurance_monthly"):
-        for entry in (CACHE.get(key) or {}).values():
+        for entry in (MARKET.get(key) or {}).values():
             lp = int(entry.get("last_seen_period") or 0)
             if lp > latest:
                 latest = lp
@@ -380,8 +440,8 @@ def _to_float(v):
 def get_resource_ids(force=False, source: str = "gemelnet") -> dict:
     cfg = SOURCE_CONFIG[source]
     pkg_key = cfg["package_cache_key"]
-    with _cache_lock:
-        ps = CACHE.get(pkg_key)
+    with _market_lock:
+        ps = MARKET.get(pkg_key)
         if (not force) and ps and (time.time() - ps.get("fetched_at_ts", 0) < PACKAGE_SHOW_TTL):
             return ps["resources"]
     r = http_get(f"{GEMELNET_ACTION}/package_show", params={"id": cfg["package_id"]})
@@ -402,13 +462,13 @@ def get_resource_ids(force=False, source: str = "gemelnet") -> dict:
             out["current"] = rid
     if "current" not in out:
         raise RuntimeError(f"Could not locate current {source} resource")
-    with _cache_lock:
-        CACHE[pkg_key] = {
+    with _market_lock:
+        MARKET[pkg_key] = {
             "fetched_at": now_iso(),
             "fetched_at_ts": time.time(),
             "resources": out,
         }
-        save_cache()
+        save_market()
     return out
 
 
@@ -493,9 +553,13 @@ def gemelnet_fetch_history(fund_id: int, *, full=False, source: str = "gemelnet"
     cfg = SOURCE_CONFIG[source]
     monthly_key = cfg["monthly_cache_key"]
     res_ids = get_resource_ids(source=source)
-    with _cache_lock:
-        existing = CACHE[monthly_key].get(str(fund_id))
+    with _market_lock:
+        existing = MARKET[monthly_key].get(str(fund_id))
         last_seen = (existing or {}).get("last_seen_period", 0)
+    # Shared cache: if another user already refreshed this fund today, reuse it
+    # instead of hitting data.gov.il again.
+    if not full and existing and _ts_is_today(existing.get("last_synced_ts")):
+        return existing.get("rows", [])
     if full or not last_seen:
         resources_to_pull = ["1999_2022", "2023", "current"]
     elif last_seen < 202301:
@@ -561,15 +625,15 @@ def gemelnet_fetch_history(fund_id: int, *, full=False, source: str = "gemelnet"
             "sub_specialization": (last_raw.get(COL_SUB_SPEC) or "").strip(),
             "target_population": (last_raw.get(COL_TARGET_POP) or "").strip(),
         }
-    with _cache_lock:
-        CACHE[monthly_key][str(fund_id)] = {
+    with _market_lock:
+        MARKET[monthly_key][str(fund_id)] = {
             "last_synced": now_iso(),
             "last_synced_ts": time.time(),
             "last_seen_period": last_period,
             "meta": fund_meta,
             "rows": rows_sorted,
         }
-        save_cache()
+        save_market()
     return rows_sorted
 
 
@@ -642,7 +706,7 @@ def yahoo_search_ticker(q: str, limit: int = 10) -> list:
     return out
 
 
-def yahoo_fetch_stock(ticker: str, since_iso: str):
+def yahoo_fetch_stock(ticker: str, since_iso: str, *, force: bool = False):
     # Pull at least 13 months back so the per-RSU "stock price (last 12
     # months)" mini-chart on the dashboard always has a full year of data,
     # even for a same-day or weekend grant. 13 months gives a small buffer
@@ -651,17 +715,27 @@ def yahoo_fetch_stock(ticker: str, since_iso: str):
     min_back = datetime.now() - timedelta(days=395)
     if since_d > min_back:
         since_d = min_back
+    # Shared cache: reuse another user's same-day fetch, but only when it already
+    # covers the requested start date (different users may need different history).
+    want_from = since_d.date().isoformat()
+    with _market_lock:
+        existing = MARKET["stock_daily"].get(ticker)
+    if not force and existing and _ts_is_today(existing.get("last_synced_ts")):
+        rows = existing.get("rows") or []
+        covered_from = rows[0]["date"] if rows else None
+        if covered_from and covered_from <= want_from:
+            return rows
     period1 = int(since_d.timestamp())
     period2 = int(time.time())
     out = yahoo_chart(ticker, period1=period1, period2=period2, interval="1d")
-    with _cache_lock:
-        CACHE["stock_daily"][ticker] = {
+    with _market_lock:
+        MARKET["stock_daily"][ticker] = {
             "last_synced": now_iso(),
             "last_synced_ts": time.time(),
             "currency": out["currency"],
             "rows": out["rows"],
         }
-        save_cache()
+        save_market()
     return out["rows"]
 
 
@@ -702,7 +776,7 @@ def _yahoo_ensure_crumb():
 def yahoo_fetch_analyst_target(ticker: str) -> dict:
     """Fetch sell-side analyst 12-month price target consensus for `ticker`.
     Returns the cached dict on success or None on any failure / no coverage.
-    Cached in CACHE['analyst_targets'][TICKER] for ANALYST_TARGET_TTL_SECONDS.
+    Cached in MARKET['analyst_targets'][TICKER] for ANALYST_TARGET_TTL_SECONDS.
     Best-effort: tickers with no analyst coverage (small/recent IPOs) and any
     network/HTTP error all yield None without raising. Uses Yahoo's
     cookie+crumb session flow because the v10 quoteSummary endpoint requires
@@ -759,25 +833,34 @@ def yahoo_fetch_analyst_target(ticker: str) -> dict:
         "fetched_at": now_iso(),
         "fetched_at_ts": time.time(),
     }
-    with _cache_lock:
-        CACHE.setdefault("analyst_targets", {})[tk] = out
-        save_cache()
+    with _market_lock:
+        MARKET.setdefault("analyst_targets", {})[tk] = out
+        save_market()
     return out
 
 
-def yahoo_fetch_fx_usdils(since_iso: str = None):
+def yahoo_fetch_fx_usdils(since_iso: str = None, *, force: bool = False):
     if since_iso is None:
         since_iso = (date.today() - timedelta(days=365 * 5)).isoformat()
+    want_from = datetime.fromisoformat(since_iso).date().isoformat()
+    # Shared cache: reuse a same-day FX fetch that already covers the range.
+    with _market_lock:
+        existing = MARKET["fx"].get("USDILS")
+    if not force and existing and _ts_is_today(existing.get("last_synced_ts")):
+        rows = existing.get("rows") or []
+        covered_from = rows[0]["date"] if rows else None
+        if covered_from and covered_from <= want_from:
+            return
     period1 = int(datetime.fromisoformat(since_iso).timestamp())
     period2 = int(time.time())
     out = yahoo_chart("ILS=X", period1=period1, period2=period2, interval="1d")
-    with _cache_lock:
-        CACHE["fx"]["USDILS"] = {
+    with _market_lock:
+        MARKET["fx"]["USDILS"] = {
             "last_synced": now_iso(),
             "last_synced_ts": time.time(),
             "rows": out["rows"],
         }
-        save_cache()
+        save_market()
     return out["rows"]
 
 
@@ -857,11 +940,11 @@ def run_sync(*, force=False) -> dict:
             _sync_status["step"] = f"ticker {tk}"
             try:
                 earliest = min(grants_by_ticker[tk])
-                yahoo_fetch_stock(tk, earliest)
+                yahoo_fetch_stock(tk, earliest, force=force)
             except Exception as ex:
                 _sync_status["error"] = f"ticker {tk}: {ex}"
             # Best-effort analyst target — never fails the sync. TTL 24h.
-            cached_at = ((CACHE.get("analyst_targets") or {}).get(tk) or {}).get("fetched_at_ts") or 0
+            cached_at = ((MARKET.get("analyst_targets") or {}).get(tk) or {}).get("fetched_at_ts") or 0
             if force or (time.time() - cached_at) > ANALYST_TARGET_TTL_SECONDS:
                 yahoo_fetch_analyst_target(tk)
             time.sleep(SYNC_PAGE_PAUSE)
@@ -878,9 +961,9 @@ def run_sync(*, force=False) -> dict:
                 if tickers:
                     earliest_grant = min(min(d) for d in grants_by_ticker.values())
                     buffered = (date.fromisoformat(earliest_grant) - timedelta(days=365)).isoformat()
-                    yahoo_fetch_fx_usdils(buffered)
+                    yahoo_fetch_fx_usdils(buffered, force=force)
                 else:
-                    yahoo_fetch_fx_usdils()
+                    yahoo_fetch_fx_usdils(force=force)
             except Exception as ex:
                 _sync_status["error"] = f"USDILS: {ex}"
 
@@ -1084,7 +1167,7 @@ def expand_rule_for_period(rule: dict, period: int) -> dict:
 def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     fund_id = str(holding["fund_id"])
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
-    rows = CACHE.get(monthly_key, {}).get(fund_id, {}).get("rows", [])
+    rows = MARKET.get(monthly_key, {}).get(fund_id, {}).get("rows", [])
     rows_by_period = {int(r["report_period"]): r for r in rows}
     anchor_period = int(holding["anchor_period"])
     anchor_balance = float(holding["anchor_balance_ils"])
@@ -1322,7 +1405,7 @@ def compute_spot_check_yields(holding: dict, new_balance_ils, new_period,
 
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
     fund_id = str(holding["fund_id"])
-    rows = CACHE.get(monthly_key, {}).get(fund_id, {}).get("rows", [])
+    rows = MARKET.get(monthly_key, {}).get(fund_id, {}).get("rows", [])
     rows_by_period = {int(r["report_period"]): r for r in rows}
 
     # Comparison base: the value at the period right before new_period
@@ -1508,8 +1591,8 @@ def spot_check_pension(holding_id: str, payload: dict) -> dict:
 def value_rsu(grant: dict) -> dict:
     ticker = grant["ticker"].upper()
     grant_date_iso = grant["grant_date"]
-    stock = CACHE.get("stock_daily", {}).get(ticker, {})
-    fx = CACHE.get("fx", {}).get("USDILS", {})
+    stock = MARKET.get("stock_daily", {}).get(ticker, {})
+    fx = MARKET.get("fx", {}).get("USDILS", {})
     stock_rows = stock.get("rows", [])
     fx_rows = fx.get("rows", [])
     stock_by_date = {r["date"]: r["close"] for r in stock_rows}
@@ -1799,7 +1882,7 @@ def _project_fund_contributions(holding: dict, computed: dict, horizon_months: i
 
 def project_fund(holding: dict, computed: dict, horizon_months: int, source: str = "gemelnet") -> dict:
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
-    rows = CACHE.get(monthly_key, {}).get(str(holding["fund_id"]), {}).get("rows", [])
+    rows = MARKET.get(monthly_key, {}).get(str(holding["fund_id"]), {}).get("rows", [])
     returns = [r["monthly_yield"] / 100.0 for r in rows if r.get("monthly_yield") is not None]
     contribs = _project_fund_contributions(holding, computed, horizon_months)
     return project_returns(returns, computed["current_value_ils"], horizon_months, contribs)
@@ -1960,8 +2043,8 @@ def _espp_purchase_breakdown(plan: dict, contribution_usd: float,
 def value_espp(plan: dict) -> dict:
     """Compute current ESPP plan state: holdings, value, gains, discount captured."""
     ticker = plan["ticker"].upper()
-    stock = CACHE.get("stock_daily", {}).get(ticker, {})
-    fx = CACHE.get("fx", {}).get("USDILS", {})
+    stock = MARKET.get("stock_daily", {}).get(ticker, {})
+    fx = MARKET.get("fx", {}).get("USDILS", {})
     stock_rows = stock.get("rows", []) or []
     fx_rows = fx.get("rows", []) or []
     stock_by_date = {r["date"]: r["close"] for r in stock_rows}
@@ -2170,7 +2253,7 @@ def project_espp(plan: dict, computed: dict, horizon_months: int) -> dict:
 
 # ── /api/data composer ───────────────────────────────────────────────────────
 def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
-    with _data_lock, _cache_lock:
+    with _data_lock, _cache_lock, _market_lock:
         fund_holdings_out = []
         for h in DATA["fund_holdings"]:
             src = fund_holding_source(h)
@@ -2179,7 +2262,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             projection = project_fund(h, computed, horizon_months, source=src) if not archived else None
             wf = what_if_fund(h, computed, assumed_annual_pct, horizon_months) if not archived else None
             monthly_key = SOURCE_CONFIG[src]["monthly_cache_key"]
-            cache_entry = CACHE.get(monthly_key, {}).get(str(h["fund_id"]), {})
+            cache_entry = MARKET.get(monthly_key, {}).get(str(h["fund_id"]), {})
             out = dict(h)
             out["computed"] = computed
             out["projection"] = projection
@@ -2194,7 +2277,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             archived = h.get("archived")
             projection = project_pension(h, computed, horizon_months) if not archived else None
             wf = what_if_pension(h, computed, assumed_annual_pct, horizon_months) if not archived else None
-            cache_entry = CACHE.get("pensia_monthly", {}).get(str(h["fund_id"]), {})
+            cache_entry = MARKET.get("pensia_monthly", {}).get(str(h["fund_id"]), {})
             out = dict(h)
             out["computed"] = computed
             out["projection"] = projection
@@ -2205,13 +2288,13 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
 
         rsu_grants_out = []
         cutoff_6m = (date.today() - timedelta(days=180)).isoformat()
-        analyst_targets_cache = CACHE.get("analyst_targets") or {}
+        analyst_targets_cache = MARKET.get("analyst_targets") or {}
         for g in DATA["rsu_grants"]:
             computed = value_rsu(g)
             archived = g.get("archived")
             projection = project_rsu(g, computed, horizon_months) if not archived else None
             tk = g["ticker"].upper()
-            ticker_cache = CACHE["stock_daily"].get(tk, {})
+            ticker_cache = MARKET["stock_daily"].get(tk, {})
             stock_rows = ticker_cache.get("rows", []) or []
             # Window is "last 6 months" OR "back to grant date", whichever is
             # earlier — so users can always see where the grant landed on the
@@ -2239,7 +2322,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             archived = plan.get("archived")
             projection = project_espp(plan, computed, horizon_months) if not archived else None
             tk = plan["ticker"].upper()
-            ticker_cache = CACHE["stock_daily"].get(tk, {})
+            ticker_cache = MARKET["stock_daily"].get(tk, {})
             stock_rows = ticker_cache.get("rows", []) or []
             purchases_sorted = sorted(plan.get("purchases", []) or [], key=lambda p: p["date"])
             earliest_purchase = purchases_sorted[0]["date"] if purchases_sorted else None
@@ -2258,7 +2341,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
 
         # Cash holdings — flat ILS-equivalent values; no historical/projection math.
         cash_holdings_out = []
-        fx_now = (CACHE.get("fx", {}).get("USDILS", {}).get("rows") or [{}])[-1].get("close") if CACHE.get("fx", {}).get("USDILS") else None
+        fx_now = (MARKET.get("fx", {}).get("USDILS", {}).get("rows") or [{}])[-1].get("close") if MARKET.get("fx", {}).get("USDILS") else None
         override = DATA["settings"].get("usdils_rate_override")
         effective_fx = override if override else fx_now
         for c in DATA.get("cash_holdings", []) or []:
@@ -2281,9 +2364,9 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
                                       assumed_annual_pct, cash_holdings_out, espp_plans_out)
 
         # cache freshness
-        fx_entry = CACHE["fx"].get("USDILS", {})
-        ps = CACHE.get("package_show") or {}
-        ps_pensia = CACHE.get("pensia_package_show") or {}
+        fx_entry = MARKET["fx"].get("USDILS", {})
+        ps = MARKET.get("package_show") or {}
+        ps_pensia = MARKET.get("pensia_package_show") or {}
 
         # Pension subtotal — surfaced for the UI but deliberately NOT folded
         # into portfolio.total_value_ils (pension is excluded from the
@@ -2698,11 +2781,11 @@ def prepare_fund(fund_id: int, source: str = "gemelnet") -> dict:
     if source not in SOURCE_CONFIG:
         return {"ok": False, "error": f"Unknown data source: {source}"}
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
-    cache_entry = CACHE[monthly_key].get(str(fund_id))
+    cache_entry = MARKET[monthly_key].get(str(fund_id))
     if not cache_entry or not cache_entry.get("rows"):
         try:
             gemelnet_fetch_history(fund_id, full=True, source=source)
-            cache_entry = CACHE[monthly_key].get(str(fund_id), {})
+            cache_entry = MARKET[monthly_key].get(str(fund_id), {})
         except Exception as ex:
             return {"ok": False, "error": f"Failed to sync fund {fund_id}: {ex}"}
     rows = cache_entry.get("rows", [])
@@ -2724,11 +2807,11 @@ def add_fund_holding(payload: dict) -> dict:
     requested_period = payload.get("anchor_period")
 
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
-    cache_entry = CACHE[monthly_key].get(str(fund_id))
+    cache_entry = MARKET[monthly_key].get(str(fund_id))
     if not cache_entry or not cache_entry.get("rows"):
         try:
             gemelnet_fetch_history(fund_id, full=True, source=source)
-            cache_entry = CACHE[monthly_key].get(str(fund_id), {})
+            cache_entry = MARKET[monthly_key].get(str(fund_id), {})
         except Exception as ex:
             return {"ok": False, "error": f"Failed to sync fund {fund_id}: {ex}"}
 
@@ -2925,11 +3008,11 @@ def delete_fund_holding(holding_id: str) -> dict:
 # ── Pension CRUD (mirrors fund handlers, sourced from pensia-net) ────────────
 def prepare_pension(fund_id: int) -> dict:
     """Sync pensia-net history for fund_id and return available periods + meta."""
-    cache_entry = CACHE["pensia_monthly"].get(str(fund_id))
+    cache_entry = MARKET["pensia_monthly"].get(str(fund_id))
     if not cache_entry or not cache_entry.get("rows"):
         try:
             gemelnet_fetch_history(fund_id, full=True, source="pensia")
-            cache_entry = CACHE["pensia_monthly"].get(str(fund_id), {})
+            cache_entry = MARKET["pensia_monthly"].get(str(fund_id), {})
         except Exception as ex:
             return {"ok": False, "error": f"Failed to sync pension fund {fund_id}: {ex}"}
     rows = cache_entry.get("rows", [])
@@ -2947,11 +3030,11 @@ def add_pension_holding(payload: dict) -> dict:
     yield_is_net = bool(payload.get("yield_is_net_of_fees", DATA["settings"]["yield_is_net_of_fees"]))
     requested_period = payload.get("anchor_period")
 
-    cache_entry = CACHE["pensia_monthly"].get(str(fund_id))
+    cache_entry = MARKET["pensia_monthly"].get(str(fund_id))
     if not cache_entry or not cache_entry.get("rows"):
         try:
             gemelnet_fetch_history(fund_id, full=True, source="pensia")
-            cache_entry = CACHE["pensia_monthly"].get(str(fund_id), {})
+            cache_entry = MARKET["pensia_monthly"].get(str(fund_id), {})
         except Exception as ex:
             return {"ok": False, "error": f"Failed to sync pension fund {fund_id}: {ex}"}
 
@@ -3093,7 +3176,7 @@ def add_rsu_grant(payload: dict) -> dict:
     # Sync prices for ticker since grant_date.
     try:
         yahoo_fetch_stock(grant["ticker"], grant["grant_date"])
-        if not CACHE["fx"].get("USDILS"):
+        if not MARKET["fx"].get("USDILS"):
             yahoo_fetch_fx_usdils(grant["grant_date"])
     except Exception as ex:
         return {"ok": False, "error": f"Could not fetch prices for {grant['ticker']}: {ex}"}
@@ -3230,7 +3313,7 @@ def add_espp_plan(payload: dict) -> dict:
     try:
         since = (date.today() - timedelta(days=400)).isoformat()
         yahoo_fetch_stock(ticker, since)
-        if not CACHE["fx"].get("USDILS"):
+        if not MARKET["fx"].get("USDILS"):
             yahoo_fetch_fx_usdils(since)
     except Exception as ex:
         return {"ok": False, "error": f"Could not fetch prices for {ticker}: {ex}"}
@@ -3442,7 +3525,7 @@ def add_cash_holding(payload: dict) -> dict:
     # If USD and no FX cached, pull USDILS so the ILS conversion works.
     if currency == "USD":
         with _cache_lock:
-            fx_rows = (CACHE.get("fx", {}).get("USDILS", {}) or {}).get("rows") or []
+            fx_rows = (MARKET.get("fx", {}).get("USDILS", {}) or {}).get("rows") or []
         if not fx_rows:
             try:
                 yahoo_fetch_fx_usdils()
@@ -3541,7 +3624,7 @@ def delete_account(user_id: int, password: str) -> dict:
         if ACTIVE_USER_ID == user_id:
             ACTIVE_USER_ID = None
             DATA = default_data()
-            CACHE = default_cache()
+            CACHE = default_user_cache()
     return {"ok": True, "message": "Account deleted"}
 
 
@@ -4062,11 +4145,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
 
             if method == "POST" and path == "/api/cache/clear":
-                global CACHE
-                with _cache_lock:
-                    CACHE = default_cache()
-                    save_cache()
-                self._json(200, {"ok": True})
+                # Market data is now shared across all users; clearing it forces
+                # a fresh refetch for everyone on the next sync.
+                global MARKET
+                with _market_lock:
+                    MARKET = default_market()
+                    save_market()
+                self._json(200, {
+                    "ok": True,
+                    "shared": True,
+                    "message": "Shared market cache cleared for all users; data refetches on next sync.",
+                })
                 return
 
             if method == "DELETE" and path == "/api/account":
