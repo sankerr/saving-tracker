@@ -17,7 +17,11 @@ Browser → Cloudflare Pages (frontend)
        → Render API (backend Docker)
        → Neon PostgreSQL
        → data.gov.il + Yahoo Finance (sync)
+       → Google Gemini (optional AI chat + daily email insights)
+       → Resend (optional daily email delivery)
 ```
+
+Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, and cash, with dashboard projections/what-if, a Hebrew/English UI, and an optional AI chat assistant.
 
 ## Prerequisites
 
@@ -46,8 +50,11 @@ Browser → Cloudflare Pages (frontend)
 | `ADMIN_USERNAME` | `you@example.com` | Valid email; only used on first boot when DB has no users |
 | `ADMIN_PASSWORD` | `...` | Strong password |
 | `CRON_SECRET` | random 32+ chars | Protects `POST /api/cron/sync` (GitHub Actions daily job) |
-| `RESEND_API_KEY` | `re_...` | [Resend](https://resend.com) API key for yield-update emails |
+| `RESEND_API_KEY` | `re_...` | [Resend](https://resend.com) API key for the daily email (optional) |
 | `NOTIFY_FROM` | `Saving Tracker <onboarding@resend.dev>` | Verified sender in Resend |
+| `CHAT_ENABLED` | `1` | Enable the in-app AI chat assistant (optional; requires `GEMINI_API_KEY`) |
+| `GEMINI_API_KEY` | `AIza...` | [Google Gemini](https://ai.google.dev) API key; powers AI chat and daily email insights (optional) |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Gemini model override (optional; defaults to `gemini-3.1-flash-lite`) |
 
 5. Deploy and note the public URL, e.g. `https://saving-tracker-api.onrender.com`
 
@@ -79,7 +86,7 @@ cd backend
 pip install -r requirements.txt
 
 export DATABASE_URL='postgresql://...'
-export ADMIN_USERNAME='you'
+export ADMIN_USERNAME='you@example.com'
 export ADMIN_PASSWORD='your-password'
 
 python ../scripts/migrate_json_to_pg.py \
@@ -125,13 +132,18 @@ python3 -m http.server 3000
 - `POST /api/account/password` — `{ "current_password", "new_password" }` (change password while logged in)
 - `DELETE /api/account` — `{ "password" }` (delete account and all portfolio data)
 - All other `/api/*` routes require `Authorization: Bearer <token>`
+- `GET /api/chat/status` — `{ "enabled": bool }` (whether AI chat is configured)
+- `POST /api/chat` — `{ "messages": [...] }` → `{ "reply" }` (AI assistant; `404` when chat is disabled)
+- `GET /api/version` — `{ "version" }`
 - `GET /api/health` — no auth (Render health checks)
 - `POST /api/cron/sync` — daily sync trigger; requires `Authorization: Bearer <CRON_SECRET>` (returns `202`)
 - `GET /api/cron/status` — cron job status; requires `Authorization: Bearer <CRON_SECRET>`
 
 ## Daily sync & email alerts
 
-A GitHub Actions workflow (`.github/workflows/daily-sync.yml`) triggers `POST /api/cron/sync` every day at **08:00 Asia/Jerusalem** (05:00 UTC). This works on Render's free tier — the HTTP request wakes the sleeping service, syncs all approved users, and sends a Resend email when published yields advance to a new month.
+A GitHub Actions workflow (`.github/workflows/daily-sync.yml`) triggers `POST /api/cron/sync` every day at **08:05 Asia/Jerusalem** (05:05 UTC). This works on Render's free tier — the HTTP request wakes the sleeping service and syncs all approved users.
+
+After sync, each approved user is emailed a **daily dashboard snapshot** (totals, holdings, and short AI insights). The subject line highlights newly published fund yields when `latest_published_period` advances to a new month.
 
 **One-time setup:**
 
@@ -140,10 +152,11 @@ A GitHub Actions workflow (`.github/workflows/daily-sync.yml`) triggers `POST /a
    UPDATE users SET username = 'you@example.com' WHERE username = 'admin';
    ```
 2. Create a [Resend](https://resend.com) account, verify a sender domain (or use Resend's test sender), and set `RESEND_API_KEY` + `NOTIFY_FROM` on Render.
-3. Copy Render's `CRON_SECRET` value into GitHub repo **Settings → Secrets → Actions** as `CRON_SECRET`, and add `RENDER_API_URL` (e.g. `https://saving-tracker-api.onrender.com`).
-4. Deploy, then run the workflow manually (**Actions → Daily sync → Run workflow**) to verify.
+3. Set `GEMINI_API_KEY` on Render for AI insights in the email. Without it, sync and email still work — the insights section falls back to a static message. (`CHAT_ENABLED` is only needed for the in-app chat, not the email.)
+4. Copy Render's `CRON_SECRET` value into GitHub repo **Settings → Secrets → Actions** as `CRON_SECRET`, and add `RENDER_API_URL` (e.g. `https://saving-tracker-api.onrender.com`).
+5. Deploy, then run the workflow manually (**Actions → Daily sync → Run workflow**) to verify.
 
-Notifications are sent to each user's username (email) when `latest_published_period` advances after sync.
+Emails are sent to each user's username (email). The workflow fails if a sync or notification error is reported, so failures surface in the Actions run and Render logs.
 
 ## User registration & approval
 
