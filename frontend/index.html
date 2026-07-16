@@ -654,6 +654,7 @@ h2 {
   padding: 1rem;
   animation: modal-fade 150ms ease;
 }
+.modal[hidden] { display: none; }
 @keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
 .modal__backdrop {
   position: absolute; inset: 0;
@@ -1484,6 +1485,7 @@ html[dir="rtl"] .chat-panel {
         <button type="button" class="btn btn--ghost btn--small" data-lang-toggle id="lang-toggle-btn">עב</button>
         <button class="btn btn--ghost btn--small" id="chat-toggle-btn" type="button" hidden data-i18n="chrome.aiChat" data-i18n-title="chrome.openAiChat" data-i18n-aria-label="chrome.openAiChat" title="Open AI chat" aria-label="Open AI chat" aria-expanded="false" aria-controls="chat-panel">AI chat</button>
         <button class="btn btn--ghost btn--small" id="theme-toggle-btn" type="button" data-i18n-title="chrome.toggleTheme" data-i18n-aria-label="chrome.toggleTheme" title="Toggle light/dark mode" aria-label="Toggle theme">🌙</button>
+        <button class="btn btn--ghost btn--small" id="settings-btn" type="button" data-i18n-title="section.settings" data-i18n-aria-label="section.settings" title="Settings" aria-label="Settings" aria-haspopup="dialog">⚙</button>
         <button class="btn btn--ghost btn--small" id="logout-btn" hidden data-i18n="chrome.signOut">Sign out</button>
         <button class="btn btn--ghost btn--small" id="refresh-btn" data-i18n="chrome.refresh">↻ Refresh</button>
       </div>
@@ -1854,12 +1856,12 @@ html[dir="rtl"] .chat-panel {
     </div>
   </section>
 
-  <section class="card" id="settings-card">
-    <div class="card__header">
-      <h2><span data-i18n="section.settings">Settings</span> <button class="help-btn" data-help="settings" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.settings.title" title="What is this section?" aria-label="About Settings">?</button></h2>
-      <button class="btn btn--ghost btn--small" id="settings-toggle" aria-expanded="false">Show</button>
-    </div>
-    <div id="settings-body" hidden>
+  <div class="modal" id="settings-modal" hidden role="dialog" aria-modal="true" data-i18n-aria-label="section.settings" aria-label="Settings">
+    <div class="modal__backdrop" data-settings-close></div>
+    <div class="modal__panel modal__panel--wide">
+      <button class="modal__close" type="button" data-settings-close aria-label="Close">×</button>
+      <h3 class="modal__title"><span data-i18n="section.settings">Settings</span> <button class="help-btn" data-help="settings" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.settings.title" title="What is this section?" aria-label="About Settings">?</button></h3>
+      <div class="modal__body">
       <div class="settings-grid">
         <div class="field">
           <label for="setting-theme" data-i18n="settings.appearance">Appearance</label>
@@ -1891,8 +1893,9 @@ html[dir="rtl"] .chat-panel {
         <button class="btn btn--danger btn--small" id="delete-account-btn" type="button" data-i18n="settings.deleteAccount">Delete my account</button>
         <p class="chart-caption" style="margin:0.5rem 0 0;" data-i18n="settings.deleteAccountBlurb" data-i18n-html>Permanently deletes your login and <strong>all personal data</strong> stored in the database (holdings, grants, cash, settings, and cached prices). This cannot be undone.</p>
       </div>
+      </div>
     </div>
-  </section>
+  </div>
 
   <p class="chart-caption" style="margin-top:2rem; padding-top:1rem; border-top:1px solid var(--color-border); text-align:center;">
     <span data-i18n="footer.credit">Saving Tracker — personal, non-commercial software. Not affiliated with fund managers, brokers, or data providers.</span>
@@ -2117,10 +2120,7 @@ function clearPortfolioUi() {
     c.clearRect(0, 0, dashCanvas.width, dashCanvas.height);
   }
   document.querySelectorAll('.add-panel').forEach((p) => { p.hidden = true; });
-  const settingsBody = document.getElementById('settings-body');
-  if (settingsBody) settingsBody.hidden = true;
-  const settingsToggle = document.getElementById('settings-toggle');
-  if (settingsToggle) settingsToggle.textContent = t('common.show');
+  closeSettings();
   resetChatSession({ hide: true });
 }
 
@@ -2143,7 +2143,8 @@ function clearUserSession() {
 function returnToLoginScreen({ loginNotice = '' } = {}) {
   clearUserSession();
   setAuthMode('login');
-  document.querySelectorAll('.modal').forEach((m) => m.remove());
+  closeSettings();
+  document.querySelectorAll('.modal:not(#settings-modal)').forEach((m) => m.remove());
   const username = document.getElementById('login-username');
   if (username) username.value = '';
   const password = document.getElementById('login-password');
@@ -2302,11 +2303,6 @@ function t(key, vars) {
 function refreshI18nDynamic() {
   if (window.I18N) I18N.applyI18n(document);
   setAuthMode(authMode);
-  const settingsToggle = document.getElementById('settings-toggle');
-  const settingsBody = document.getElementById('settings-body');
-  if (settingsToggle && settingsBody) {
-    settingsToggle.textContent = settingsBody.hidden ? t('common.show') : t('common.hide');
-  }
   updateChatToggleLabel();
   if (typeof updateStatusDataMonth === 'function') updateStatusDataMonth();
   if (typeof renderChatThread === 'function') renderChatThread();
@@ -4512,7 +4508,6 @@ const NAV_SECTIONS = [
   { id: 'rsu-card', label: 'section.rsu', count: 'rsu-count' },
   { id: 'espp-card', label: 'section.espp', count: 'espp-count' },
   { id: 'cash-card', label: 'section.cash', count: 'cash-count' },
-  { id: 'settings-card', label: 'section.settings' },
 ];
 let _navSpy = null;
 
@@ -4625,6 +4620,25 @@ function initDisclaimer() {
       setDisclaimerExpanded(false);
     });
   }
+}
+
+// ── Settings modal ──
+function _settingsEsc(e) {
+  if (e.key === 'Escape') { e.preventDefault(); closeSettings(); }
+}
+function openSettings() {
+  const m = document.getElementById('settings-modal');
+  if (!m) return;
+  m.hidden = false;
+  document.addEventListener('keydown', _settingsEsc);
+  const f = m.querySelector('.modal__body select, .modal__body input:not([type="file"]), .modal__close');
+  if (f) setTimeout(() => { try { f.focus(); } catch {} }, 50);
+}
+function closeSettings() {
+  const m = document.getElementById('settings-modal');
+  if (!m) return;
+  m.hidden = true;
+  document.removeEventListener('keydown', _settingsEsc);
 }
 
 function init() {
@@ -4863,10 +4877,9 @@ function init() {
   document.getElementById('add-espp-save').addEventListener('click', saveESPPPlan);
   setupESPPTickerSearch();
 
-  document.getElementById('settings-toggle').addEventListener('click', () => {
-    const body = document.getElementById('settings-body');
-    body.hidden = !body.hidden;
-    document.getElementById('settings-toggle').textContent = body.hidden ? t('common.show') : t('common.hide');
+  document.getElementById('settings-btn').addEventListener('click', openSettings);
+  document.querySelectorAll('#settings-modal [data-settings-close]').forEach((el) => {
+    el.addEventListener('click', closeSettings);
   });
   document.getElementById('setting-theme').value = getThemePreference();
   document.getElementById('setting-theme').addEventListener('change', (e) => {
@@ -5892,8 +5905,6 @@ document.addEventListener('DOMContentLoaded', () => {
   init();
   initChatUi();
   setAuthMode('login');
-  const st = document.getElementById('settings-toggle');
-  if (st) st.textContent = t('common.show');
 
   document.getElementById('auth-toggle-btn').addEventListener('click', () => {
     setAuthMode(authMode === 'login' ? 'register' : 'login');
