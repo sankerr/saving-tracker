@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '5 5 * * *'   # 08:05 Asia/Jerusalem (UTC+3)
   workflow_dispatch:
+    inputs:
+      send_email:
+        description: 'Send the new-yield email if a new monthly yield is published'
+        type: boolean
+        default: true
 
 jobs:
   sync:
@@ -30,9 +35,17 @@ jobs:
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+          # Scheduled runs always send; manual runs honor the send_email input.
+          SEND_EMAIL: ${{ github.event.inputs.send_email == 'false' && 'false' || 'true' }}
         run: |
           set -euo pipefail
           BASE="${RENDER_API_URL%/}"
+          if [ "${SEND_EMAIL}" = "false" ]; then
+            EMAIL_QS="0"
+          else
+            EMAIL_QS="1"
+          fi
+          echo "send_email=${SEND_EMAIL} (email query = ${EMAIL_QS})"
 
           echo "== Health check =="
           HEALTH_CODE=$(curl -sS -o /tmp/health.txt -w '%{http_code}' \
@@ -54,7 +67,7 @@ jobs:
             -H "Authorization: Bearer ${CRON_SECRET}" \
             --retry 3 --retry-delay 30 --retry-all-errors \
             --connect-timeout 30 --max-time 600 \
-            "${BASE}/api/cron/sync" || true)
+            "${BASE}/api/cron/sync?email=${EMAIL_QS}" || true)
           echo "POST /api/cron/sync -> HTTP ${SYNC_CODE}"
           cat /tmp/cron-sync.txt || true
           echo
@@ -133,17 +146,20 @@ jobs:
               print(
                   f"user_id={row.get('user_id')} "
                   f"before={row.get('before')} after={row.get('after')} "
+                  f"new_yield={row.get('new_yield')} "
                   f"notified={row.get('notified')} "
+                  f"email_skipped={row.get('email_skipped')} "
                   f"notify_error={row.get('notify_error')} "
                   f"sync_error={row.get('sync_error')}"
               )
               if row.get("sync_error"):
                   print(f"ERROR: sync failed for user_id={row.get('user_id')}: {row.get('sync_error')}", file=sys.stderr)
                   sys.exit(1)
-              if not row.get("notified"):
+              # Only a real send attempt that errored is a failure. Skipped
+              # emails (no new yield / email disabled) are expected and fine.
+              if row.get("notify_error"):
                   failed_notify = True
-                  err = row.get("notify_error") or "email not sent (no error detail from server — redeploy backend)"
-                  print(f"ERROR: notify failed for user_id={row.get('user_id')}: {err}", file=sys.stderr)
+                  print(f"ERROR: notify failed for user_id={row.get('user_id')}: {row.get('notify_error')}", file=sys.stderr)
           if not results:
               print("WARN: no approved users synced.")
           if failed_notify:

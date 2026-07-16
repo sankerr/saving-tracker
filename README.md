@@ -17,8 +17,8 @@ Browser → Cloudflare Pages (frontend)
        → Render API (backend Docker)
        → Neon PostgreSQL
        → data.gov.il + Yahoo Finance (sync)
-       → Google Gemini (optional AI chat + daily email insights)
-       → Resend (optional daily email delivery)
+       → Google Gemini (optional AI chat + new-yield email insights)
+       → Resend (optional new-yield email delivery)
 ```
 
 Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, and cash, with dashboard projections/what-if, a Hebrew/English UI, and an optional AI chat assistant.
@@ -50,10 +50,10 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
 | `ADMIN_USERNAME` | `you@example.com` | Valid email; only used on first boot when DB has no users |
 | `ADMIN_PASSWORD` | `...` | Strong password |
 | `CRON_SECRET` | random 32+ chars | Protects `POST /api/cron/sync` (GitHub Actions daily job) |
-| `RESEND_API_KEY` | `re_...` | [Resend](https://resend.com) API key for the daily email (optional) |
+| `RESEND_API_KEY` | `re_...` | [Resend](https://resend.com) API key for the new-yield email (optional) |
 | `NOTIFY_FROM` | `Saving Tracker <onboarding@resend.dev>` | Verified sender in Resend |
 | `CHAT_ENABLED` | `1` | Enable the in-app AI chat assistant (optional; requires `GEMINI_API_KEY`) |
-| `GEMINI_API_KEY` | `AIza...` | [Google Gemini](https://ai.google.dev) API key; powers AI chat and daily email insights (optional) |
+| `GEMINI_API_KEY` | `AIza...` | [Google Gemini](https://ai.google.dev) API key; powers AI chat and new-yield email insights (optional) |
 | `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Gemini model override (optional; defaults to `gemini-3.1-flash-lite`) |
 
 5. Deploy and note the public URL, e.g. `https://saving-tracker-api.onrender.com`
@@ -136,14 +136,16 @@ python3 -m http.server 3000
 - `POST /api/chat` — `{ "messages": [...] }` → `{ "reply" }` (AI assistant; `404` when chat is disabled)
 - `GET /api/version` — `{ "version" }`
 - `GET /api/health` — no auth (Render health checks)
-- `POST /api/cron/sync` — daily sync trigger; requires `Authorization: Bearer <CRON_SECRET>` (returns `202`)
+- `POST /api/cron/sync` — daily sync trigger; requires `Authorization: Bearer <CRON_SECRET>` (returns `202`). Optional `?email=0` (also `false`/`no`/`off`) runs the sync **without** sending emails.
 - `GET /api/cron/status` — cron job status; requires `Authorization: Bearer <CRON_SECRET>`
 
 ## Daily sync & email alerts
 
 A GitHub Actions workflow (`.github/workflows/daily-sync.yml`) triggers `POST /api/cron/sync` every day at **08:05 Asia/Jerusalem** (05:05 UTC). This works on Render's free tier — the HTTP request wakes the sleeping service and syncs all approved users.
 
-After sync, each approved user is emailed a **daily dashboard snapshot** (totals, holdings, and short AI insights). The subject line highlights newly published fund yields when `latest_published_period` advances to a new month.
+Email is sent **only when a new monthly fund yield is published** — i.e. when `latest_published_period` advances past the last period a user was notified about. On days with no new yield the sync still runs but no email goes out. When a new yield is detected, each approved user is emailed a **dashboard snapshot** (totals, holdings, and short AI insights) and `last_notified_period` is advanced only after a successful send.
+
+**Email toggle:** the `send_email` input on **Actions → Daily sync → Run workflow** controls whether emails are sent for a manual run (default `true`). Scheduled runs always allow email. Internally the workflow passes `?email=0` to the cron endpoint when the toggle is off, so you can trigger a data-only sync without notifying users.
 
 **One-time setup:**
 
@@ -156,7 +158,7 @@ After sync, each approved user is emailed a **daily dashboard snapshot** (totals
 4. Copy Render's `CRON_SECRET` value into GitHub repo **Settings → Secrets → Actions** as `CRON_SECRET`, and add `RENDER_API_URL` (e.g. `https://saving-tracker-api.onrender.com`).
 5. Deploy, then run the workflow manually (**Actions → Daily sync → Run workflow**) to verify.
 
-Emails are sent to each user's username (email). The workflow fails if a sync or notification error is reported, so failures surface in the Actions run and Render logs.
+Emails are sent to each user's username (email). The workflow fails if a **sync error** or a **real notification error** is reported; days where email is simply skipped (no new yield, or `send_email` off) are treated as success. Failures surface in the Actions run and Render logs.
 
 ## User registration & approval
 

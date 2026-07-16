@@ -984,10 +984,10 @@ def run_sync(*, force=False) -> dict:
         _sync_lock.release()
 
 
-def run_scheduled_sync_for_all_users() -> dict:
+def run_scheduled_sync_for_all_users(send_email: bool = True) -> dict:
     results = []
     users = db.list_approved_users()
-    print(f"cron sync: {len(users)} approved user(s)")
+    print(f"cron sync: {len(users)} approved user(s) (send_email={send_email})")
     for user in users:
         user_id = user["id"]
         to_email = user["username"]
@@ -996,8 +996,10 @@ def run_scheduled_sync_for_all_users() -> dict:
             "user_id": user_id,
             "before": None,
             "after": None,
+            "new_yield": None,
             "notified": False,
             "notify_error": None,
+            "email_skipped": None,
             "sync_error": None,
         }
         try:
@@ -1013,33 +1015,44 @@ def run_scheduled_sync_for_all_users() -> dict:
             after = latest_published_period()
             entry["after"] = after
             last_notified = int(CACHE.get("last_notified_period") or 0)
-            new_yield = None
-            if after and after > last_notified and after > (before or 0):
-                new_yield = after
-                with _cache_lock:
-                    CACHE["last_notified_period"] = after
-                save_cache()
+            new_yield = after if (after and after > last_notified and after > (before or 0)) else None
+            entry["new_yield"] = new_yield
 
-            synced_at = CACHE.get("last_full_sync_at") or now_iso()
-            try:
-                state = compose_state(24, None)
-            except Exception as ex:
-                entry["sync_error"] = f"compose_state failed: {ex}"
-                results.append(entry)
-                print(f"cron sync: compose failed user_id={user_id}: {ex}")
-                continue
+            # Email only when a new monthly yield was published, and only when
+            # email is enabled for this run. Advance last_notified_period only
+            # after a successful send, so a disabled run (or a send failure)
+            # doesn't permanently suppress the next new-yield email.
+            if not new_yield:
+                entry["email_skipped"] = "no new yield"
+            elif not send_email:
+                entry["email_skipped"] = "email disabled"
+            else:
+                synced_at = CACHE.get("last_full_sync_at") or now_iso()
+                try:
+                    state = compose_state(24, None)
+                except Exception as ex:
+                    entry["sync_error"] = f"compose_state failed: {ex}"
+                    results.append(entry)
+                    print(f"cron sync: compose failed user_id={user_id}: {ex}")
+                    continue
 
-            notify_result = notify.send_daily_insight_email(
-                to=to_email,
-                state=state,
-                synced_at=synced_at,
-                new_yield_period=new_yield,
-            )
-            entry["notified"] = notify_result.ok
-            entry["notify_error"] = notify_result.error
+                notify_result = notify.send_daily_insight_email(
+                    to=to_email,
+                    state=state,
+                    synced_at=synced_at,
+                    new_yield_period=new_yield,
+                )
+                entry["notified"] = notify_result.ok
+                entry["notify_error"] = notify_result.error
+                if notify_result.ok:
+                    with _cache_lock:
+                        CACHE["last_notified_period"] = after
+                    save_cache()
+
             print(
                 f"cron sync: finished user_id={user_id} before={entry['before']} "
                 f"after={entry['after']} new_yield={new_yield} notified={entry['notified']} "
+                f"email_skipped={entry['email_skipped']} "
                 f"notify_error={entry['notify_error']} sync_error={entry['sync_error']}",
                 flush=True,
             )
@@ -1051,11 +1064,11 @@ def run_scheduled_sync_for_all_users() -> dict:
     return {"ok": True, "users": results}
 
 
-def _run_cron_job() -> None:
+def _run_cron_job(send_email: bool = True) -> None:
     global _cron_status
     print(f"cron sync: job started at {now_iso()}")
     try:
-        result = run_scheduled_sync_for_all_users()
+        result = run_scheduled_sync_for_all_users(send_email=send_email)
         _cron_status["results"] = result
         print(f"cron sync: job succeeded at {now_iso()}")
     except Exception as ex:
@@ -3857,11 +3870,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if method == "POST" and path == "/api/cron/sync":
             if not self._verify_cron_secret():
                 return
+            # ?email=0 / false / no disables the new-yield email for this run.
+            email_qs = (parse_qs(parsed.query).get("email", ["1"])[0] or "").strip().lower()
+            send_email = email_qs not in ("0", "false", "no", "off")
             if not _cron_job_lock.acquire(blocking=False):
                 print("cron sync: rejected — job already running")
                 self._json(409, {"ok": False, "error": "Cron sync already running"})
                 return
-            print(f"cron sync: accepted at {now_iso()}")
+            print(f"cron sync: accepted at {now_iso()} (send_email={send_email})")
             _cron_status.update({
                 "running": True,
                 "started_at": now_iso(),
@@ -3869,7 +3885,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "error": None,
                 "results": None,
             })
-            threading.Thread(target=_run_cron_job, daemon=True).start()
+            threading.Thread(target=_run_cron_job, args=(send_email,), daemon=True).start()
             self._json(202, {"ok": True, "status": "started"})
             return
 
