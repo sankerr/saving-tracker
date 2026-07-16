@@ -1,4 +1,4 @@
-# Design: Compact Top Chrome + Section Navigation
+# Design: Compact Top Chrome, Section Navigation + Loading Indicator
 
 Date: 2026-07-16
 Status: Approved (pending spec review)
@@ -19,6 +19,11 @@ Two UX issues:
    (`disclaimer-banner`) -> status bar -> only then the Dashboard total. The
    disclaimer is important for a personal finance tool and must stay accessible,
    but it should not bury the dashboard on every visit.
+3. **Loading feels stuck.** The only load feedback is a subtly pulsing dot in
+   the status pill plus text ("Loading..." / "Waking server..." / "Syncing...").
+   The backend runs on Render's free tier and sleeps, so a cold start takes
+   ~30-50s during which the body shows only `-` placeholders. There is no
+   prominent indicator that work is in progress.
 
 ## Goals
 
@@ -26,6 +31,8 @@ Two UX issues:
   they are.
 - Make the Dashboard total appear near the top of the page on return visits.
 - Keep the disclaimer honest and one click away.
+- Give prominent, indeterminate feedback whenever data is loading (initial load,
+  cold-start wake, sync), so the app never reads as stuck.
 - Preserve the existing single-page model: the Dashboard Chart.js instance,
   per-section add panels, and existing JS wiring all assume sections coexist in
   the DOM. No section is removed from the DOM.
@@ -108,6 +115,25 @@ Combine the existing status bar and the pill-nav into one thin sticky top unit
 sign-out) remain reachable while scrolling. The measured height of this unit
 feeds the smooth-scroll offset and the scrollspy `rootMargin`.
 
+## Component 3: Global loading indicator
+
+- A thin (2-3px) indeterminate progress bar pinned to the top edge of the sticky
+  top chrome, using the accent color, with a continuous slide animation while a
+  load is in progress. It disappears when loading finishes.
+- Driven by the existing `setStatus(state, text)` choke point (line ~2205):
+  show the bar when `state === 'pending'`, hide it on `'ok'` / `'error'`. This
+  automatically covers initial load (`fetchData`), cold-start wake retries in
+  `api()` (which call `setStatus('pending', status.wakingServer)`), and sync.
+- The status pill's pulsing dot is replaced by a small rotating spinner glyph
+  while `data-state="pending"`, so the pill itself reads as "thinking"; the
+  existing status text ("Loading..." / "Waking server..." / "Syncing...") is
+  kept.
+- Indeterminate by design: a cold start has no measurable percentage, so no
+  fake progress is shown.
+- Accessibility: the bar is decorative (`aria-hidden`); the status pill remains
+  the announced source of truth. Respect `prefers-reduced-motion` by replacing
+  the slide/spin animation with a static or gently fading treatment.
+
 ## Data flow & persistence
 
 - Pure frontend. No API or schema changes.
@@ -116,6 +142,8 @@ feeds the smooth-scroll offset and the scrollspy `rootMargin`.
 - i18n: reuse the existing `data-i18n` system. New strings in
   [frontend/i18n.js](../../../frontend/i18n.js), both `en` and `he`:
   `disclaimer.compact`, `common.details`, `common.gotIt`. Pills reuse `section.*`.
+  The loading indicator needs no new strings (it reuses the existing `status.*`
+  text already shown in the pill).
 
 ## Edge cases
 
@@ -129,6 +157,9 @@ feeds the smooth-scroll offset and the scrollspy `rootMargin`.
 - Keyboard: logical focus order, visible focus states, `aria-current` on the
   active pill, `aria-expanded` on the disclaimer toggle.
 - RTL: pill order and horizontal scroll mirror correctly.
+- Loading bar: not visible over the login overlay (only while the app is
+  active); since it is driven by `setStatus`, the terminal `ok`/`error` call
+  reliably hides it (the app's load/sync operations are effectively serial).
 
 ## Testing / verification (manual, no deploy)
 
@@ -139,11 +170,16 @@ feeds the smooth-scroll offset and the scrollspy `rootMargin`.
 - RTL Hebrew: layout mirrored; scroll and highlight still correct.
 - Disclaimer: first visit expanded -> "Got it" collapses and persists across a
   reload; Details toggle expands/collapses; content intact in both languages.
+- Loading indicator: the top bar appears and animates during initial load,
+  cold-start wake, and sync, and disappears when each completes; the pill shows
+  a rotating spinner while pending; `prefers-reduced-motion` disables the
+  animations.
 - Light and dark themes both render correctly.
 
 ## Files
 
 - `frontend/index.html` - markup for the combined sticky chrome + pill-nav +
-  compact disclaimer; CSS; JS for smooth-scroll, scrollspy, and disclaimer
-  toggle + persistence.
-- `frontend/i18n.js` - new strings (en + he).
+  compact disclaimer + top loading bar; CSS (pill spinner, indeterminate bar
+  animation); JS for smooth-scroll, scrollspy, disclaimer toggle + persistence,
+  and toggling the loading bar inside `setStatus`.
+- `frontend/i18n.js` - new strings (en + he) for the disclaimer/common keys.
