@@ -139,6 +139,12 @@ def chat_enabled() -> bool:
     return _truthy_env("CHAT_ENABLED") and bool(_gemini_api_key())
 
 
+def insights_enabled() -> bool:
+    """AI insight card / daily email insights need only a Gemini key,
+    independent of CHAT_ENABLED (which gates the interactive chat)."""
+    return bool(_gemini_api_key())
+
+
 def _round_or_none(v: Any, nd: int = 2):
     if v is None:
         return None

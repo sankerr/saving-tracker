@@ -17,7 +17,7 @@ Browser → Cloudflare Pages (frontend)
        → Render API (backend Docker)
        → Neon PostgreSQL
        → data.gov.il + Yahoo Finance (sync)
-       → Google Gemini (optional AI chat + new-yield email insights)
+       → Google Gemini (optional AI chat + in-app insight card + new-yield email insights)
        → Resend (optional new-yield email delivery)
 ```
 
@@ -53,7 +53,7 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
 | `RESEND_API_KEY` | `re_...` | [Resend](https://resend.com) API key for the new-yield email (optional) |
 | `NOTIFY_FROM` | `Saving Tracker <onboarding@resend.dev>` | Verified sender in Resend |
 | `CHAT_ENABLED` | `1` | Enable the in-app AI chat assistant (optional; requires `GEMINI_API_KEY`) |
-| `GEMINI_API_KEY` | `AIza...` | [Google Gemini](https://ai.google.dev) API key; powers AI chat and new-yield email insights (optional) |
+| `GEMINI_API_KEY` | `AIza...` | [Google Gemini](https://ai.google.dev) API key; powers AI chat, the in-app dashboard insight card, and new-yield email insights (optional) |
 | `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Gemini model override (optional; defaults to `gemini-3.1-flash-lite`) |
 
 5. Deploy and note the public URL, e.g. `https://saving-tracker-api.onrender.com`
@@ -134,6 +134,7 @@ python3 -m http.server 3000
 - All other `/api/*` routes require `Authorization: Bearer <token>`
 - `GET /api/chat/status` — `{ "enabled": bool }` (whether AI chat is configured)
 - `POST /api/chat` — `{ "messages": [...] }` → `{ "reply" }` (AI assistant; `404` when chat is disabled)
+- `GET /api/insights` — `{ "insights", "generated_at", "cached" }` for the dashboard AI insight card (`ok:false, error:"insights_disabled"` without `GEMINI_API_KEY`; cached per day, `?refresh=1` forces regeneration)
 - `GET /api/version` — `{ "version" }`
 - `GET /api/health` — no auth (Render health checks)
 - `POST /api/cron/sync` — daily sync trigger; requires `Authorization: Bearer <CRON_SECRET>` (returns `202`). Optional `?email=0` (also `false`/`no`/`off`) runs the sync **without** sending emails.

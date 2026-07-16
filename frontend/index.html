@@ -361,6 +361,71 @@ h2 {
 }
 .dash-subline strong { color: var(--color-text); font-weight: 600; }
 
+/* At-a-glance allocation */
+.alloc { margin: 0 0 1.25rem; }
+.alloc__head {
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--color-muted); margin-bottom: 0.5rem;
+}
+.alloc__bar {
+  display: flex; height: 12px; width: 100%; border-radius: 999px;
+  overflow: hidden; background: var(--color-surface-2);
+}
+.alloc__seg { height: 100%; min-width: 2px; transition: width 300ms ease; }
+.alloc__legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-top: 0.6rem; }
+.alloc__item {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.8125rem; color: var(--color-muted);
+}
+.alloc__dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.alloc__item strong { color: var(--color-text); font-weight: 600; }
+.alloc__note {
+  font-size: 0.8125rem; color: var(--color-muted); margin: 0.6rem 0 0;
+  padding: 0.4rem 0.75rem; background: rgb(183 110 0 / 0.06);
+  border-left: 3px solid var(--color-warning); border-radius: var(--radius-sm);
+}
+html[dir="rtl"] .alloc__note { border-left: 0; border-right: 3px solid var(--color-warning); }
+
+/* In-app AI insight card */
+.ai-insight {
+  margin: 0 0 1.25rem; padding: 1rem 1.125rem;
+  background: linear-gradient(135deg, rgb(110 95 224 / 0.06), rgb(0 184 184 / 0.05));
+  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+}
+.ai-insight__head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+.ai-insight__badge {
+  font-size: 0.625rem; font-weight: 800; letter-spacing: 0.06em;
+  color: #FFFFFF; background: var(--color-primary);
+  padding: 0.1rem 0.4rem; border-radius: 4px;
+}
+.ai-insight__title {
+  font-family: var(--font-display); font-weight: 700; font-size: 0.9375rem;
+  color: var(--color-text-strong);
+}
+.ai-insight__refresh {
+  margin-inline-start: auto; background: transparent; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); color: var(--color-muted); font-size: 0.875rem;
+  width: 1.9rem; height: 1.9rem; cursor: pointer; transition: all 150ms ease;
+}
+.ai-insight__refresh:hover:not(:disabled) { color: var(--color-primary); border-color: var(--color-primary); }
+.ai-insight__refresh:disabled { opacity: 0.5; cursor: default; }
+.ai-insight__body { font-size: 0.875rem; line-height: 1.55; color: var(--color-text); }
+.ai-insight__body p { margin: 0 0 0.5rem; }
+.ai-insight__body p:last-child { margin-bottom: 0; }
+.ai-insight__body ul { margin: 0.25rem 0; padding-left: 1.125rem; }
+html[dir="rtl"] .ai-insight__body ul { padding-right: 1.125rem; padding-left: 0; }
+.ai-insight__body li { margin-bottom: 0.3rem; }
+.ai-insight__loading { display: flex; align-items: center; gap: 0.5rem; color: var(--color-muted); }
+.ai-insight__spinner {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border: 2px solid var(--color-border); border-top-color: var(--color-primary);
+  border-radius: 50%; animation: st-spin 0.7s linear infinite;
+}
+.ai-insight__error { color: var(--color-danger); margin: 0; }
+.ai-insight__meta { font-size: 0.75rem; color: var(--color-muted); margin: 0.6rem 0 0; }
+.ai-insight__disclaimer { font-size: 0.6875rem; color: var(--color-muted); margin: 0.5rem 0 0; font-style: italic; }
+@media (prefers-reduced-motion: reduce) { .ai-insight__spinner { animation: none; } }
+
 .chart-controls {
   display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.75rem;
   flex-wrap: wrap; font-size: 0.8125rem; color: var(--color-muted);
@@ -608,6 +673,40 @@ h2 {
 }
 .empty-state strong { display: block; color: var(--color-text); margin-bottom: 0.4rem; font-size: 1.0625rem; }
 .empty-state__cta { margin-top: 1rem; }
+
+/* Skeleton loaders (cold-start / initial load) */
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skel {
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, var(--color-border) 37%, var(--color-surface-2) 63%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  color: transparent !important;
+}
+/* Make text elements render as a shimmer bar while loading */
+.dash-total.skel { display: inline-block; min-width: 14ch; height: 1em; }
+.dash-profit-chip.skel { min-width: 10ch; }
+.dash-subline.skel { display: block; max-width: 32ch; height: 1em; }
+.chart-wrap--skel::after {
+  content: ''; position: absolute; inset: 0.75rem; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--color-surface-2) 25%, var(--color-border) 37%, var(--color-surface-2) 63%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  z-index: 1;
+}
+.skel-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 1rem; margin-bottom: 0.5rem;
+  background: var(--color-surface-2); border-radius: var(--radius-sm);
+}
+.skel-row__main { height: 1.1em; width: 45%; }
+.skel-row__val { height: 1.1em; width: 22%; }
+@media (prefers-reduced-motion: reduce) {
+  .skel, .chart-wrap--skel::after { animation: none; }
+}
 
 /* Settings */
 .settings-grid {
@@ -1552,6 +1651,24 @@ html[dir="rtl"] .chat-panel {
       <div class="dash-profit-chip" id="dash-profit" data-sign="pos">—</div>
     </div>
     <p class="dash-subline" id="dash-subline">—</p>
+    <div class="alloc" id="dash-alloc" hidden>
+      <div class="alloc__head">
+        <span data-i18n="dashboard.allocation">Allocation</span>
+      </div>
+      <div class="alloc__bar" id="alloc-bar" role="img" data-i18n-aria-label="dashboard.allocation" aria-label="Allocation"></div>
+      <div class="alloc__legend" id="alloc-legend"></div>
+      <p class="alloc__note" id="alloc-note" hidden></p>
+    </div>
+    <div class="ai-insight" id="ai-insight" hidden>
+      <div class="ai-insight__head">
+        <span class="ai-insight__badge" aria-hidden="true">AI</span>
+        <span class="ai-insight__title" data-i18n="insights.title">AI insights</span>
+        <button type="button" class="ai-insight__refresh" id="ai-insight-refresh" data-i18n-title="insights.refresh" data-i18n-aria-label="insights.refresh" title="Refresh insights" aria-label="Refresh insights">↻</button>
+      </div>
+      <div class="ai-insight__body" id="ai-insight-body"></div>
+      <p class="ai-insight__meta" id="ai-insight-meta" hidden></p>
+      <p class="ai-insight__disclaimer" data-i18n="insights.disclaimer">AI-generated from your data — not financial advice.</p>
+    </div>
     <p id="what-if-summary" hidden style="margin:0 0 0.75rem 0; padding:0.5rem 0.875rem;
         background:rgb(183 110 0 / 0.06); border-left:3px solid var(--color-warning);
         border-radius:var(--radius-sm); font-size:0.875rem;"></p>
@@ -2121,6 +2238,9 @@ function clearPortfolioUi() {
   }
   document.querySelectorAll('.add-panel').forEach((p) => { p.hidden = true; });
   closeSettings();
+  INSIGHTS_STATE = 'idle';
+  const insightCard = document.getElementById('ai-insight');
+  if (insightCard) insightCard.hidden = true;
   resetChatSession({ hide: true });
 }
 
@@ -2269,12 +2389,34 @@ async function fetchData(showSpinner = false) {
   const j = await api('GET', `/api/data?${dataQuery()}`);
   if (epoch !== SESSION_EPOCH) return;
   if (j.ok === false) {
+    setDashboardSkeleton(false);
     setStatus('error', j.error || t('status.failedLoad'));
     return;
   }
   APP = j;
   setStatus('ok', t('status.loadedUsdils', { rate: (j.cache_status.current_usdils || 0).toFixed(3) }));
   renderAll();
+}
+
+// Cold-start skeletons: show shimmer placeholders for the dashboard hero,
+// chart, and holding lists while the first data load (often a 30-50s Render
+// wake) is in flight, instead of bare "—" placeholders that read as stuck.
+function setDashboardSkeleton(on) {
+  ['dash-total', 'dash-profit', 'dash-subline'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('skel', on);
+  });
+  const wrap = document.querySelector('#dashboard-card .chart-wrap');
+  if (wrap) wrap.classList.toggle('chart-wrap--skel', on);
+  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (on) {
+      el.innerHTML = '<div class="skel-row"><span class="skel skel-row__main"></span><span class="skel skel-row__val"></span></div>'.repeat(2);
+    } else {
+      el.querySelectorAll('.skel-row').forEach((r) => r.remove());
+    }
+  });
 }
 
 async function runSync() {
@@ -2400,6 +2542,7 @@ function renderAll() {
 }
 
 function renderDashboard() {
+  setDashboardSkeleton(false);
   const p = APP.portfolio || {};
   document.getElementById('dash-total').textContent = fmtILS.format(p.total_value_ils || 0);
   const profit = p.total_profit_ils || 0;
@@ -2419,6 +2562,7 @@ function renderDashboard() {
     subline += ` · Cash <strong>${fmtILS.format(p.cash_value_ils)}</strong>`;
   }
   document.getElementById('dash-subline').innerHTML = subline;
+  renderAllocation();
 
   const wfBox = document.getElementById('what-if-summary');
   const wf = p.what_if;
@@ -2452,6 +2596,95 @@ function renderDashboard() {
     projBox.hidden = true;
   }
   drawDashboardChart();
+}
+
+// At-a-glance allocation across the dashboard-total categories (funds, RSU,
+// ESPP, cash). Pension is excluded to match the total convention (it has its
+// own note). Shows a segmented bar + legend and a soft concentration hint.
+function renderAllocation() {
+  const box = document.getElementById('dash-alloc');
+  if (!box) return;
+  const p = APP.portfolio || {};
+  const cats = [
+    { label: t('section.funds'), val: +p.funds_value_ils || 0, color: '#6E5FE0' },
+    { label: t('section.rsu'),   val: +p.rsu_value_ils   || 0, color: '#00B8B8' },
+    { label: t('section.espp'),  val: +p.espp_value_ils  || 0, color: '#B565D8' },
+    { label: t('section.cash'),  val: +p.cash_value_ils  || 0, color: '#1F8A4C' },
+  ].filter((c) => c.val > 0);
+  const total = cats.reduce((s, c) => s + c.val, 0);
+  if (total <= 0 || cats.length === 0) { box.hidden = true; return; }
+  box.hidden = false;
+  document.getElementById('alloc-bar').innerHTML = cats.map((c) =>
+    `<div class="alloc__seg" style="width:${(c.val / total * 100).toFixed(2)}%;background:${c.color}" title="${escapeHtml(c.label)} ${(c.val / total * 100).toFixed(0)}%"></div>`
+  ).join('');
+  document.getElementById('alloc-legend').innerHTML = cats.map((c) =>
+    `<span class="alloc__item"><span class="alloc__dot" style="background:${c.color}"></span>${escapeHtml(c.label)} <strong>${(c.val / total * 100).toFixed(0)}%</strong></span>`
+  ).join('');
+  const note = document.getElementById('alloc-note');
+  const top = cats.slice().sort((a, b) => b.val - a.val)[0];
+  const share = top.val / total;
+  if (cats.length > 1 && share >= 0.65) {
+    note.textContent = t('alloc.concentrated', { label: top.label, pct: (share * 100).toFixed(0) });
+    note.hidden = false;
+  } else {
+    note.hidden = true;
+  }
+}
+
+// In-app AI insight card. Reuses the same Gemini insight generation as the
+// daily email, cached server-side per day, fetched lazily so it never blocks
+// the dashboard render. Hidden entirely when GEMINI_API_KEY isn't configured.
+let INSIGHTS_STATE = 'idle'; // idle | loading | done | disabled
+
+function insightsToHtml(text) {
+  const lines = String(text || '').split(/\r?\n/);
+  let html = '';
+  let inList = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const bullet = line.match(/^[-*•]\s+(.*)$/);
+    if (bullet) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${escapeHtml(bullet[1])}</li>`;
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<p>${escapeHtml(line)}</p>`;
+    }
+  }
+  if (inList) html += '</ul>';
+  return html || `<p>${escapeHtml(String(text || ''))}</p>`;
+}
+
+async function loadInsights(force = false) {
+  const card = document.getElementById('ai-insight');
+  const bodyEl = document.getElementById('ai-insight-body');
+  const meta = document.getElementById('ai-insight-meta');
+  const refreshBtn = document.getElementById('ai-insight-refresh');
+  if (!card || !getToken()) return;
+  if (INSIGHTS_STATE === 'disabled' && !force) return;
+  if (INSIGHTS_STATE === 'loading') return;
+  INSIGHTS_STATE = 'loading';
+  card.hidden = false;
+  if (refreshBtn) refreshBtn.disabled = true;
+  bodyEl.innerHTML = `<div class="ai-insight__loading"><span class="ai-insight__spinner"></span><span>${escapeHtml(t('insights.loading'))}</span></div>`;
+  meta.hidden = true;
+  const epoch = SESSION_EPOCH;
+  const j = await api('GET', `/api/insights${force ? '?refresh=1' : ''}`);
+  if (epoch !== SESSION_EPOCH) return;
+  if (refreshBtn) refreshBtn.disabled = false;
+  if (!j || j.ok === false) {
+    if (j && j.error === 'insights_disabled') { INSIGHTS_STATE = 'disabled'; card.hidden = true; return; }
+    INSIGHTS_STATE = 'done';
+    bodyEl.innerHTML = `<p class="ai-insight__error">${escapeHtml((j && j.error) || t('insights.error'))}</p>`;
+    return;
+  }
+  INSIGHTS_STATE = 'done';
+  bodyEl.innerHTML = insightsToHtml(j.insights || '');
+  if (j.generated_at) {
+    meta.textContent = t('insights.updated', { ago: timeAgo(j.generated_at) });
+    meta.hidden = false;
+  }
 }
 
 function drawDashboardChart() {
@@ -2690,7 +2923,7 @@ function renderFunds() {
     .sort((a, b) => (b.computed?.current_value_ils || 0) - (a.computed?.current_value_ils || 0));
   document.getElementById('funds-count').textContent = holdings.length;
   if (!holdings.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No funds yet</strong>Add a Israeli pension/provident/study fund to start tracking.</div>`;
+    list.innerHTML = `<div class="empty-state"><strong>No funds yet</strong>Add a Israeli pension/provident/study fund to start tracking.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-fund-btn">${escapeHtml(t('funds.add'))}</button></div></div>`;
     return;
   }
   // Keep dashboard-included funds on top; group excluded ones under a sub-header
@@ -2925,7 +3158,7 @@ function renderPension() {
   }
 
   if (!holdings.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No pension funds yet</strong>Track your קרן פנסיה (קופת פנסיה) here. Same anchor + monthly-yield mechanic as Funds. Not counted toward the dashboard total.</div>`;
+    list.innerHTML = `<div class="empty-state"><strong>No pension funds yet</strong>Track your קרן פנסיה (קופת פנסיה) here. Same anchor + monthly-yield mechanic as Funds. Not counted toward the dashboard total.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-pension-btn">${escapeHtml(t('pension.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = holdings.map(h => renderPensionRow(h)).join('');
@@ -3057,7 +3290,7 @@ function renderRSU() {
     .sort((a, b) => (b.computed?.current_value_ils || 0) - (a.computed?.current_value_ils || 0));
   document.getElementById('rsu-count').textContent = grants.length;
   if (!grants.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No RSU grants yet</strong>Add a grant to track its value with vesting and live prices from Yahoo Finance.</div>`;
+    list.innerHTML = `<div class="empty-state"><strong>No RSU grants yet</strong>Add a grant to track its value with vesting and live prices from Yahoo Finance.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-rsu-btn">${escapeHtml(t('rsu.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = grants.map(g => renderRSURow(g)).join('');
@@ -3177,7 +3410,7 @@ function renderESPP() {
     .sort((a, b) => (b.computed?.current_value_ils || 0) - (a.computed?.current_value_ils || 0));
   document.getElementById('espp-count').textContent = plans.length;
   if (!plans.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No ESPP plans yet</strong>Add a plan to track purchases, lookback bonuses, and discount captured each cycle.</div>`;
+    list.innerHTML = `<div class="empty-state"><strong>No ESPP plans yet</strong>Add a plan to track purchases, lookback bonuses, and discount captured each cycle.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-espp-btn">${escapeHtml(t('espp.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = plans.map(p => renderESPPRow(p)).join('');
@@ -3872,7 +4105,7 @@ function renderCash() {
     .sort((a, b) => (b.computed?.value_ils || 0) - (a.computed?.value_ils || 0));
   document.getElementById('cash-count').textContent = items.length;
   if (!items.length) {
-    list.innerHTML = `<div class="empty-state"><strong>No cash entries</strong>Add savings accounts, checking balances, or any non-invested money you want to count toward the total.</div>`;
+    list.innerHTML = `<div class="empty-state"><strong>No cash entries</strong>Add savings accounts, checking balances, or any non-invested money you want to count toward the total.<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-cash-btn">${escapeHtml(t('cash.add'))}</button></div></div>`;
     return;
   }
   list.innerHTML = items.map(c => {
@@ -4877,6 +5110,8 @@ function init() {
   document.getElementById('add-espp-save').addEventListener('click', saveESPPPlan);
   setupESPPTickerSearch();
 
+  const insightRefresh = document.getElementById('ai-insight-refresh');
+  if (insightRefresh) insightRefresh.addEventListener('click', () => loadInsights(true));
   document.getElementById('settings-btn').addEventListener('click', openSettings);
   document.querySelectorAll('#settings-modal [data-settings-close]').forEach((el) => {
     el.addEventListener('click', closeSettings);
@@ -4984,6 +5219,13 @@ function init() {
 
   // Holding row delegation
   document.body.addEventListener('click', async (e) => {
+    const emptyAddBtn = e.target.closest('[data-empty-add]');
+    if (emptyAddBtn) {
+      e.preventDefault();
+      const target = document.getElementById(emptyAddBtn.dataset.emptyAdd);
+      if (target) target.click();
+      return;
+    }
     const helpBtn = e.target.closest('[data-help]');
     if (helpBtn) {
       e.preventDefault(); e.stopPropagation();
@@ -5944,9 +6186,11 @@ function startApp() {
   clearPortfolioUi();
   APP = null;
   setStatus('pending', t('status.loading'));
+  setDashboardSkeleton(true);
   fetchData(true).then(() => {
     if (!getToken() || !APP) return;
     refreshChatAvailability();
+    loadInsights();
     if (!APP?.cache_status?.synced_today) {
       return runSync();
     }

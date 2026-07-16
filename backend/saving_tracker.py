@@ -3837,6 +3837,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
             return
 
+        if path == "/api/insights":
+            if not portfolio_chat.insights_enabled():
+                self._json(200, {"ok": False, "error": "insights_disabled"})
+                return
+            refresh = (qs.get("refresh") or ["0"])[0] in ("1", "true", "yes")
+            today = date.today().isoformat()
+            with _cache_lock:
+                cached = dict(CACHE.get("insights") or {})
+            # Serve today's cached insights to avoid a Gemini call on every
+            # dashboard load; regenerate only on a new day or explicit refresh.
+            if not refresh and cached.get("text") and cached.get("date") == today:
+                self._json(200, {
+                    "ok": True, "insights": cached["text"],
+                    "generated_at": cached.get("generated_at"), "cached": True,
+                })
+                return
+            try:
+                state = compose_state(24, None)
+                context = portfolio_chat.build_portfolio_context(state)
+                text = portfolio_chat.generate_daily_insights(context)
+            except Exception as ex:
+                if cached.get("text"):
+                    self._json(200, {
+                        "ok": True, "insights": cached["text"],
+                        "generated_at": cached.get("generated_at"),
+                        "cached": True, "stale": True,
+                    })
+                    return
+                self._json(200, {"ok": False, "error": str(ex)})
+                return
+            gen_at = now_iso()
+            with _cache_lock:
+                CACHE["insights"] = {"text": text, "date": today, "generated_at": gen_at}
+            save_cache()
+            self._json(200, {"ok": True, "insights": text, "generated_at": gen_at, "cached": False})
+            return
+
         if path == "/api/export":
             with _data_lock:
                 body = json.dumps(DATA, ensure_ascii=False, indent=2).encode("utf-8")
