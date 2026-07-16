@@ -6248,7 +6248,7 @@ let CHAT_ENABLED = false;
 let CHAT_STATUS_FETCHED = false;
 let CHAT_TYPING_TIMER = null;
 // ms between revealed tokens for the "assistant is typing" effect
-const CHAT_TYPING_STEP_MS = 18;
+const CHAT_TYPING_STEP_MS = 45;
 
 function stopChatTyping() {
   if (CHAT_TYPING_TIMER) {
@@ -6385,9 +6385,9 @@ function typeOutLastAssistant() {
     bubble.classList.add('chat-msg__bubble--typing');
     let i = 0;
     const step = () => {
-      // Reveal a couple of tokens per tick so longer replies don't crawl.
-      bubble.textContent += tokens.slice(i, i + 2).join('');
-      i += 2;
+      // Reveal one token per tick for a steady, readable typing pace.
+      bubble.textContent += tokens.slice(i, i + 1).join('');
+      i += 1;
       thread.scrollTop = thread.scrollHeight;
       if (i < tokens.length) {
         CHAT_TYPING_TIMER = setTimeout(step, CHAT_TYPING_STEP_MS);
