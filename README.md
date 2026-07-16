@@ -134,7 +134,7 @@ python3 -m http.server 3000
 - All other `/api/*` routes require `Authorization: Bearer <token>`
 - `GET /api/chat/status` — `{ "enabled": bool }` (whether AI chat is configured)
 - `POST /api/chat` — `{ "messages": [...] }` → `{ "reply" }` (AI assistant; `404` when chat is disabled)
-- `GET /api/insights` — `{ "insights", "generated_at", "cached" }` for the dashboard AI insight card (`ok:false, error:"insights_disabled"` without `GEMINI_API_KEY`; cached per day, `?refresh=1` forces regeneration)
+- `GET /api/insights` — `{ "insights", "generated_at", "cached" }` for the dashboard AI insight card (`ok:false, error:"insights_disabled"` without `GEMINI_API_KEY`; cached per day **and per language**, `?lang=en|he` picks the output language, `?refresh=1` forces regeneration)
 - `GET /api/version` — `{ "version" }`
 - `GET /api/health` — no auth (Render health checks)
 - `POST /api/cron/sync` — daily sync trigger; requires `Authorization: Bearer <CRON_SECRET>` (returns `202`). Optional `?email=0` (also `false`/`no`/`off`) runs the sync **without** sending emails.

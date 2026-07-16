@@ -679,16 +679,28 @@ Do NOT discuss management fees or deposit fees. Focus on allocation, recent retu
 Write 3 short bullet points (plain text with leading "- "). Max ~80 words total. Match the language of any Hebrew nicknames if the data is mostly Hebrew; otherwise English."""
 
 
-def generate_daily_insights(context: dict) -> str:
-    """One-shot Gemini text for daily email. Requires GEMINI_API_KEY only (not CHAT_ENABLED)."""
+_INSIGHTS_LANG_DIRECTIVE = {
+    "he": "\nWrite the entire response in Hebrew.",
+    "en": "\nWrite the entire response in English.",
+}
+
+
+def generate_daily_insights(context: dict, lang: str = None) -> str:
+    """One-shot Gemini text for daily email / in-app card.
+
+    Requires GEMINI_API_KEY only (not CHAT_ENABLED). When ``lang`` is 'he' or
+    'en' the output is forced to that language; otherwise the model matches the
+    data's language (default used by the email path).
+    """
     api_key = _gemini_api_key()
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not configured")
 
     model = _gemini_model()
+    system_prompt = DAILY_INSIGHTS_PROMPT + _INSIGHTS_LANG_DIRECTIVE.get((lang or "").lower(), "")
     context_json = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
     body = {
-        "systemInstruction": {"parts": [{"text": DAILY_INSIGHTS_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [
             {
                 "role": "user",

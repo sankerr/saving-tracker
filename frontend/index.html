@@ -2449,6 +2449,11 @@ function refreshI18nDynamic() {
   if (typeof updateStatusDataMonth === 'function') updateStatusDataMonth();
   if (typeof renderChatThread === 'function') renderChatThread();
   if (APP && getToken() && typeof renderAll === 'function') renderAll();
+  // Gemini insights are generated text, not static i18n strings, so re-fetch
+  // them in the newly selected language once they've been shown.
+  if (APP && getToken() && INSIGHTS_STATE === 'done' && typeof loadInsights === 'function') {
+    loadInsights();
+  }
 }
 
 function updateChatToggleLabel() {
@@ -2670,7 +2675,8 @@ async function loadInsights(force = false) {
   bodyEl.innerHTML = `<div class="ai-insight__loading"><span class="ai-insight__spinner"></span><span>${escapeHtml(t('insights.loading'))}</span></div>`;
   meta.hidden = true;
   const epoch = SESSION_EPOCH;
-  const j = await api('GET', `/api/insights${force ? '?refresh=1' : ''}`);
+  const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
+  const j = await api('GET', `/api/insights?lang=${encodeURIComponent(lang)}${force ? '&refresh=1' : ''}`);
   if (epoch !== SESSION_EPOCH) return;
   if (refreshBtn) refreshBtn.disabled = false;
   if (!j || j.ok === false) {

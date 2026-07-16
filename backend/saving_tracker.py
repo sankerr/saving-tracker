@@ -3842,11 +3842,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._json(200, {"ok": False, "error": "insights_disabled"})
                 return
             refresh = (qs.get("refresh") or ["0"])[0] in ("1", "true", "yes")
+            lang = (qs.get("lang") or ["en"])[0].lower()
+            if lang not in ("en", "he"):
+                lang = "en"
             today = date.today().isoformat()
+            # Insights are cached per user per day AND per language, so a
+            # language switch serves/generates the right copy without a call on
+            # every dashboard load.
             with _cache_lock:
-                cached = dict(CACHE.get("insights") or {})
-            # Serve today's cached insights to avoid a Gemini call on every
-            # dashboard load; regenerate only on a new day or explicit refresh.
+                by_lang = dict(CACHE.get("insights") or {})
+                cached = dict(by_lang.get(lang) or {})
             if not refresh and cached.get("text") and cached.get("date") == today:
                 self._json(200, {
                     "ok": True, "insights": cached["text"],
@@ -3856,7 +3861,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 state = compose_state(24, None)
                 context = portfolio_chat.build_portfolio_context(state)
-                text = portfolio_chat.generate_daily_insights(context)
+                text = portfolio_chat.generate_daily_insights(context, lang=lang)
             except Exception as ex:
                 if cached.get("text"):
                     self._json(200, {
@@ -3869,7 +3874,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             gen_at = now_iso()
             with _cache_lock:
-                CACHE["insights"] = {"text": text, "date": today, "generated_at": gen_at}
+                store = CACHE.get("insights")
+                # Migrate away from the pre-i18n flat shape ({text,date,...}).
+                if not isinstance(store, dict) or "text" in store:
+                    store = {}
+                store[lang] = {"text": text, "date": today, "generated_at": gen_at}
+                CACHE["insights"] = store
             save_cache()
             self._json(200, {"ok": True, "insights": text, "generated_at": gen_at, "cached": False})
             return
