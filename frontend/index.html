@@ -1293,6 +1293,22 @@ body.chat-open .chat-panel {
   color: var(--color-muted);
   font-style: italic;
 }
+.chat-msg__bubble--typing::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-inline-start: 1px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  opacity: 0.7;
+  border-radius: 1px;
+  animation: chat-caret-blink 1s steps(1) infinite;
+}
+@keyframes chat-caret-blink {
+  0%, 50% { opacity: 0.7; }
+  50.01%, 100% { opacity: 0; }
+}
 .chat-panel__footer {
   flex-shrink: 0;
   padding: 0.75rem 1rem max(0.875rem, env(safe-area-inset-bottom));
@@ -6230,6 +6246,16 @@ let CHAT_MESSAGES = [];
 let CHAT_BUSY = false;
 let CHAT_ENABLED = false;
 let CHAT_STATUS_FETCHED = false;
+let CHAT_TYPING_TIMER = null;
+// ms between revealed tokens for the "assistant is typing" effect
+const CHAT_TYPING_STEP_MS = 18;
+
+function stopChatTyping() {
+  if (CHAT_TYPING_TIMER) {
+    clearTimeout(CHAT_TYPING_TIMER);
+    CHAT_TYPING_TIMER = null;
+  }
+}
 
 function setChatChromeVisible(visible) {
   document.body.classList.toggle('chat-available', !!visible);
@@ -6306,6 +6332,9 @@ function setChatError(msg) {
 }
 
 function renderChatThread() {
+  // A full re-render (language toggle, new message, clear) supersedes any
+  // in-progress typewriter animation — messages render with their full text.
+  stopChatTyping();
   const thread = document.getElementById('chat-thread');
   const empty = document.getElementById('chat-empty');
   const suggestions = document.getElementById('chat-suggestions');
@@ -6334,6 +6363,45 @@ function renderChatThread() {
   thread.scrollTop = thread.scrollHeight;
 }
 
+// Reveals the last assistant message word-by-word so it reads as if the
+// assistant is typing. The message already carries its full text, so any
+// re-render (renderChatThread) safely falls back to showing it in full.
+function typeOutLastAssistant() {
+  return new Promise((resolve) => {
+    const thread = document.getElementById('chat-thread');
+    if (!thread) { resolve(); return; }
+    const bubbles = thread.querySelectorAll('.chat-msg--assistant .chat-msg__bubble');
+    const bubble = bubbles[bubbles.length - 1];
+    if (!bubble) { resolve(); return; }
+    const full = bubble.textContent || '';
+    // Reduced-motion or trivially short replies: show instantly.
+    if (!full || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      resolve();
+      return;
+    }
+    const tokens = full.match(/\s+|\S+/g) || [];
+    stopChatTyping();
+    bubble.textContent = '';
+    bubble.classList.add('chat-msg__bubble--typing');
+    let i = 0;
+    const step = () => {
+      // Reveal a couple of tokens per tick so longer replies don't crawl.
+      bubble.textContent += tokens.slice(i, i + 2).join('');
+      i += 2;
+      thread.scrollTop = thread.scrollHeight;
+      if (i < tokens.length) {
+        CHAT_TYPING_TIMER = setTimeout(step, CHAT_TYPING_STEP_MS);
+      } else {
+        CHAT_TYPING_TIMER = null;
+        bubble.textContent = full;
+        bubble.classList.remove('chat-msg__bubble--typing');
+        resolve();
+      }
+    };
+    step();
+  });
+}
+
 async function sendChatMessage(text) {
   const content = (text || '').trim();
   if (!content || CHAT_BUSY || !CHAT_ENABLED) return;
@@ -6355,8 +6423,10 @@ async function sendChatMessage(text) {
   };
   const j = await api('POST', '/api/chat', payload, { retries: 0 });
   CHAT_MESSAGES = CHAT_MESSAGES.filter((m) => !m.pending);
+  let typeOutReply = false;
   if (j && j.ok && j.reply) {
     CHAT_MESSAGES.push({ role: 'assistant', content: j.reply });
+    typeOutReply = true;
   } else {
     const err = (j && j.error) || t('toast.chatRequestFailed');
     if (err === 'chat_disabled') {
@@ -6374,6 +6444,8 @@ async function sendChatMessage(text) {
   CHAT_BUSY = false;
   if (sendBtn) sendBtn.disabled = false;
   renderChatThread();
+  // Animate the fresh assistant reply as if it is being typed out.
+  if (typeOutReply) await typeOutLastAssistant();
 }
 
 function initChatUi() {
