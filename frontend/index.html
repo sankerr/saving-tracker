@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#FCFBF8" id="meta-theme-color">
+<meta name="theme-color" content="#EFEBE2" id="meta-theme-color">
 <title>Saving Tracker</title>
 <script>
 (function () {
@@ -12,7 +12,7 @@
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
   var meta = document.getElementById('meta-theme-color');
-  if (meta) meta.content = dark ? '#0F0F1A' : '#FCFBF8';
+  if (meta) meta.content = dark ? '#0F0F1A' : '#EFEBE2';
   var lang = localStorage.getItem('st_lang') || 'en';
   if (lang !== 'he' && lang !== 'en') lang = 'en';
   document.documentElement.lang = lang;
@@ -28,13 +28,13 @@
   --color-primary: #6E5FE0;
   --color-primary-strong: #5B4BD9;
   --color-accent: #4DCDCD;
-  --color-bg: #FCFBF8;
-  --color-surface: #FFFFFF;
-  --color-surface-2: #F7F5F0;
+  --color-bg: #EFEBE2;
+  --color-surface: #FCFBF8;
+  --color-surface-2: #E8E3D8;
   --color-text: #2B2B3E;
   --color-text-strong: #1A1A2E;
   --color-muted: #8A8A9C;
-  --color-border: #ECE8DF;
+  --color-border: #DED8CB;
   --color-success: #1F8A4C;
   --color-warning: #B76E00;
   --color-danger: #C0392B;
@@ -410,6 +410,7 @@ html[dir="rtl"] .alloc__note { border-left: 0; border-right: 3px solid var(--col
 .ai-insight__refresh:hover:not(:disabled) { color: var(--color-primary); border-color: var(--color-primary); }
 .ai-insight__refresh:disabled { opacity: 0.5; cursor: default; }
 .ai-insight__body { font-size: 0.875rem; line-height: 1.55; color: var(--color-text); }
+.ai-insight__body.is-refreshing { opacity: 0.5; transition: opacity 150ms ease; }
 .ai-insight__body p { margin: 0 0 0.5rem; }
 .ai-insight__body p:last-child { margin-bottom: 0; }
 .ai-insight__body ul { margin: 0.25rem 0; padding-left: 1.125rem; }
@@ -1293,6 +1294,31 @@ body.chat-open .chat-panel {
   color: var(--color-muted);
   font-style: italic;
 }
+/* Rendered Markdown inside assistant bubbles */
+.chat-msg__bubble p { margin: 0 0 0.5rem; }
+.chat-msg__bubble > *:last-child { margin-bottom: 0; }
+.chat-msg__bubble ul, .chat-msg__bubble ol { margin: 0.35rem 0; padding-inline-start: 1.25rem; }
+.chat-msg__bubble li { margin-bottom: 0.25rem; }
+.chat-msg__bubble li:last-child { margin-bottom: 0; }
+.chat-msg__bubble strong { font-weight: 700; }
+.chat-md-h {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.7rem 0 0.35rem;
+}
+.chat-md-h:first-child { margin-top: 0; }
+.chat-md-h1 { font-size: 1.05rem; }
+.chat-md-h2 { font-size: 1rem; }
+.chat-md-h3 { font-size: 0.95rem; }
+.chat-md-h4, .chat-md-h5, .chat-md-h6 { font-size: 0.9rem; }
+.chat-msg__bubble code {
+  background: rgba(128, 128, 128, 0.2);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
 .chat-msg__bubble--typing::after {
   content: '';
   display: inline-block;
@@ -2168,7 +2194,7 @@ function applyTheme(pref) {
   document.documentElement.dataset.theme = resolved;
   document.documentElement.style.colorScheme = resolved;
   const meta = document.getElementById('meta-theme-color');
-  if (meta) meta.content = resolved === 'dark' ? '#0F0F1A' : '#FCFBF8';
+  if (meta) meta.content = resolved === 'dark' ? '#0F0F1A' : '#EFEBE2';
   const btn = document.getElementById('theme-toggle-btn');
   if (btn) {
     btn.textContent = resolved === 'dark' ? '☀️' : '🌙';
@@ -2698,15 +2724,28 @@ async function loadInsights(force = false) {
   if (!card || !getToken()) return;
   if (INSIGHTS_STATE === 'disabled' && !force) return;
   if (INSIGHTS_STATE === 'loading') return;
+  // On a language switch we already have insight text on screen. Keep it
+  // visible (dimmed) while re-fetching the other language's copy instead of
+  // flashing a long "Analyzing…" spinner — the server serves the matching
+  // pre-translated text, so this is usually a fast cache hit.
+  const hadContent = INSIGHTS_STATE === 'done';
   INSIGHTS_STATE = 'loading';
   card.hidden = false;
   if (refreshBtn) refreshBtn.disabled = true;
-  bodyEl.innerHTML = `<div class="ai-insight__loading"><span class="ai-insight__spinner"></span><span>${escapeHtml(t('insights.loading'))}</span></div>`;
-  meta.hidden = true;
+  if (hadContent && !force) {
+    bodyEl.classList.add('is-refreshing');
+  } else {
+    bodyEl.classList.remove('is-refreshing');
+    bodyEl.innerHTML = `<div class="ai-insight__loading"><span class="ai-insight__spinner"></span><span>${escapeHtml(t('insights.loading'))}</span></div>`;
+    meta.hidden = true;
+  }
   const epoch = SESSION_EPOCH;
   const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
   const j = await api('GET', `/api/insights?lang=${encodeURIComponent(lang)}${force ? '&refresh=1' : ''}`);
-  if (epoch !== SESSION_EPOCH) return;
+  bodyEl.classList.remove('is-refreshing');
+  // A session change (login/logout) invalidated this request. Release the
+  // loading lock so a later load can retry instead of getting stuck.
+  if (epoch !== SESSION_EPOCH) { INSIGHTS_STATE = 'idle'; return; }
   if (refreshBtn) refreshBtn.disabled = false;
   if (!j || j.ok === false) {
     if (j && j.error === 'insights_disabled') { INSIGHTS_STATE = 'disabled'; card.hidden = true; return; }
@@ -4787,6 +4826,7 @@ const NAV_SECTIONS = [
   { id: 'cash-card', label: 'section.cash', count: 'cash-count' },
 ];
 let _navSpy = null;
+let _navBottomHandler = null;
 
 function measureChrome() {
   const chrome = document.getElementById('topchrome');
@@ -4849,6 +4889,20 @@ function initSectionNav() {
     const el = document.getElementById(s.id);
     if (el) _navSpy.observe(el);
   }
+
+  // When scrolled to the bottom, the last (often short) section may never reach
+  // the scrollspy band, leaving the previous pill marked. Force-activate the
+  // last visible section once the page is scrolled to (near) its end.
+  if (_navBottomHandler) window.removeEventListener('scroll', _navBottomHandler);
+  _navBottomHandler = () => {
+    const scrollBottom = window.innerHeight + window.scrollY;
+    if (scrollBottom < document.documentElement.scrollHeight - 2) return;
+    for (let i = NAV_SECTIONS.length - 1; i >= 0; i--) {
+      const el = document.getElementById(NAV_SECTIONS[i].id);
+      if (el && el.offsetParent !== null) { setActivePill(NAV_SECTIONS[i].id); break; }
+    }
+  };
+  window.addEventListener('scroll', _navBottomHandler, { passive: true });
 }
 
 function setActivePill(sectionId) {
@@ -6331,6 +6385,53 @@ function setChatError(msg) {
   el.textContent = msg;
 }
 
+// Minimal, safe Markdown → HTML for assistant chat replies. Input is escaped
+// first, then a small subset (headings, bold, italic, inline code, ordered and
+// unordered lists) is turned into styled HTML — so the model's #, *, ** markup
+// renders as real headlines, bold, and bullets instead of raw characters.
+function renderChatMarkdownInline(s) {
+  return String(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+}
+
+function renderChatMarkdown(md) {
+  const esc = escapeHtml(String(md || ''));
+  const lines = esc.split(/\r?\n/);
+  let html = '';
+  let listType = null;
+  const closeList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) { closeList(); continue; }
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      closeList();
+      const lvl = Math.min(heading[1].length, 6);
+      html += `<div class="chat-md-h chat-md-h${lvl}">${renderChatMarkdownInline(heading[2].trim())}</div>`;
+      continue;
+    }
+    const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (ordered) {
+      if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; }
+      html += `<li>${renderChatMarkdownInline(ordered[1].trim())}</li>`;
+      continue;
+    }
+    const unordered = line.match(/^\s*[-*•]\s+(.*)$/);
+    if (unordered) {
+      if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
+      html += `<li>${renderChatMarkdownInline(unordered[1].trim())}</li>`;
+      continue;
+    }
+    closeList();
+    html += `<p>${renderChatMarkdownInline(line.trim())}</p>`;
+  }
+  closeList();
+  return html || `<p>${esc}</p>`;
+}
+
 function renderChatThread() {
   // A full re-render (language toggle, new message, clear) supersedes any
   // in-progress typewriter animation — messages render with their full text.
@@ -6355,7 +6456,12 @@ function renderChatThread() {
     role.textContent = m.role === 'user' ? t('chat.role.you') : t('chat.role.assistant');
     const bubble = document.createElement('div');
     bubble.className = 'chat-msg__bubble';
-    bubble.textContent = m.content;
+    if (m.role === 'assistant' && !m.pending) {
+      bubble.dataset.md = m.content;
+      bubble.innerHTML = renderChatMarkdown(m.content);
+    } else {
+      bubble.textContent = m.content;
+    }
     wrap.appendChild(role);
     wrap.appendChild(bubble);
     thread.appendChild(wrap);
@@ -6373,9 +6479,23 @@ function typeOutLastAssistant() {
     const bubbles = thread.querySelectorAll('.chat-msg--assistant .chat-msg__bubble');
     const bubble = bubbles[bubbles.length - 1];
     if (!bubble) { resolve(); return; }
-    const full = bubble.textContent || '';
+    // The bubble already holds formatted Markdown HTML. Type out its plain-text
+    // form, then swap in the formatted HTML once the animation completes.
+    const md = bubble.dataset.md != null ? bubble.dataset.md : (bubble.textContent || '');
+    const finalHtml = renderChatMarkdown(md);
+    // Plain-text form for the typing animation: strip Markdown markers but keep
+    // line breaks (the bubble is pre-wrap) so blocks stay visually separated.
+    const full = String(md)
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^\s*[-*•]\s+/gm, '• ')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/\*([^*\n]+)\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .trim();
     // Reduced-motion or trivially short replies: show instantly.
     if (!full || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      bubble.innerHTML = finalHtml;
       resolve();
       return;
     }
@@ -6393,7 +6513,7 @@ function typeOutLastAssistant() {
         CHAT_TYPING_TIMER = setTimeout(step, CHAT_TYPING_STEP_MS);
       } else {
         CHAT_TYPING_TIMER = null;
-        bubble.textContent = full;
+        bubble.innerHTML = finalHtml;
         bubble.classList.remove('chat-msg__bubble--typing');
         resolve();
       }

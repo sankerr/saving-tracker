@@ -733,3 +733,57 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
     if not text:
         raise RuntimeError("Gemini returned empty insights")
     return text
+
+
+_INSIGHTS_LANG_NAMES = {"he": "Hebrew", "en": "English"}
+
+_TRANSLATE_INSIGHTS_PROMPT = (
+    "You are a professional translator. Translate the user's text to {lang_name}.\n"
+    "Preserve the exact meaning, order, numbers, and any leading \"- \" bullet markers.\n"
+    "Do not add, remove, reorder, or reinterpret any content. Keep numbers and\n"
+    "currency symbols unchanged. Output only the translation, nothing else."
+)
+
+
+def _translate_insights(text: str, target_lang: str) -> str:
+    """Translate an insight string to ``target_lang`` ('he'/'en') preserving
+    content, so both language versions convey identical information."""
+    api_key = _gemini_api_key()
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not configured")
+    model = _gemini_model()
+    lang_name = _INSIGHTS_LANG_NAMES.get((target_lang or "").lower(), "English")
+    system_prompt = _TRANSLATE_INSIGHTS_PROMPT.format(lang_name=lang_name)
+    body = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": text}]}],
+        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 400},
+    }
+    r = requests.post(
+        GEMINI_URL.format(model=model),
+        params={"key": api_key},
+        headers={"Content-Type": "application/json"},
+        json=body,
+        timeout=REQUEST_TIMEOUT,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:400]}")
+    translated = _parts_text(_extract_candidate_parts(r.json()))
+    if not translated:
+        raise RuntimeError("Gemini returned empty translation")
+    return translated
+
+
+def generate_daily_insights_bilingual(context: dict) -> dict:
+    """Generate the daily insight once (English) then translate to Hebrew, so
+    the two language versions convey the *same content*, each in its own
+    language. Returns ``{"en": text, "he": text}``.
+
+    If translation fails, falls back to an independent Hebrew generation so the
+    card still works (content may then differ slightly)."""
+    en = generate_daily_insights(context, lang="en")
+    try:
+        he = _translate_insights(en, "he")
+    except Exception:
+        he = generate_daily_insights(context, lang="he")
+    return {"en": en, "he": he}

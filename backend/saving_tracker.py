@@ -3861,7 +3861,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 state = compose_state(24, None)
                 context = portfolio_chat.build_portfolio_context(state)
-                text = portfolio_chat.generate_daily_insights(context, lang=lang)
+                # Generate all languages together (EN generated, HE translated)
+                # so both convey identical content, each in its own language.
+                texts = portfolio_chat.generate_daily_insights_bilingual(context)
             except Exception as ex:
                 if cached.get("text"):
                     self._json(200, {
@@ -3878,9 +3880,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # Migrate away from the pre-i18n flat shape ({text,date,...}).
                 if not isinstance(store, dict) or "text" in store:
                     store = {}
-                store[lang] = {"text": text, "date": today, "generated_at": gen_at}
+                for lg, txt in texts.items():
+                    store[lg] = {"text": txt, "date": today, "generated_at": gen_at}
                 CACHE["insights"] = store
             save_cache()
+            text = texts.get(lang) or next(iter(texts.values()))
             self._json(200, {"ok": True, "insights": text, "generated_at": gen_at, "cached": False})
             return
 
