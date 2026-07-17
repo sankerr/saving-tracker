@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#EFEBE2" id="meta-theme-color">
+<meta name="theme-color" content="#E6E0D3" id="meta-theme-color">
 <title>Saving Tracker</title>
 <script>
 (function () {
@@ -12,7 +12,7 @@
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
   var meta = document.getElementById('meta-theme-color');
-  if (meta) meta.content = dark ? '#0F0F1A' : '#EFEBE2';
+  if (meta) meta.content = dark ? '#0F0F1A' : '#E6E0D3';
   var lang = localStorage.getItem('st_lang') || 'en';
   if (lang !== 'he' && lang !== 'en') lang = 'en';
   document.documentElement.lang = lang;
@@ -28,13 +28,13 @@
   --color-primary: #6E5FE0;
   --color-primary-strong: #5B4BD9;
   --color-accent: #4DCDCD;
-  --color-bg: #EFEBE2;
-  --color-surface: #FCFBF8;
-  --color-surface-2: #E8E3D8;
-  --color-text: #2B2B3E;
-  --color-text-strong: #1A1A2E;
-  --color-muted: #8A8A9C;
-  --color-border: #DED8CB;
+  --color-bg: #E6E0D3;
+  --color-surface: #F2EDE3;
+  --color-surface-2: #DBD5C6;
+  --color-text: #33333F;
+  --color-text-strong: #232333;
+  --color-muted: #82828F;
+  --color-border: #CFC8B7;
   --color-success: #1F8A4C;
   --color-warning: #B76E00;
   --color-danger: #C0392B;
@@ -2194,7 +2194,7 @@ function applyTheme(pref) {
   document.documentElement.dataset.theme = resolved;
   document.documentElement.style.colorScheme = resolved;
   const meta = document.getElementById('meta-theme-color');
-  if (meta) meta.content = resolved === 'dark' ? '#0F0F1A' : '#EFEBE2';
+  if (meta) meta.content = resolved === 'dark' ? '#0F0F1A' : '#E6E0D3';
   const btn = document.getElementById('theme-toggle-btn');
   if (btn) {
     btn.textContent = resolved === 'dark' ? '☀️' : '🌙';
@@ -2338,7 +2338,7 @@ function apiUrl(path) {
   return `${base}${path}`;
 }
 
-async function api(method, path, body, { retries = 1 } = {}) {
+async function api(method, path, body, { retries = 1, silent = false } = {}) {
   const opts = { method, headers: {} };
   const token = getToken();
   if (token) opts.headers['Authorization'] = `Bearer ${token}`;
@@ -2351,7 +2351,12 @@ async function api(method, path, body, { retries = 1 } = {}) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       if (attempt > 0) {
-        setStatus('pending', t('status.wakingServer'));
+        // Background fetches (silent) own their own UI (e.g. the insights
+        // card) and must NOT drive the global status pill / top load-bar:
+        // they never resolve it back to ok/error, so a stray 'pending' here
+        // would leave the top bar animating forever (notably on a language
+        // switch, where nothing else runs to clear it).
+        if (!silent) setStatus('pending', t('status.wakingServer'));
         await new Promise(r => setTimeout(r, 3000));
       }
       const r = await fetch(apiUrl(path), opts);
@@ -2741,7 +2746,7 @@ async function loadInsights(force = false) {
   }
   const epoch = SESSION_EPOCH;
   const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
-  const j = await api('GET', `/api/insights?lang=${encodeURIComponent(lang)}${force ? '&refresh=1' : ''}`);
+  const j = await api('GET', `/api/insights?lang=${encodeURIComponent(lang)}${force ? '&refresh=1' : ''}`, undefined, { silent: true });
   bodyEl.classList.remove('is-refreshing');
   // A session change (login/logout) invalidated this request. Release the
   // loading lock so a later load can retry instead of getting stuck.
@@ -6360,7 +6365,7 @@ function ensureChatInitialized() {
 
 async function refreshChatAvailability() {
   if (!getToken()) return;
-  const j = await api('GET', '/api/chat/status');
+  const j = await api('GET', '/api/chat/status', undefined, { silent: true });
   CHAT_STATUS_FETCHED = true;
   CHAT_ENABLED = !!(j && j.ok !== false && j.enabled);
   setChatChromeVisible(CHAT_ENABLED);
