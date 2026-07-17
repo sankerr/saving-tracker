@@ -1619,7 +1619,7 @@ html[dir="rtl"] .chat-panel {
       <div class="status-pill" id="status-pill" data-state="">
         <span class="status-pill__spinner" aria-hidden="true"></span>
         <span class="status-pill__dot"></span>
-        <span id="status-pill-text" data-i18n="status.loading">Loading…</span>
+        <span id="status-pill-text">Loading…</span>
       </div>
       <span class="status-data-month" id="status-data-month" hidden></span>
       <div class="status-actions">
@@ -2502,6 +2502,11 @@ function refreshI18nDynamic() {
   setAuthMode(authMode);
   updateChatToggleLabel();
   if (typeof updateStatusDataMonth === 'function') updateStatusDataMonth();
+  // The status pill text is set imperatively by setStatus (not a static i18n
+  // string), so applyI18n must not touch it. Re-localize the resting status
+  // here instead — otherwise a language switch would leave it stuck showing
+  // the previous language (previously it wrongly reset to "Loading…").
+  if (typeof relocalizeStatus === 'function') relocalizeStatus();
   if (typeof renderChatThread === 'function') renderChatThread();
   if (typeof renderRetirementSimulator === 'function' && window.PensionRetirementSim) renderRetirementSimulator();
   if (APP && getToken() && typeof renderAll === 'function') renderAll();
@@ -2537,6 +2542,17 @@ function setStatus(state, text) {
   // while pending (initial load / cold-start wake / sync), hide on ok/error.
   const chrome = document.getElementById('topchrome');
   if (chrome) chrome.classList.toggle('is-loading', state === 'pending');
+}
+
+// Re-render the pill in the current language after a language switch. Only the
+// resting "ok" state is safe to re-derive from app data; transient states
+// (pending/error) are re-set by the operation that owns them on completion.
+function relocalizeStatus() {
+  const pill = document.getElementById('status-pill');
+  if (!pill) return;
+  if (pill.dataset.state === 'ok' && APP && APP.cache_status) {
+    setStatus('ok', t('status.loadedUsdils', { rate: (APP.cache_status.current_usdils || 0).toFixed(3) }));
+  }
 }
 
 function updateStatusDataMonth() {
