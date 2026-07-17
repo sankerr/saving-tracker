@@ -5,6 +5,20 @@
   var LANG_KEY = 'st_lang';
   var SUPPORTED = { en: true, he: true };
 
+  var MONTH_NAMES = {
+    en: ['January', 'February', 'March', 'April', 'May', 'June',
+         'July', 'August', 'September', 'October', 'November', 'December'],
+    he: ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני',
+         'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר']
+  };
+
+  // "Month Year" five years ahead of the current month, localized.
+  function projectionLabel(lang) {
+    var now = new Date();
+    var names = MONTH_NAMES[lang] || MONTH_NAMES.en;
+    return names[now.getMonth()] + ' ' + (now.getFullYear() + 5);
+  }
+
   var STRINGS = {
     en: {
       'auth.title.login': 'Sign in',
@@ -118,11 +132,11 @@
       'chat.chip.features': 'What can I do with this app?',
       'chat.chip.concentration': 'Where am I concentrated?',
       'chat.chip.improve': 'Improve my allocation?',
-      'chat.chip.project': 'Project to May 2030 @ 8%',
+      'chat.chip.project': 'Project to {proj} @ 8%',
       'chat.prompt.features': 'What can I do with this app? Summarize the main features and how to use them with my portfolio.',
       'chat.prompt.concentration': 'Where am I concentrated across funds, RSU, ESPP, and cash?',
       'chat.prompt.improve': 'Suggest concrete improvements based on my portfolio allocation, contributions, and vesting.',
-      'chat.prompt.project': 'If my funds grow 8%/year, what is my projected portfolio total and change vs today by May 2030?',
+      'chat.prompt.project': 'If my funds grow 8%/year, what is my projected portfolio total and change vs today by {proj}?',
       'chat.role.you': 'You',
       'chat.role.assistant': 'Assistant',
       'chat.thinking': 'Thinking…',
@@ -761,11 +775,11 @@
       'chat.chip.features': 'מה אפשר לעשות באפליקציה?',
       'chat.chip.concentration': 'איפה הריכוז שלי?',
       'chat.chip.improve': 'איך לשפר את הפיזור?',
-      'chat.chip.project': 'תחזית למאי 2030 ב־8%',
+      'chat.chip.project': 'תחזית ל{proj} ב־8%',
       'chat.prompt.features': 'מה אפשר לעשות באפליקציה הזו? סכמו את היכולות העיקריות ואיך להשתמש בהן עם התיק שלי.',
       'chat.prompt.concentration': 'איפה אני מרוכז בין קופות, RSU, ESPP ומזומן?',
       'chat.prompt.improve': 'הציעו שיפורים קונקרטיים לפי הפיזור, ההפקדות וההבשלה שלי.',
-      'chat.prompt.project': 'אם הקופות צומחות ב־8% לשנה, מה הסך החזוי והשינוי מול היום במאי 2030?',
+      'chat.prompt.project': 'אם הקופות צומחות ב־8% לשנה, מה הסך החזוי והשינוי מול היום ב{proj}?',
       'chat.role.you': 'את/ה',
       'chat.role.assistant': 'עוזר AI',
       'chat.thinking': 'חושב…',
@@ -1303,6 +1317,10 @@
     var dict = STRINGS[lang] || STRINGS.en;
     var s = dict[key];
     if (s == null) s = (STRINGS.en && STRINGS.en[key]) || key;
+    if (String(s).indexOf('{proj}') !== -1 && (!vars || vars.proj == null)) {
+      vars = vars || {};
+      vars.proj = projectionLabel(lang);
+    }
     if (vars) {
       Object.keys(vars).forEach(function (k) {
         s = String(s).split('{' + k + '}').join(String(vars[k]));

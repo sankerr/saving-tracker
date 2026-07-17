@@ -2092,7 +2092,7 @@ html[dir="rtl"] .chat-panel {
       <button type="button" data-i18n="chat.chip.features" data-i18n-prompt="chat.prompt.features" data-prompt="What can I do with this app? Summarize the main features and how to use them with my portfolio.">What can I do with this app?</button>
       <button type="button" data-i18n="chat.chip.concentration" data-i18n-prompt="chat.prompt.concentration" data-prompt="Where am I concentrated across funds, RSU, ESPP, and cash?">Where am I concentrated?</button>
       <button type="button" data-i18n="chat.chip.improve" data-i18n-prompt="chat.prompt.improve" data-prompt="Suggest concrete improvements based on my portfolio allocation, contributions, and vesting.">Improve my allocation?</button>
-      <button type="button" data-i18n="chat.chip.project" data-i18n-prompt="chat.prompt.project" data-prompt="If my funds grow 8%/year, what is my projected portfolio total and change vs today by May 2030?">Project to May 2030 @ 8%</button>
+      <button type="button" data-i18n="chat.chip.project" data-i18n-prompt="chat.prompt.project" data-prompt="If my funds grow 8%/year, what is my projected portfolio total and change vs today over the next 5 years?">Project 5 years out @ 8%</button>
     </div>
     <div class="chat-thread" id="chat-thread" role="log" aria-live="polite" aria-relevant="additions">
       <div class="chat-empty" id="chat-empty" data-i18n="chat.empty">Ask about your holdings, yields, allocation, or what to improve.</div>
@@ -2131,7 +2131,12 @@ function fmtPctSigned(n, digits = 2) {
 }
 function timeAgo(iso) {
   if (!iso) return t('time.never');
-  const d = new Date(iso);
+  // Server timestamps are UTC. If the string carries no timezone marker,
+  // treat it as UTC — otherwise the browser parses it as its own local time,
+  // which skews "updated X ago" by the local offset (e.g. +3h in Israel).
+  let s = String(iso);
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s += 'Z';
+  const d = new Date(s);
   const sec = Math.floor((Date.now() - d.getTime()) / 1000);
   if (sec < 60) return t('time.justNow');
   if (sec < 3600) return t('time.minAgo', { n: Math.floor(sec / 60) });
@@ -2282,6 +2287,8 @@ function clearPortfolioUi() {
   document.querySelectorAll('.add-panel').forEach((p) => { p.hidden = true; });
   closeSettings();
   INSIGHTS_STATE = 'idle';
+  INSIGHTS_TEXT = { en: null, he: null };
+  INSIGHTS_GENERATED_AT = null;
   const insightCard = document.getElementById('ai-insight');
   if (insightCard) insightCard.hidden = true;
   resetChatSession({ hide: true });
@@ -2498,10 +2505,11 @@ function refreshI18nDynamic() {
   if (typeof renderChatThread === 'function') renderChatThread();
   if (typeof renderRetirementSimulator === 'function' && window.PensionRetirementSim) renderRetirementSimulator();
   if (APP && getToken() && typeof renderAll === 'function') renderAll();
-  // Gemini insights are generated text, not static i18n strings, so re-fetch
-  // them in the newly selected language once they've been shown.
-  if (APP && getToken() && INSIGHTS_STATE === 'done' && typeof loadInsights === 'function') {
-    loadInsights();
+  // Gemini insights are generated text, not static i18n strings. Both language
+  // copies are cached client-side, so swap instantly instead of re-fetching
+  // (no loading indicator on a language switch).
+  if (typeof applyInsightsLanguage === 'function') {
+    applyInsightsLanguage();
   }
 }
 
@@ -2700,6 +2708,10 @@ function renderAllocation() {
 // daily email, cached server-side per day, fetched lazily so it never blocks
 // the dashboard render. Hidden entirely when GEMINI_API_KEY isn't configured.
 let INSIGHTS_STATE = 'idle'; // idle | loading | done | disabled
+// Both language copies are cached client-side (the API returns them together),
+// so switching language is an instant swap with no request and no loading.
+let INSIGHTS_TEXT = { en: null, he: null };
+let INSIGHTS_GENERATED_AT = null;
 
 function insightsToHtml(text) {
   const lines = String(text || '').split(/\r?\n/);
@@ -2759,11 +2771,42 @@ async function loadInsights(force = false) {
     return;
   }
   INSIGHTS_STATE = 'done';
-  bodyEl.innerHTML = insightsToHtml(j.insights || '');
-  if (j.generated_at) {
-    meta.textContent = t('insights.updated', { ago: timeAgo(j.generated_at) });
-    meta.hidden = false;
+  INSIGHTS_GENERATED_AT = j.generated_at || null;
+  // Cache both language copies so a later language switch is instant.
+  if (j.insights_all && typeof j.insights_all === 'object') {
+    if (j.insights_all.en) INSIGHTS_TEXT.en = j.insights_all.en;
+    if (j.insights_all.he) INSIGHTS_TEXT.he = j.insights_all.he;
   }
+  INSIGHTS_TEXT[lang] = j.insights || INSIGHTS_TEXT[lang];
+  renderInsights(INSIGHTS_TEXT[lang] || j.insights || '');
+}
+
+// Render the insight card body + "updated" meta from already-known text — no
+// network. Used after a fetch and for instant language swaps.
+function renderInsights(text) {
+  const bodyEl = document.getElementById('ai-insight-body');
+  const meta = document.getElementById('ai-insight-meta');
+  if (!bodyEl) return;
+  bodyEl.classList.remove('is-refreshing');
+  bodyEl.innerHTML = insightsToHtml(text || '');
+  if (meta) {
+    if (INSIGHTS_GENERATED_AT) {
+      meta.textContent = t('insights.updated', { ago: timeAgo(INSIGHTS_GENERATED_AT) });
+      meta.hidden = false;
+    } else {
+      meta.hidden = true;
+    }
+  }
+}
+
+// Language switch: swap to the cached copy for the new language instantly, with
+// no loading indicator and no request. Only fetch if we somehow lack it.
+function applyInsightsLanguage() {
+  if (!(APP && getToken())) return;
+  if (INSIGHTS_STATE !== 'done') return;
+  const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
+  if (INSIGHTS_TEXT[lang]) renderInsights(INSIGHTS_TEXT[lang]);
+  else loadInsights();
 }
 
 function drawDashboardChart() {

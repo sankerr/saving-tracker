@@ -3852,9 +3852,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with _cache_lock:
                 by_lang = dict(CACHE.get("insights") or {})
                 cached = dict(by_lang.get(lang) or {})
+            def _all_today(by):
+                # Both language copies cached for today, so the client can swap
+                # languages instantly without another request.
+                return {
+                    lg: (e or {}).get("text")
+                    for lg, e in by.items()
+                    if (e or {}).get("text") and (e or {}).get("date") == today
+                }
+
             if not refresh and cached.get("text") and cached.get("date") == today:
                 self._json(200, {
                     "ok": True, "insights": cached["text"],
+                    "insights_all": _all_today(by_lang),
                     "generated_at": cached.get("generated_at"), "cached": True,
                 })
                 return
@@ -3868,6 +3878,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if cached.get("text"):
                     self._json(200, {
                         "ok": True, "insights": cached["text"],
+                        "insights_all": _all_today(by_lang),
                         "generated_at": cached.get("generated_at"),
                         "cached": True, "stale": True,
                     })
@@ -3885,7 +3896,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 CACHE["insights"] = store
             save_cache()
             text = texts.get(lang) or next(iter(texts.values()))
-            self._json(200, {"ok": True, "insights": text, "generated_at": gen_at, "cached": False})
+            self._json(200, {
+                "ok": True, "insights": text, "insights_all": dict(texts),
+                "generated_at": gen_at, "cached": False,
+            })
             return
 
         if path == "/api/export":
