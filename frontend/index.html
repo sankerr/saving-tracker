@@ -361,6 +361,42 @@ h2 {
 }
 .dash-subline strong { color: var(--color-text); font-weight: 600; }
 
+/* Savings goal strip */
+.dash-goal { margin: 0 0 1.25rem 0; }
+.dash-goal__set {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: none; border: 1px dashed var(--color-border); cursor: pointer;
+  padding: 0.35rem 0.75rem; border-radius: 999px; font: inherit;
+  font-size: 0.8125rem; color: var(--color-muted);
+}
+.dash-goal__set:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.dash-goal__active {
+  display: block; width: 100%; text-align: start; background: none;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem; cursor: pointer; font: inherit;
+}
+.dash-goal__active:hover { border-color: var(--color-primary); }
+.dash-goal__top {
+  display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap;
+  font-size: 0.8125rem; color: var(--color-muted); margin-bottom: 0.4rem;
+}
+.dash-goal__title { font-weight: 600; color: var(--color-text); }
+.dash-goal__pct { margin-inline-start: auto; font-weight: 600; color: var(--color-text); }
+.dash-goal__bar {
+  height: 8px; width: 100%; border-radius: 999px;
+  background: var(--color-surface-2); overflow: hidden;
+}
+.dash-goal__fill { height: 100%; border-radius: 999px; transition: width 300ms ease; }
+.dash-goal__fill[data-pace="on"] { background: var(--color-success); }
+.dash-goal__fill[data-pace="off"] { background: var(--color-warning); }
+.dash-goal__fill[data-pace="done"] { background: var(--color-primary); }
+.dash-goal__status { display: block; margin-top: 0.4rem; font-size: 0.8125rem; color: var(--color-muted); }
+.dash-goal__status[data-pace="off"] { color: var(--color-warning); }
+.dash-goal__status strong { color: var(--color-text); font-weight: 600; }
+
+/* Settings gear reads small at the default button size — bump just the glyph. */
+#settings-btn { font-size: 1.25rem; line-height: 1; padding-block: 0.3rem; }
+
 /* At-a-glance allocation */
 .alloc { margin: 0 0 1.25rem; }
 .alloc__head {
@@ -1694,6 +1730,7 @@ html[dir="rtl"] .chat-panel {
       <div class="dash-profit-chip" id="dash-profit" data-sign="pos">—</div>
     </div>
     <p class="dash-subline" id="dash-subline">—</p>
+    <div class="dash-goal" id="dash-goal" hidden></div>
     <div class="alloc" id="dash-alloc" hidden>
       <div class="alloc__head">
         <span data-i18n="dashboard.allocation">Allocation</span>
@@ -2053,6 +2090,30 @@ html[dir="rtl"] .chat-panel {
         <button class="btn btn--danger btn--small" id="delete-account-btn" type="button" data-i18n="settings.deleteAccount">Delete my account</button>
         <p class="chart-caption" style="margin:0.5rem 0 0;" data-i18n="settings.deleteAccountBlurb" data-i18n-html>Permanently deletes your login and <strong>all personal data</strong> stored in the database (holdings, grants, cash, settings, and cached prices). This cannot be undone.</p>
       </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="goal-modal" hidden role="dialog" aria-modal="true" data-i18n-aria-label="goal.title" aria-label="Set a goal">
+    <div class="modal__backdrop" data-goal-close></div>
+    <div class="modal__panel">
+      <button class="modal__close" type="button" data-goal-close aria-label="Close">×</button>
+      <h3 class="modal__title" data-i18n="goal.title">Set a savings goal</h3>
+      <div class="modal__body">
+        <p class="chart-caption" style="margin:0 0 1rem;" data-i18n="goal.blurb">Track your Total Wealth toward a target amount by a target date. Pension is excluded, matching the headline total.</p>
+        <div class="field">
+          <label for="goal-amount" data-i18n="goal.amount">Target amount (₪)</label>
+          <input type="number" id="goal-amount" min="1" step="1000" data-i18n-placeholder="goal.amountPlaceholder" placeholder="e.g. 1000000">
+        </div>
+        <div class="field">
+          <label for="goal-date" data-i18n="goal.date">Target date</label>
+          <input type="month" id="goal-date">
+        </div>
+        <p class="dash-goal__status" id="goal-error" data-pace="off" hidden></p>
+        <div class="actions-row" style="margin-top:1rem">
+          <button class="btn btn--primary btn--small" id="goal-save" type="button" data-i18n="goal.save">Save goal</button>
+          <button class="btn btn--ghost btn--small" id="goal-clear" type="button" data-i18n="goal.clear">Clear goal</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2684,7 +2745,60 @@ function renderDashboard() {
   } else {
     projBox.hidden = true;
   }
+  renderGoal();
   drawDashboardChart();
+}
+
+// Month-year label for a "YYYY-MM-DD" (or "YYYY-MM") string, localized.
+function fmtGoalMonth(dateStr) {
+  const [y, m] = dateStr.split('-').map(Number);
+  const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
+  const locale = lang === 'he' ? 'he-IL' : 'en-US';
+  return new Date(y, (m || 1) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
+}
+
+// Compact savings-goal strip under the headline. Reads goal_status from the
+// backend (projection-based on-pace assessment); falls back to a "set a goal"
+// affordance when no goal is configured.
+function renderGoal() {
+  const box = document.getElementById('dash-goal');
+  if (!box) return;
+  const g = APP.goal_status;
+  box.hidden = false;
+  if (!g) {
+    box.innerHTML = `<button type="button" class="dash-goal__set" id="goal-open">🎯 ${escapeHtml(t('goal.setCta'))}</button>`;
+    return;
+  }
+  const pct = g.progress_pct || 0;
+  const reached = (g.current_value_ils || 0) >= (g.target_amount_ils || 0);
+  const passed = (g.months_remaining || 0) <= 0;
+  const dateLabel = fmtGoalMonth(g.target_date);
+  const headline = t('goal.headline', { amount: fmtILS.format(g.target_amount_ils || 0), date: dateLabel });
+
+  let pace, status;
+  if (reached) {
+    pace = 'done';
+    status = t('goal.reached', { amount: fmtILS.format(g.target_amount_ils || 0) });
+  } else if (passed) {
+    pace = 'off';
+    status = t('goal.datePassed', { pct: pct.toFixed(0) });
+  } else if (g.on_pace) {
+    pace = 'on';
+    status = t('goal.onPace', { projected: fmtILS.format(g.projected_value_ils || 0) });
+  } else {
+    pace = 'off';
+    status = t('goal.behind', { gap: fmtILS.format(Math.abs(g.gap_ils || 0)) });
+  }
+
+  box.innerHTML = `
+    <button type="button" class="dash-goal__active" id="goal-open" title="${escapeHtml(t('goal.editTitle'))}">
+      <span class="dash-goal__top">
+        <span class="dash-goal__title">🎯 ${escapeHtml(headline)}</span>
+        <span class="dash-goal__pct">${pct.toFixed(0)}%</span>
+      </span>
+      <span class="dash-goal__bar"><span class="dash-goal__fill" data-pace="${pace}" style="width:${Math.min(pct, 100).toFixed(1)}%"></span></span>
+      <span class="dash-goal__status" data-pace="${pace}">${status}</span>
+    </button>`;
 }
 
 // At-a-glance allocation across the dashboard-total categories (funds, RSU,
@@ -5036,6 +5150,58 @@ function closeSettings() {
   document.removeEventListener('keydown', _settingsEsc);
 }
 
+// ── Goal modal ──
+function _goalEsc(e) {
+  if (e.key === 'Escape') { e.preventDefault(); closeGoal(); }
+}
+function openGoal() {
+  const m = document.getElementById('goal-modal');
+  if (!m) return;
+  const goal = (APP && APP.settings && APP.settings.goal) || null;
+  document.getElementById('goal-amount').value = goal ? goal.target_amount_ils : '';
+  // <input type="month"> wants "YYYY-MM"; stored date is "YYYY-MM-DD".
+  document.getElementById('goal-date').value = goal ? goal.target_date.slice(0, 7) : '';
+  const err = document.getElementById('goal-error');
+  err.hidden = true; err.textContent = '';
+  document.getElementById('goal-clear').hidden = !goal;
+  m.hidden = false;
+  document.addEventListener('keydown', _goalEsc);
+  setTimeout(() => { try { document.getElementById('goal-amount').focus(); } catch {} }, 50);
+}
+function closeGoal() {
+  const m = document.getElementById('goal-modal');
+  if (!m) return;
+  m.hidden = true;
+  document.removeEventListener('keydown', _goalEsc);
+}
+async function saveGoal() {
+  const err = document.getElementById('goal-error');
+  const amount = parseFloat(document.getElementById('goal-amount').value);
+  const month = document.getElementById('goal-date').value; // "YYYY-MM"
+  if (!(amount > 0)) {
+    err.textContent = t('goal.errAmount'); err.hidden = false; return;
+  }
+  if (!month) {
+    err.textContent = t('goal.errDate'); err.hidden = false; return;
+  }
+  const j = await api('POST', '/api/settings', {
+    goal: { target_amount_ils: amount, target_date: `${month}-01` },
+  });
+  if (j.ok === false) {
+    err.textContent = j.error || t('goal.errAmount'); err.hidden = false; return;
+  }
+  closeGoal();
+  toast(t('goal.saved'), 'info');
+  fetchData();
+}
+async function clearGoal() {
+  const j = await api('POST', '/api/settings', { goal: null });
+  if (j.ok === false) { toast(j.error, 'error'); return; }
+  closeGoal();
+  toast(t('goal.cleared'), 'info');
+  fetchData();
+}
+
 function init() {
   initRetirementSimulator();
   initSectionNav();
@@ -5278,6 +5444,16 @@ function init() {
   document.querySelectorAll('#settings-modal [data-settings-close]').forEach((el) => {
     el.addEventListener('click', closeSettings);
   });
+
+  // Goal strip is re-rendered each refresh, so delegate the open click.
+  document.getElementById('dash-goal').addEventListener('click', (e) => {
+    if (e.target.closest('#goal-open')) openGoal();
+  });
+  document.querySelectorAll('#goal-modal [data-goal-close]').forEach((el) => {
+    el.addEventListener('click', closeGoal);
+  });
+  document.getElementById('goal-save').addEventListener('click', saveGoal);
+  document.getElementById('goal-clear').addEventListener('click', clearGoal);
   document.getElementById('setting-theme').value = getThemePreference();
   document.getElementById('setting-theme').addEventListener('change', (e) => {
     setThemePreference(e.target.value);

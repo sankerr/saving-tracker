@@ -2264,6 +2264,76 @@ def project_espp(plan: dict, computed: dict, horizon_months: int) -> dict:
     }
 
 
+# ── Savings goal ─────────────────────────────────────────────────────────────
+def _months_until(target_date: str) -> int:
+    """Whole months from the current month to the target month (may be <= 0)."""
+    d = date.fromisoformat(target_date)
+    today = date.today()
+    return (d.year - today.year) * 12 + (d.month - today.month)
+
+
+def compute_goal_status(goal: dict, funds_out: list, grants_out: list,
+                        espp_out: list, portfolio: dict) -> dict:
+    """Evaluate a single savings goal against the headline Total Wealth.
+
+    Projects Total Wealth forward to the goal's target month using the same
+    per-holding projection engine as the dashboard, then reports progress and
+    whether the projected value clears the target. Pension is excluded, matching
+    the headline total.
+    """
+    target = float(goal["target_amount_ils"])
+    target_date = goal["target_date"]
+    current = float(portfolio.get("total_value_ils") or 0)
+    months_remaining = _months_until(target_date)
+
+    # Skip the projection when the target is already met or the date has passed:
+    # there's nothing to project toward, and a non-positive horizon is invalid.
+    if current >= target or months_remaining <= 0:
+        projected = current
+    else:
+        horizon_g = min(months_remaining, HORIZON_CAP_MONTHS)
+        funds_g = []
+        for h in funds_out:
+            if h.get("archived") or not h.get("included_in_dashboard", True):
+                continue
+            hg = dict(h)
+            hg["projection"] = project_fund(
+                h, h["computed"], horizon_g, source=fund_holding_source(h)
+            )
+            funds_g.append(hg)
+        grants_g = []
+        for g in grants_out:
+            if g.get("archived"):
+                continue
+            gg = dict(g)
+            gg["projection"] = project_rsu(g, g["computed"], horizon_g)
+            grants_g.append(gg)
+        espp_g = []
+        for plan in espp_out:
+            if plan.get("archived"):
+                continue
+            pg = dict(plan)
+            pg["projection"] = project_espp(plan, plan["computed"], horizon_g)
+            espp_g.append(pg)
+        proj = compose_portfolio_projection(
+            funds_g, grants_g, horizon_g, espp_g,
+            portfolio.get("cash_value_ils") or 0.0,
+        )
+        mean = (proj or {}).get("paths", {}).get("mean") or []
+        projected = mean[-1] if mean else current
+
+    return {
+        "target_amount_ils": round(target, 2),
+        "target_date": target_date,
+        "current_value_ils": round(current, 2),
+        "progress_pct": round(current / target * 100, 1) if target > 0 else 0.0,
+        "projected_value_ils": round(projected, 2),
+        "on_pace": projected >= target,
+        "gap_ils": round(projected - target, 2),
+        "months_remaining": months_remaining,
+    }
+
+
 # ── /api/data composer ───────────────────────────────────────────────────────
 def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
     with _data_lock, _cache_lock, _market_lock:
@@ -2421,11 +2491,19 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
                 "includes_recurring": any(wf.get("includes_recurring") for wf in active_pension_wfs),
             }
 
+        goal = DATA["settings"].get("goal")
+        goal_status = (
+            compute_goal_status(goal, fund_holdings_out, rsu_grants_out,
+                                espp_plans_out, portfolio)
+            if goal else None
+        )
+
         return {
             "ok": True,
             "now": now_iso(),
             "horizon_months": horizon_months,
             "settings": dict(DATA["settings"]),
+            "goal_status": goal_status,
             "fund_holdings": fund_holdings_out,
             "pension_holdings": pension_holdings_out,
             "rsu_grants": rsu_grants_out,
@@ -3602,11 +3680,50 @@ def delete_cash_holding(cash_id: str) -> dict:
     return {"ok": False, "error": "Cash holding not found"}
 
 
+def _normalize_goal(goal):
+    """Validate/normalize a goal patch.
+
+    Returns (value, error): value is None to clear the goal or a normalized
+    dict to store it; error is None on success or a message string on failure.
+    """
+    if goal is None:
+        return None, None
+    if not isinstance(goal, dict):
+        return None, "Goal must be an object or null"
+    try:
+        amount = float(goal.get("target_amount_ils"))
+    except (TypeError, ValueError):
+        return None, "Goal amount must be a number"
+    if not amount > 0:
+        return None, "Goal amount must be greater than zero"
+    raw_date = goal.get("target_date")
+    if not isinstance(raw_date, str):
+        return None, "Goal date is required"
+    try:
+        d = date.fromisoformat(raw_date)
+    except ValueError:
+        return None, "Goal date must be YYYY-MM-DD"
+    # Normalize to the first of the target month.
+    return {
+        "target_amount_ils": round(amount, 2),
+        "target_date": date(d.year, d.month, 1).isoformat(),
+    }, None
+
+
 def update_settings(patch: dict) -> dict:
+    # Validate the goal before mutating any settings so a bad payload can't
+    # leave the in-memory state partially applied but unsaved.
+    goal_val = None
+    if "goal" in patch:
+        goal_val, err = _normalize_goal(patch["goal"])
+        if err:
+            return {"ok": False, "error": err}
     with _data_lock:
         for k in ("yield_is_net_of_fees", "usdils_rate_override"):
             if k in patch:
                 DATA["settings"][k] = patch[k]
+        if "goal" in patch:
+            DATA["settings"]["goal"] = goal_val
         save_data()
     return {"ok": True, "settings": dict(DATA["settings"])}
 
