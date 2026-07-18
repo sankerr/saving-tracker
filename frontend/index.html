@@ -395,8 +395,11 @@ h2 {
 .dash-goal__status strong { color: var(--color-text); font-weight: 600; }
 .dash-goal__basis { display: block; margin-top: 0.2rem; font-size: 0.75rem; color: var(--color-muted); }
 
-/* Settings gear reads small at the default button size — bump just the glyph. */
-#settings-btn { font-size: 1.25rem; line-height: 1; padding-block: 0.3rem; }
+/* Gear + sun/moon read small at the default button size — bump both glyphs equally. */
+#settings-btn, #theme-toggle-btn { font-size: 1.25rem; line-height: 1; padding-block: 0.3rem; }
+
+/* In Hebrew (RTL), the range separator should point with the reading direction. */
+html[dir="rtl"] .range-arrow { display: inline-block; transform: scaleX(-1); }
 
 /* At-a-glance allocation */
 .alloc { margin: 0 0 1.25rem; }
@@ -1710,7 +1713,7 @@ html[dir="rtl"] .chat-panel {
           <span data-i18n="dashboard.range">Range</span>
           <div class="range-inputs">
             <input type="month" id="range-start" class="control-input control-input--month">
-            <span style="color:var(--color-muted)">→</span>
+            <span class="range-arrow" style="color:var(--color-muted)">→</span>
             <input type="month" id="range-end" class="control-input control-input--month">
           </div>
           <button class="btn btn--ghost btn--small" id="range-reset" hidden data-i18n="dashboard.resetRange">Reset range</button>

@@ -23,17 +23,6 @@ Browser → Cloudflare Pages (frontend)
 
 Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, and cash, with dashboard projections/what-if, a savings goal, a Hebrew/English UI, and an optional AI chat assistant.
 
-## Savings goal
-
-Set a single **target Total Wealth amount by a target month** (e.g. ₪1,000,000 by 2030 / 12) from the inline "🎯 Set a goal" affordance under the dashboard headline. The dashboard shows a compact progress bar plus an on-pace status:
-
-- **On pace** — the projected value at the target month meets or exceeds the target.
-- **Behind by ~₪X** — projected shortfall vs. the target at that month.
-- **Goal reached** — current Total Wealth already meets the target.
-- **Target month passed** — shows the percentage reached.
-
-The on-pace verdict is computed on the backend from the **same projection** the dashboard chart uses (each holding's own returns + recurring contributions), so it accounts for growth and contributions rather than a straight line. Pension is excluded, matching the headline "Total Wealth" total. The goal is stored per user in the `settings` blob and set/cleared via `POST /api/settings` (`{ "goal": { "target_amount_ils", "target_date" } }` or `{ "goal": null }`).
-
 ## Prerequisites
 
 - GitHub repo connected to Render and Cloudflare Pages
