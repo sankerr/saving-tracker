@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#E6E0D3" id="meta-theme-color">
+<meta name="theme-color" content="#F4F5F8" id="meta-theme-color">
 <title>Saving Tracker</title>
 <script>
 (function () {
@@ -12,7 +12,7 @@
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
   var meta = document.getElementById('meta-theme-color');
-  if (meta) meta.content = dark ? '#0F0F1A' : '#E6E0D3';
+  if (meta) meta.content = dark ? '#0F0F1A' : '#F4F5F8';
   var lang = localStorage.getItem('st_lang') || 'en';
   if (lang !== 'he' && lang !== 'en') lang = 'en';
   document.documentElement.lang = lang;
@@ -27,27 +27,27 @@
 :root {
   --color-primary: #6E5FE0;
   --color-primary-strong: #5B4BD9;
-  --color-accent: #4DCDCD;
-  --color-bg: #E6E0D3;
-  --color-surface: #F2EDE3;
-  --color-surface-2: #DBD5C6;
-  --color-text: #33333F;
-  --color-text-strong: #232333;
-  --color-muted: #82828F;
-  --color-border: #CFC8B7;
-  --color-success: #1F8A4C;
-  --color-warning: #B76E00;
-  --color-danger: #C0392B;
+  --color-accent: #2FB8B8;
+  --color-bg: #F4F5F8;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #EEF0F5;
+  --color-text: #2A2E3A;
+  --color-text-strong: #14161F;
+  --color-muted: #697086;
+  --color-border: #E3E6EE;
+  --color-success: #158A4A;
+  --color-warning: #B26A00;
+  --color-danger: #C63525;
   --color-funds: #6E5FE0;
-  --color-rsu: #4DCDCD;
-  --color-espp: #E0975F;
-  --color-cash: #B0AFC2;
+  --color-rsu: #2FB8B8;
+  --color-espp: #D9803F;
+  --color-cash: #9C9BB4;
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 20px;
-  --shadow-sm: 0 1px 2px rgb(11 11 59 / 0.03);
-  --shadow-md: 0 1px 2px rgb(11 11 59 / 0.03), 0 2px 8px rgb(11 11 59 / 0.04);
-  --shadow-lg: 0 1px 2px rgb(11 11 59 / 0.04), 0 4px 16px rgb(11 11 59 / 0.05), 0 12px 32px rgb(11 11 59 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(20 22 43 / 0.04);
+  --shadow-md: 0 1px 2px rgb(20 22 43 / 0.05), 0 4px 12px rgb(20 22 43 / 0.06);
+  --shadow-lg: 0 1px 2px rgb(20 22 43 / 0.05), 0 8px 24px rgb(20 22 43 / 0.08), 0 16px 48px rgb(20 22 43 / 0.06);
   --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', monospace;
@@ -57,6 +57,9 @@
   --color-text: #E8E8F0; --color-text-strong: #FFFFFF; --color-muted: #9999B0;
   --color-border: #2A2A45; --color-success: #4ADE80; --color-warning: #F59E0B;
   --color-danger: #F87171;
+  /* Brand/chart hues stay at their original dark-mode values (base :root now
+     carries the light-tuned variants). */
+  --color-accent: #4DCDCD; --color-rsu: #4DCDCD; --color-espp: #E0975F; --color-cash: #B0AFC2;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.2);
   --shadow-md: 0 1px 2px rgb(0 0 0 / 0.2), 0 2px 8px rgb(0 0 0 / 0.25);
   --shadow-lg: 0 1px 2px rgb(0 0 0 / 0.2), 0 4px 16px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.25);
@@ -382,6 +385,7 @@ h2 {
 }
 .dash-goal__title { font-weight: 600; color: var(--color-text); }
 .dash-goal__pct { margin-inline-start: auto; font-weight: 600; color: var(--color-text); }
+.dash-goal__pctlabel { font-weight: 400; color: var(--color-muted); }
 .dash-goal__bar {
   height: 8px; width: 100%; border-radius: 999px;
   background: var(--color-surface-2); overflow: hidden;
@@ -395,8 +399,10 @@ h2 {
 .dash-goal__status strong { color: var(--color-text); font-weight: 600; }
 .dash-goal__basis { display: block; margin-top: 0.2rem; font-size: 0.75rem; color: var(--color-muted); }
 
-/* Gear + sun/moon read small at the default button size — bump both glyphs equally. */
+/* Gear + sun/moon read small at the default button size — bump the glyphs. */
 #settings-btn, #theme-toggle-btn { font-size: 1.25rem; line-height: 1; padding-block: 0.3rem; }
+/* Sun/moon glyph is visually heavier than the gear — trim it down a touch. */
+#theme-toggle-btn { font-size: 1.1rem; }
 
 /* In Hebrew (RTL), the range separator should point with the reading direction. */
 html[dir="rtl"] .range-arrow { display: inline-block; transform: scaleX(-1); }
@@ -2265,7 +2271,7 @@ function applyTheme(pref) {
   document.documentElement.dataset.theme = resolved;
   document.documentElement.style.colorScheme = resolved;
   const meta = document.getElementById('meta-theme-color');
-  if (meta) meta.content = resolved === 'dark' ? '#0F0F1A' : '#E6E0D3';
+  if (meta) meta.content = resolved === 'dark' ? '#0F0F1A' : '#F4F5F8';
   const btn = document.getElementById('theme-toggle-btn');
   if (btn) {
     btn.textContent = resolved === 'dark' ? '☀️' : '🌙';
@@ -2806,7 +2812,7 @@ function renderGoal() {
     <button type="button" class="dash-goal__active" id="goal-open" title="${escapeHtml(t('goal.editTitle'))}">
       <span class="dash-goal__top">
         <span class="dash-goal__title">🎯 ${escapeHtml(headline)}</span>
-        <span class="dash-goal__pct">${pct.toFixed(0)}%</span>
+        <span class="dash-goal__pct" title="${escapeHtml(t('goal.pctTitle'))}">${pct.toFixed(0)}% <span class="dash-goal__pctlabel">${escapeHtml(t('goal.ofTarget'))}</span></span>
       </span>
       <span class="dash-goal__bar"><span class="dash-goal__fill" data-pace="${pace}" style="width:${Math.min(pct, 100).toFixed(1)}%"></span></span>
       <span class="dash-goal__status" data-pace="${pace}">${status}</span>
