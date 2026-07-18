@@ -393,6 +393,7 @@ h2 {
 .dash-goal__status { display: block; margin-top: 0.4rem; font-size: 0.8125rem; color: var(--color-muted); }
 .dash-goal__status[data-pace="off"] { color: var(--color-warning); }
 .dash-goal__status strong { color: var(--color-text); font-weight: 600; }
+.dash-goal__basis { display: block; margin-top: 0.2rem; font-size: 0.75rem; color: var(--color-muted); }
 
 /* Settings gear reads small at the default button size — bump just the glyph. */
 #settings-btn { font-size: 1.25rem; line-height: 1; padding-block: 0.3rem; }
@@ -2106,8 +2107,9 @@ html[dir="rtl"] .chat-panel {
           <input type="number" id="goal-amount" min="1" step="1000" data-i18n-placeholder="goal.amountPlaceholder" placeholder="e.g. 1000000">
         </div>
         <div class="field">
-          <label for="goal-date" data-i18n="goal.date">Target date</label>
-          <input type="month" id="goal-date">
+          <label for="goal-date" data-i18n="goal.date">Target month (YYYY / MM)</label>
+          <input type="month" id="goal-date" data-i18n-placeholder="goal.datePlaceholder" placeholder="YYYY / MM">
+          <p class="chart-caption" style="margin:0.35rem 0 0;" data-i18n="goal.dateHint">Pick the year and month you want to reach the target, e.g. 2030 / 12.</p>
         </div>
         <p class="dash-goal__status" id="goal-error" data-pace="off" hidden></p>
         <div class="actions-row" style="margin-top:1rem">
@@ -2775,7 +2777,7 @@ function renderGoal() {
   const dateLabel = fmtGoalMonth(g.target_date);
   const headline = t('goal.headline', { amount: fmtILS.format(g.target_amount_ils || 0), date: dateLabel });
 
-  let pace, status;
+  let pace, status, projectionBased = false;
   if (reached) {
     pace = 'done';
     status = t('goal.reached', { amount: fmtILS.format(g.target_amount_ils || 0) });
@@ -2785,10 +2787,17 @@ function renderGoal() {
   } else if (g.on_pace) {
     pace = 'on';
     status = t('goal.onPace', { projected: fmtILS.format(g.projected_value_ils || 0) });
+    projectionBased = true;
   } else {
     pace = 'off';
     status = t('goal.behind', { gap: fmtILS.format(Math.abs(g.gap_ils || 0)) });
+    projectionBased = true;
   }
+  // The on-pace/behind verdict compares the target against the same projection
+  // the dashboard chart uses — surface that so the number isn't a black box.
+  const basis = projectionBased
+    ? `<span class="dash-goal__basis">${escapeHtml(t('goal.basis'))}</span>`
+    : '';
 
   box.innerHTML = `
     <button type="button" class="dash-goal__active" id="goal-open" title="${escapeHtml(t('goal.editTitle'))}">
@@ -2798,6 +2807,7 @@ function renderGoal() {
       </span>
       <span class="dash-goal__bar"><span class="dash-goal__fill" data-pace="${pace}" style="width:${Math.min(pct, 100).toFixed(1)}%"></span></span>
       <span class="dash-goal__status" data-pace="${pace}">${status}</span>
+      ${basis}
     </button>`;
 }
 
