@@ -4230,11 +4230,17 @@ function drawDetailChart(canvasId, item, kind) {
   // For RSU, projection is in ILS (server side); convert via current usdils for axis match.
   let projMeanArr;
   if (proj) {
-    if (kind === 'fund') {
-      projMeanArr = [...Array(labels.length).fill(null), ...proj.paths.mean];
+    const projVals = kind === 'fund'
+      ? proj.paths.mean.slice()
+      : proj.paths.mean.map(v => v / (item.computed.current_usdils || 1));
+    if (labels.length) {
+      // Anchor the projection's first point at the last historical value so the
+      // dashed projection line joins the actual line instead of starting one
+      // month later and leaving a visible gap.
+      const lastActual = dataActual[dataActual.length - 1];
+      projMeanArr = [...Array(labels.length - 1).fill(null), lastActual, ...projVals];
     } else {
-      const fx = item.computed.current_usdils || 1;
-      projMeanArr = [...Array(labels.length).fill(null), ...proj.paths.mean.map(v => v / fx)];
+      projMeanArr = projVals;
     }
   } else {
     projMeanArr = [];
