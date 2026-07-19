@@ -1267,6 +1267,7 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         except (TypeError, ValueError):
             actual_fee_period = None
     corrected_total_fee = actual_fee_amount  # None when no correction set
+    fee_deducted_to_date = 0.0  # fees that actually reduced the fund balance
     expanded_events_all = []  # for UI
 
     for period in period_iter(anchor_period, last_period):
@@ -1348,10 +1349,23 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
                 v -= period_fee
         else:
             v = start_balance
+        # Track the fees that actually reduced the fund: the balance fee only
+        # when it was deducted, plus deposit fees (which always shrink the net
+        # contribution that enters the fund).
+        if deduct_balance_fee and fee_pct is not None:
+            fee_deducted_to_date += period_fee
+        fee_deducted_to_date += period_deposit_fee
         # Accrue estimated fees on top of a corrected baseline once we pass the
         # correction's as-of period (before it, the reported total stands alone).
         if corrected_total_fee is not None and actual_fee_period is not None and period > actual_fee_period:
             corrected_total_fee += period_fee + period_deposit_fee
+        # A fee correction also reconciles the fund balance at its as-of period:
+        # swap the fees the app deducted so far for the user's actual figure, so
+        # an over/under-charged estimate no longer distorts the balance (and its
+        # future compounding). Only meaningful when fees were actually deducted.
+        if (actual_fee_amount is not None and actual_fee_period is not None
+                and period == actual_fee_period and fee_deducted_to_date > 0):
+            v += fee_deducted_to_date - actual_fee_amount
         # Apply deposits/withdrawals AFTER compounding (end-of-period semantics).
         v += delta_post
         # Corrections still override the balance entirely.

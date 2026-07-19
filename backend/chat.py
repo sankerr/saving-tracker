@@ -206,9 +206,12 @@ def _holding_summary(h: dict, kind: str) -> dict:
                     "The estimate is derived from user-entered fee rates. The user may also "
                     "record an actual total fee from a statement as of a date "
                     "(actual_total_fee_as_of); from that date the estimate accrues on top of it, "
-                    "so corrected_total_fee_ils is the best running total when present. When fee "
-                    "rates are set, the published yield is treated as GROSS for this holding "
-                    "(overrides yield_is_net_of_fees). Remind the user to verify against official statements.",
+                    "so corrected_total_fee_ils is the best running total when present. When fees "
+                    "are actually deducted, this correction also reconciles the fund balance at "
+                    "the as-of date (swapping the app's estimated fees for the actual), so the "
+                    "current_value reflects it. When fee rates are set, the published yield is "
+                    "treated as GROSS for this holding (overrides yield_is_net_of_fees). "
+                    "Remind the user to verify against official statements.",
             "effective_balance_fee_pct_annual": _round_or_none(eff.get("balance_pct"), 4),
             "effective_deposit_fee_pct": _round_or_none(eff.get("deposit_pct"), 4),
             "estimated_cumulative_balance_fee_ils": _round_or_none(cum_mgmt),
