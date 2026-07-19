@@ -106,6 +106,55 @@ If the user already exists (created by Render on first boot), the script updates
 
 ## Local development
 
+For local dev you don't need Neon/Postgres. When `DATABASE_URL` is **empty**, the
+backend uses an embedded **SQLite** database (an "H2-style" local DB) stored in a
+single file at `backend/local.db` — created automatically, nothing to install or
+run. On first boot in this mode it also seeds a ready-to-use dev login.
+
+### Quick start (zero setup, auto-created init user)
+
+```bash
+cd backend
+pip install -r requirements.txt   # psycopg2 is only needed for the Postgres backend
+
+python3 saving_tracker.py
+```
+
+That's it. On first run you'll see:
+
+```
+storage: local SQLite at .../backend/local.db
+Seeding local dev admin: dev@example.com / devpass123
+```
+
+The init user is created automatically:
+
+| Field | Value |
+|-------|-------|
+| Username | `dev@example.com` |
+| Password | `devpass123` |
+
+`SESSION_SECRET` defaults to an insecure dev value in SQLite mode, so no env vars
+are required. To choose your own init user instead, set `ADMIN_USERNAME` (must be
+a valid email) and `ADMIN_PASSWORD` before the first run.
+
+Then serve the frontend and log in with the credentials above:
+
+```bash
+cd frontend
+# Edit config.js: window.API_BASE = 'http://localhost:8000'
+python3 -m http.server 3000
+```
+
+Open http://localhost:3000 and sign in.
+
+To reset local data, delete the DB file: `rm backend/local.db`.
+
+### Local dev against real Postgres (optional)
+
+Set `DATABASE_URL` to a Postgres connection string to use the production backend
+locally instead of SQLite:
+
 ```bash
 cd backend
 pip install -r requirements.txt
@@ -113,17 +162,15 @@ pip install -r requirements.txt
 export DATABASE_URL='postgresql://...'
 export SESSION_SECRET='dev-secret-change-me'
 export CORS_ORIGIN='http://localhost:3000'
-export ADMIN_USERNAME='dev'
+export ADMIN_USERNAME='you@example.com'
 export ADMIN_PASSWORD='dev'
 
 python3 saving_tracker.py
 ```
 
-```bash
-cd frontend
-# Edit config.js: window.API_BASE = 'http://localhost:8000'
-python3 -m http.server 3000
-```
+> The SQLite backend is for local development only. Production runs on PostgreSQL
+> (Neon); a custom SQLite file path can be set with `LOCAL_DB_PATH` or
+> `DATABASE_URL='sqlite:////absolute/path.db'`.
 
 ## API auth
 

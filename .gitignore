@@ -7,6 +7,10 @@ venv/
 # Data (local migration source only)
 data/
 
+# Local dev database (SQLite backend)
+*.db
+backend/local.db
+
 # IDE
 .idea/
 .vscode/
