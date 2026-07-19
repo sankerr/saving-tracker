@@ -272,10 +272,17 @@ def save_market():
 
 def bootstrap_storage() -> None:
     global MARKET
-    if not db.DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is required")
+    # Storage backend: real Postgres (Neon/Render) when DATABASE_URL is set,
+    # otherwise an embedded local SQLite file for zero-setup local development.
+    if db.IS_SQLITE:
+        print(f"storage: local SQLite at {db.sqlite_path()}")
     if not auth.SESSION_SECRET:
-        raise RuntimeError("SESSION_SECRET is required")
+        if db.IS_SQLITE:
+            auth.SESSION_SECRET = "local-dev-insecure-secret"
+            print("WARNING: SESSION_SECRET not set — using an insecure local dev "
+                  "secret (SQLite mode). Do NOT use this in production.")
+        else:
+            raise RuntimeError("SESSION_SECRET is required")
 
     db.init_schema()
 
@@ -300,6 +307,12 @@ def bootstrap_storage() -> None:
     if db.user_count() == 0:
         username = os.environ.get("ADMIN_USERNAME", "").strip()
         password = os.environ.get("ADMIN_PASSWORD", "")
+        # Local SQLite mode: seed a default dev admin so the app is usable with
+        # a single command. Production (Postgres) still requires explicit creds.
+        if (not username or not password) and db.IS_SQLITE:
+            username = username or "dev@example.com"
+            password = password or "devpass123"
+            print(f"Seeding local dev admin: {username} / {password}")
         if not username or not password:
             raise RuntimeError(
                 "No users in database. Set ADMIN_USERNAME and ADMIN_PASSWORD for first boot."
