@@ -600,6 +600,20 @@ html[dir="rtl"] .ai-insight__body ul { padding-right: 1.125rem; padding-left: 0;
 }
 .event-form input, .event-form select { width: 100%; }
 
+.events-details { margin-top: 1.25rem; }
+.events-summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.5rem;
+  font-family: var(--font-display); font-size: 0.9375rem; font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+.events-summary::-webkit-details-marker { display: none; }
+.events-summary::before {
+  content: '▸'; color: var(--color-muted); font-size: 0.8em; transition: transform 150ms ease;
+}
+.events-details[open] > .events-summary::before { transform: rotate(90deg); }
+html[dir="rtl"] .events-summary::before { content: '◂'; }
+html[dir="rtl"] .events-details[open] > .events-summary::before { transform: rotate(-90deg); }
+
 .badge {
   display: inline-block; padding: 0.0625rem 0.4rem; border-radius: 999px;
   font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em;
@@ -3330,7 +3344,8 @@ function renderFundDetail(h) {
 
     ${renderFeeSection(h)}
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.events')} <span class="h2-count">${expanded.length}</span></h3>
+    <details class="events-details"${expanded.length ? '' : ' open'}>
+    <summary class="events-summary">${t('detail.events')} <span class="h2-count">${expanded.length}</span></summary>
     ${expanded.length ? `<div style="overflow-x:auto"><table class="event-table">
       <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('table.amount')}</th><th>${t('table.source')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${expanded.map(e => {
@@ -3345,6 +3360,7 @@ function renderFundDetail(h) {
         </tr>`;
       }).join('')}</tbody>
     </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noEvents')}</p>`}
+    </details>
     <div class="event-form">
       <div class="field"><label>${t('table.date')}</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
