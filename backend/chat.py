@@ -199,19 +199,24 @@ def _holding_summary(h: dict, kind: str) -> dict:
     cum_mgmt = computed.get("cumulative_mgmt_fee_ils")
     cum_dep = computed.get("cumulative_deposit_fee_ils")
     actual_total = computed.get("actual_total_fee_ils")
+    corrected_total = computed.get("corrected_total_fee_ils")
     if fee_schedule or eff or cum_mgmt or cum_dep or actual_total is not None:
         out["user_mgmt_fees"] = {
-            "note": "Both figures are USER-supplied — NOT authoritative fund/insurer data. "
-                    "The estimate is derived from user-entered fee rates; the actual total is a "
-                    "correction the user typed in from a statement. When fee rates are set, the "
-                    "published yield is treated as GROSS for this holding (overrides "
-                    "yield_is_net_of_fees). Remind the user to verify against official statements.",
+            "note": "All figures are USER-supplied — NOT authoritative fund/insurer data. "
+                    "The estimate is derived from user-entered fee rates. The user may also "
+                    "record an actual total fee from a statement as of a date "
+                    "(actual_total_fee_as_of); from that date the estimate accrues on top of it, "
+                    "so corrected_total_fee_ils is the best running total when present. When fee "
+                    "rates are set, the published yield is treated as GROSS for this holding "
+                    "(overrides yield_is_net_of_fees). Remind the user to verify against official statements.",
             "effective_balance_fee_pct_annual": _round_or_none(eff.get("balance_pct"), 4),
             "effective_deposit_fee_pct": _round_or_none(eff.get("deposit_pct"), 4),
             "estimated_cumulative_balance_fee_ils": _round_or_none(cum_mgmt),
             "estimated_cumulative_deposit_fee_ils": _round_or_none(cum_dep),
             "estimated_total_fee_ils": _round_or_none(computed.get("estimated_total_fee_ils")),
             "actual_total_fee_ils": _round_or_none(actual_total),
+            "actual_total_fee_as_of": computed.get("actual_total_fee_date"),
+            "corrected_total_fee_ils": _round_or_none(corrected_total),
             "fee_change_points": len(fee_schedule),
         }
     return out

@@ -1255,6 +1255,18 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     employer_total = 0.0
     cumulative_mgmt_fee = 0.0     # estimated דמי ניהול מצבירה (balance fee) paid
     cumulative_deposit_fee = 0.0  # estimated דמי ניהול מהפקדה (deposit fee) paid
+    # Actual-total-fee correction (mirrors a balance correction): the user
+    # reports the real cumulative fee charged as of a statement date; from that
+    # period on the estimate accrues ON TOP of the corrected baseline.
+    actual_fee_amount = holding.get("actual_total_fee_ils")
+    actual_fee_date = holding.get("actual_total_fee_date")
+    actual_fee_period = None
+    if actual_fee_date:
+        try:
+            actual_fee_period = date_period(date.fromisoformat(actual_fee_date))
+        except (TypeError, ValueError):
+            actual_fee_period = None
+    corrected_total_fee = actual_fee_amount  # None when no correction set
     expanded_events_all = []  # for UI
 
     for period in period_iter(anchor_period, last_period):
@@ -1336,6 +1348,10 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
                 v -= period_fee
         else:
             v = start_balance
+        # Accrue estimated fees on top of a corrected baseline once we pass the
+        # correction's as-of period (before it, the reported total stands alone).
+        if corrected_total_fee is not None and actual_fee_period is not None and period > actual_fee_period:
+            corrected_total_fee += period_fee + period_deposit_fee
         # Apply deposits/withdrawals AFTER compounding (end-of-period semantics).
         v += delta_post
         # Corrections still override the balance entirely.
@@ -1443,7 +1459,9 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         "cumulative_mgmt_fee_ils": round(cumulative_mgmt_fee, 2),
         "cumulative_deposit_fee_ils": round(cumulative_deposit_fee, 2),
         "estimated_total_fee_ils": round(cumulative_mgmt_fee + cumulative_deposit_fee, 2),
-        "actual_total_fee_ils": holding.get("actual_total_fee_ils"),
+        "actual_total_fee_ils": actual_fee_amount,
+        "actual_total_fee_date": actual_fee_date,
+        "corrected_total_fee_ils": round(corrected_total_fee, 2) if corrected_total_fee is not None else None,
         "effective_fee": applicable_fee_for_period(fee_schedule, last_actual or anchor_period),
         "profit_ils": round(profit, 2),
         "profit_pct": profit_pct,
@@ -3042,6 +3060,7 @@ def add_fund_holding(payload: dict) -> dict:
         "recurring_rules": [],
         "fee_schedule": _initial_fee_schedule(payload, anchor_period),
         "actual_total_fee_ils": None,
+        "actual_total_fee_date": None,
         "archived": False,
         "included_in_dashboard": True,
     }
@@ -3113,6 +3132,18 @@ def _clean_actual_fee(val):
     if f < 0:
         return None, "actual total fee cannot be negative"
     return round(f, 2), None
+
+
+def _clean_actual_fee_date(val):
+    """Parse the as-of statement date for an actual-fee correction.
+    Blank/None means "not set" -> (None, None)."""
+    if val is None or val == "":
+        return None, None
+    try:
+        date.fromisoformat(val)
+    except (TypeError, ValueError):
+        return None, "actual total fee date must be YYYY-MM-DD"
+    return val, None
 
 
 def _validate_fee_payload(payload: dict) -> tuple:
@@ -3315,6 +3346,11 @@ def update_fund_holding(holding_id: str, patch: dict) -> dict:
                     if err:
                         return {"ok": False, "error": err}
                     h["actual_total_fee_ils"] = cleaned
+                if "actual_total_fee_date" in patch:
+                    cleaned_date, err = _clean_actual_fee_date(patch["actual_total_fee_date"])
+                    if err:
+                        return {"ok": False, "error": err}
+                    h["actual_total_fee_date"] = cleaned_date
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Holding not found"}
@@ -3399,6 +3435,7 @@ def add_pension_holding(payload: dict) -> dict:
         "recurring_rules": [],
         "fee_schedule": _initial_fee_schedule(payload, anchor_period),
         "actual_total_fee_ils": None,
+        "actual_total_fee_date": None,
         "archived": False,
     }
     with _data_lock:
@@ -3419,6 +3456,11 @@ def update_pension_holding(holding_id: str, patch: dict) -> dict:
                     if err:
                         return {"ok": False, "error": err}
                     h["actual_total_fee_ils"] = cleaned
+                if "actual_total_fee_date" in patch:
+                    cleaned_date, err = _clean_actual_fee_date(patch["actual_total_fee_date"])
+                    if err:
+                        return {"ok": False, "error": err}
+                    h["actual_total_fee_date"] = cleaned_date
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Pension holding not found"}
