@@ -600,19 +600,19 @@ html[dir="rtl"] .ai-insight__body ul { padding-right: 1.125rem; padding-left: 0;
 }
 .event-form input, .event-form select { width: 100%; }
 
-.events-details { margin-top: 1.25rem; }
-.events-summary {
+.collapse-section { margin-top: 1.25rem; }
+.collapse-summary {
   cursor: pointer; list-style: none; display: flex; align-items: center; gap: 0.5rem;
   font-family: var(--font-display); font-size: 0.9375rem; font-weight: 600;
   margin: 0 0 0.4rem;
 }
-.events-summary::-webkit-details-marker { display: none; }
-.events-summary::before {
+.collapse-summary::-webkit-details-marker { display: none; }
+.collapse-summary::before {
   content: '▸'; color: var(--color-muted); font-size: 0.8em; transition: transform 150ms ease;
 }
-.events-details[open] > .events-summary::before { transform: rotate(90deg); }
-html[dir="rtl"] .events-summary::before { content: '◂'; }
-html[dir="rtl"] .events-details[open] > .events-summary::before { transform: rotate(-90deg); }
+.collapse-section[open] > .collapse-summary::before { transform: rotate(90deg); }
+html[dir="rtl"] .collapse-summary::before { content: '◂'; }
+html[dir="rtl"] .collapse-section[open] > .collapse-summary::before { transform: rotate(-90deg); }
 
 .badge {
   display: inline-block; padding: 0.0625rem 0.4rem; border-radius: 999px;
@@ -3293,6 +3293,8 @@ function renderFundDetail(h) {
   const emprTotal = c.total_employer_ils || 0;
   return `
   <div class="holding-row__detail">
+    <details class="collapse-section" style="margin-top:0">
+    <summary class="collapse-summary">${t('detail.moreDetails')}</summary>
     <dl class="detail-grid">
       <div><dt>${t('detail.anchorPeriod')}</dt><dd>${periodLabel(h.anchor_period)}</dd></div>
       <div><dt>${t('detail.anchorBalance')}</dt><dd>${fmtILS.format(h.anchor_balance_ils || 0)}</dd></div>
@@ -3316,6 +3318,7 @@ function renderFundDetail(h) {
     </dl>
 
     ${c.fund_metrics ? renderFundMetrics(c.fund_metrics) : ''}
+    </details>
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-fund-${h.id}"></canvas></div>
     <p class="chart-caption projection-mean-caption" data-projection-caption-for="detail-fund-${h.id}" hidden></p>
 
@@ -3344,8 +3347,8 @@ function renderFundDetail(h) {
 
     ${renderFeeSection(h)}
 
-    <details class="events-details"${expanded.length ? '' : ' open'}>
-    <summary class="events-summary">${t('detail.events')} <span class="h2-count">${expanded.length}</span></summary>
+    <details class="collapse-section"${expanded.length ? '' : ' open'}>
+    <summary class="collapse-summary">${t('detail.events')} <span class="h2-count">${expanded.length}</span></summary>
     ${expanded.length ? `<div style="overflow-x:auto"><table class="event-table">
       <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('table.amount')}</th><th>${t('table.source')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${expanded.map(e => {
