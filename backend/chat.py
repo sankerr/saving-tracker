@@ -54,7 +54,7 @@ When asked what the app can do / how to use it:
 Guidelines:
 - Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP.
 - Suggest concrete educational improvements when asked (allocation, concentration, contributions, vesting, growth assumptions). Keep replies concise.
-- Management fees: users can now enter their OWN management fees per holding — an annual balance fee (דמי ניהול מצבירה) and a per-deposit fee (דמי ניהול מהפקדה), as effective-dated change points. When set, the app estimates fees paid (see `user_mgmt_fees` in context) and factors them into value/projections. Treat these as USER-ENTERED ESTIMATES ONLY, NOT the actual fees charged by the fund/insurer — whenever you mention them, remind the user to verify against official statements. If no fee is set for a holding, it has no `user_mgmt_fees` and values fall back to the published (usually net-of-fees) yield.
+- Management fees: users can now enter their OWN management fees per holding — an annual balance fee (דמי ניהול מצבירה) and a per-deposit fee (דמי ניהול מהפקדה), as effective-dated change points. When set, the app estimates fees paid (see `user_mgmt_fees` in context) and factors them into value/projections. Users can also type in an `actual_total_fee_ils` correction from their statement; when present, treat it as the more reliable total and the `estimated_*` figures as the app's approximation. Both are USER-SUPPLIED, NOT authoritative fund/insurer data — whenever you mention them, remind the user to verify against official statements. If no fee is set for a holding, it has no `user_mgmt_fees` and values fall back to the published (usually net-of-fees) yield.
 - Match the user's language (Hebrew or English).
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
 - This app does not model Israeli tax. Dashboard total excludes pension (tracked separately)."""
@@ -198,15 +198,20 @@ def _holding_summary(h: dict, kind: str) -> dict:
     eff = computed.get("effective_fee") or {}
     cum_mgmt = computed.get("cumulative_mgmt_fee_ils")
     cum_dep = computed.get("cumulative_deposit_fee_ils")
-    if fee_schedule or eff or cum_mgmt or cum_dep:
+    actual_total = computed.get("actual_total_fee_ils")
+    if fee_schedule or eff or cum_mgmt or cum_dep or actual_total is not None:
         out["user_mgmt_fees"] = {
-            "note": "User-entered estimate — NOT the actual fee charged by the fund/insurer. "
-                    "Verify against official statements. When set, the published yield is "
-                    "treated as GROSS for this holding (overrides yield_is_net_of_fees).",
+            "note": "Both figures are USER-supplied — NOT authoritative fund/insurer data. "
+                    "The estimate is derived from user-entered fee rates; the actual total is a "
+                    "correction the user typed in from a statement. When fee rates are set, the "
+                    "published yield is treated as GROSS for this holding (overrides "
+                    "yield_is_net_of_fees). Remind the user to verify against official statements.",
             "effective_balance_fee_pct_annual": _round_or_none(eff.get("balance_pct"), 4),
             "effective_deposit_fee_pct": _round_or_none(eff.get("deposit_pct"), 4),
             "estimated_cumulative_balance_fee_ils": _round_or_none(cum_mgmt),
             "estimated_cumulative_deposit_fee_ils": _round_or_none(cum_dep),
+            "estimated_total_fee_ils": _round_or_none(computed.get("estimated_total_fee_ils")),
+            "actual_total_fee_ils": _round_or_none(actual_total),
             "fee_change_points": len(fee_schedule),
         }
     return out

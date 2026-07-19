@@ -1442,6 +1442,8 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         "total_employer_ils": round(employer_total, 2),
         "cumulative_mgmt_fee_ils": round(cumulative_mgmt_fee, 2),
         "cumulative_deposit_fee_ils": round(cumulative_deposit_fee, 2),
+        "estimated_total_fee_ils": round(cumulative_mgmt_fee + cumulative_deposit_fee, 2),
+        "actual_total_fee_ils": holding.get("actual_total_fee_ils"),
         "effective_fee": applicable_fee_for_period(fee_schedule, last_actual or anchor_period),
         "profit_ils": round(profit, 2),
         "profit_pct": profit_pct,
@@ -3039,6 +3041,7 @@ def add_fund_holding(payload: dict) -> dict:
         "events": [],
         "recurring_rules": [],
         "fee_schedule": _initial_fee_schedule(payload, anchor_period),
+        "actual_total_fee_ils": None,
         "archived": False,
         "included_in_dashboard": True,
     }
@@ -3096,6 +3099,20 @@ def _clean_fee_pct(val):
     if f < 0 or f > 100:
         return None, "fee must be between 0 and 100"
     return f, None
+
+
+def _clean_actual_fee(val):
+    """Parse an actual total fee amount in ILS (from a statement).
+    Blank/None means "not set / clear the correction" -> (None, None)."""
+    if val is None or val == "":
+        return None, None
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return None, "actual total fee must be a number"
+    if f < 0:
+        return None, "actual total fee cannot be negative"
+    return round(f, 2), None
 
 
 def _validate_fee_payload(payload: dict) -> tuple:
@@ -3293,6 +3310,11 @@ def update_fund_holding(holding_id: str, patch: dict) -> dict:
                 for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived", "included_in_dashboard"):
                     if k in patch:
                         h[k] = patch[k]
+                if "actual_total_fee_ils" in patch:
+                    cleaned, err = _clean_actual_fee(patch["actual_total_fee_ils"])
+                    if err:
+                        return {"ok": False, "error": err}
+                    h["actual_total_fee_ils"] = cleaned
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Holding not found"}
@@ -3376,6 +3398,7 @@ def add_pension_holding(payload: dict) -> dict:
         "events": [],
         "recurring_rules": [],
         "fee_schedule": _initial_fee_schedule(payload, anchor_period),
+        "actual_total_fee_ils": None,
         "archived": False,
     }
     with _data_lock:
@@ -3391,6 +3414,11 @@ def update_pension_holding(holding_id: str, patch: dict) -> dict:
                 for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived"):
                     if k in patch:
                         h[k] = patch[k]
+                if "actual_total_fee_ils" in patch:
+                    cleaned, err = _clean_actual_fee(patch["actual_total_fee_ils"])
+                    if err:
+                        return {"ok": False, "error": err}
+                    h["actual_total_fee_ils"] = cleaned
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Pension holding not found"}

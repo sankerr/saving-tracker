@@ -3287,6 +3287,7 @@ function renderFundDetail(h) {
       <div><dt>${t('detail.withdrawn')}</dt><dd>${fmtILS.format(c.total_withdrawn_ils || 0)}</dd></div>
       <div><dt title="${escapeHtml(t('detail.mgmtFeesTitle'))}">${t('detail.mgmtFeesPaid')}</dt><dd>${fmtILS.format(c.cumulative_mgmt_fee_ils || 0)}</dd></div>
       <div><dt title="${escapeHtml(t('detail.depositFeesTitle'))}">${t('detail.depositFeesPaid')}</dt><dd>${fmtILS.format(c.cumulative_deposit_fee_ils || 0)}</dd></div>
+      ${c.actual_total_fee_ils != null ? `<div><dt title="${escapeHtml(t('fee.actualTotalTitle'))}">${t('fee.actualTotal')}</dt><dd>${fmtILS.format(c.actual_total_fee_ils)}</dd></div>` : ''}
       <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(h.last_synced)}</dd></div>
     </dl>
 
@@ -3460,6 +3461,18 @@ function renderFeeSection(h) {
           <button class="btn btn--primary btn--small" data-fee-save="${h.id}">${t('fee.saveFee')}</button>
         </div>
       </div>
+    </div>
+    <div class="add-panel" style="margin-top:0.6rem">
+      <p style="color:var(--color-muted); font-size: 0.8125rem; margin: 0 0 0.4rem;">
+        ${t('fee.estimatedTotal')}: <strong>${fmtILS.format(c.estimated_total_fee_ils || 0)}</strong>${c.actual_total_fee_ils != null ? ` · ${t('fee.actualTotal')}: <strong>${fmtILS.format(c.actual_total_fee_ils)}</strong>` : ''}
+      </p>
+      <div class="field">
+        <label>${t('fee.actualTotalLabel')}</label>
+        <input type="number" id="actual-fee-${h.id}" min="0" step="0.01" value="${c.actual_total_fee_ils ?? ''}" placeholder="${t('fee.actualTotalPlaceholder')}">
+      </div>
+      <div class="actions-row" style="justify-content:flex-start; margin-top:0.4rem">
+        <button class="btn btn--primary btn--small" data-actual-fee-save="${h.id}">${t('fee.saveActual')}</button>
+      </div>
     </div>`;
 }
 
@@ -3582,6 +3595,7 @@ function renderPensionDetail(h) {
       <div><dt>${t('detail.fromRules')}</dt><dd style="font-size:0.875rem">${fmtILS.format(empTotal)} / ${fmtILS.format(emprTotal)}</dd></div>
       <div><dt title="${escapeHtml(t('detail.mgmtFeesTitle'))}">${t('detail.mgmtFeesPaid')}</dt><dd>${fmtILS.format(c.cumulative_mgmt_fee_ils || 0)}</dd></div>
       <div><dt title="${escapeHtml(t('detail.depositFeesTitle'))}">${t('detail.depositFeesPaid')}</dt><dd>${fmtILS.format(c.cumulative_deposit_fee_ils || 0)}</dd></div>
+      ${c.actual_total_fee_ils != null ? `<div><dt title="${escapeHtml(t('fee.actualTotalTitle'))}">${t('fee.actualTotal')}</dt><dd>${fmtILS.format(c.actual_total_fee_ils)}</dd></div>` : ''}
       <div><dt>${t('detail.classification')}</dt><dd dir="auto">${escapeHtml(h.classification_snapshot || '—')}</dd></div>
       <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(h.last_synced)}</dd></div>
     </dl>
@@ -5818,6 +5832,17 @@ function init() {
         document.getElementById(`fee-form-${hid}`).hidden = true;
         fetchData();
       } else toast(j.error || t('common.failed'), 'error');
+      return;
+    }
+    const actualFeeBtn = e.target.closest('[data-actual-fee-save]');
+    if (actualFeeBtn) {
+      const hid = actualFeeBtn.dataset.actualFeeSave;
+      const raw = document.getElementById(`actual-fee-${hid}`).value;
+      const j = await api('PATCH', `${ruleHoldingBaseUrl(hid)}/${hid}`, {
+        actual_total_fee_ils: raw === '' ? null : +raw,
+      });
+      if (j.ok) { toast(t('toast.actualFeeSaved'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const feeDelBtn = e.target.closest('[data-fee-del]');
