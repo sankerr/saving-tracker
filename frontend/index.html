@@ -1134,6 +1134,23 @@ html[dir="rtl"] .collapse-section[open] > .collapse-summary::before { transform:
   color: var(--color-danger); font-size: 0.875rem;
   margin-bottom: 1rem; min-height: 1.25rem;
 }
+.beta-badge {
+  display: inline-block;
+  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  color: var(--color-primary);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  vertical-align: middle; margin-inline-start: 0.5rem;
+}
+.login-beta {
+  margin: 1rem 0 0; padding: 0.75rem 0.85rem;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 0.8125rem; line-height: 1.5; color: var(--color-muted);
+}
+.login-beta strong { color: var(--color-text); }
 .tour-link {
   font-size: 0.8125rem; font-weight: 600;
   color: var(--color-primary);
@@ -1649,6 +1666,7 @@ html[dir="rtl"] .chat-panel {
       <button type="button" class="btn btn--ghost btn--small" data-lang-toggle id="login-lang-toggle">עב</button>
     </div>
     <h2 id="auth-title" data-i18n="auth.title.login">Sign in</h2>
+    <span class="beta-badge" data-i18n="auth.betaBadge" style="margin:0 0 0.75rem;margin-inline-start:0;">Private Beta</span>
     <p id="auth-subtitle" data-i18n="auth.subtitle.login">Enter your email and password to access your portfolio.</p>
     <div class="login-field">
       <label for="login-username" data-i18n="auth.email">Email</label>
@@ -1665,6 +1683,9 @@ html[dir="rtl"] .chat-panel {
     </p>
     <p id="forgot-password-note" data-i18n="auth.forgotNote" style="margin:0.75rem 0 0;font-size:0.8125rem;text-align:center;color:var(--color-muted);line-height:1.45;">
       Forgot password? Sign in with a new account or ask your admin to reset it in the database.
+    </p>
+    <p class="login-beta" data-i18n="auth.betaNotice" data-i18n-html>
+      <strong>Private Beta.</strong> This is a personal development project in a closed testing phase, provided "as-is" with no uptime guarantee. Access is granted only after admin approval. Features may change and data could occasionally be reset during updates. Please don't store highly sensitive information (real bank passwords, ID numbers, etc.). For feedback or access requests, contact the administrator.
     </p>
     <p style="margin:1rem 0 0;padding-top:0.85rem;border-top:1px solid var(--color-border);text-align:center;">
       <a href="presentation/" id="tour-link" class="tour-link" data-i18n="auth.viewTour" target="_blank" rel="noopener">New here? Take a 2-minute tour →</a>
@@ -1703,6 +1724,7 @@ html[dir="rtl"] .chat-panel {
       <p class="disclaimer__intro" data-i18n="hero.subtitle">A personal portfolio notebook for Israeli pension/provident funds (gemelnet), RSU grants, ESPP, and cash — built for private tracking, not professional use.</p>
       <p class="disclaimer-banner__title" data-i18n="disclaimer.title">Important — read before using</p>
       <ul>
+        <li data-i18n="disclaimer.item.beta" data-i18n-html><strong>Private beta.</strong> This is a personal project in a closed testing phase, provided "as-is" with no uptime guarantee. Features may change and data could occasionally be reset during updates. Please don't store highly sensitive personal or financial details (e.g. real bank passwords or ID numbers).</li>
         <li data-i18n="disclaimer.item.personalUse" data-i18n-html><strong>Personal use only.</strong> This app is a hobby tool for tracking your own savings. It is not a commercial product, regulated financial service, or substitute for a licensed advisor.</li>
         <li data-i18n="disclaimer.item.notAdvice" data-i18n-html><strong>Not financial, investment, tax, or legal advice.</strong> All figures, charts, and projections are informational estimates. Do not make real-world decisions based solely on this app.</li>
         <li data-i18n="disclaimer.item.noTax" data-i18n-html><strong>No tax calculation.</strong> Numbers are pre-tax and nominal. Israeli tax rules (CPI adjustment, Section 102, deposit ceilings, withholding, etc.) are not modeled — consult your fund manager, accountant, or Israel Tax Authority resources.</li>
