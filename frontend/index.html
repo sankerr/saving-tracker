@@ -1693,6 +1693,7 @@ html[dir="rtl"] .chat-panel {
         <li data-i18n="disclaimer.item.notAdvice" data-i18n-html><strong>Not financial, investment, tax, or legal advice.</strong> All figures, charts, and projections are informational estimates. Do not make real-world decisions based solely on this app.</li>
         <li data-i18n="disclaimer.item.noTax" data-i18n-html><strong>No tax calculation.</strong> Numbers are pre-tax and nominal. Israeli tax rules (CPI adjustment, Section 102, deposit ceilings, withholding, etc.) are not modeled — consult your fund manager, accountant, or Israel Tax Authority resources.</li>
         <li data-i18n="disclaimer.item.dataStale" data-i18n-html><strong>Data may be wrong or stale.</strong> Fund yields come from data.gov.il; stock and FX prices from Yahoo Finance. Sources can be delayed, revised, or unavailable. Always verify against official statements.</li>
+        <li data-i18n="disclaimer.item.fees" data-i18n-html><strong>Management fees are your own estimates.</strong> Any deposit/balance management fees you enter are used to <em>estimate</em> their impact on value and projections. They are not the actual fees charged by your fund or insurer — verify the real rates against official statements.</li>
         <li data-i18n="disclaimer.item.projections" data-i18n-html><strong>Projections are not promises.</strong> Past performance and assumed growth rates do not guarantee future results. What-if scenarios are simplified models, not forecasts.</li>
         <li data-i18n="disclaimer.item.ownRisk" data-i18n-html><strong>Use at your own risk.</strong> The authors provide no warranty and accept no liability for losses or decisions arising from use of this software.</li>
         <li data-i18n="disclaimer.item.responsibility" data-i18n-html><strong>Your responsibility.</strong> You are solely responsible for the accuracy of data you enter and for keeping your login credentials secure. New accounts require admin approval before access is granted.</li>
@@ -3440,6 +3441,7 @@ function renderFeeSection(h) {
   return `
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.mgmtFeesSection')}</h3>
     <p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.2rem 0;">${t('fee.current')}: ${effText}</p>
+    <p style="color:var(--color-muted); font-size: 0.75rem; font-style: italic; margin: 0.2rem 0 0.4rem;">${t('fee.estimateNote')}</p>
     ${fees.length ? `<div class="rule-list">${fees.map(f => renderFeeRow(h.id, f)).join('')}</div>` : ''}
     <div class="actions-row" style="justify-content:flex-start; margin-top:0.5rem">
       <button class="btn btn--ghost btn--small" data-add-fee="${h.id}">${t('detail.addFeeChangePoint')}</button>
