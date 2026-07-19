@@ -54,7 +54,7 @@ When asked what the app can do / how to use it:
 Guidelines:
 - Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP.
 - Suggest concrete educational improvements when asked (allocation, concentration, contributions, vesting, growth assumptions). Keep replies concise.
-- Management fees: users can now enter their OWN management fees per holding — an annual balance fee (דמי ניהול מצבירה) and a per-deposit fee (דמי ניהול מהפקדה), as effective-dated change points. When set, the app estimates fees paid (see `user_mgmt_fees` in context) and factors them into value/projections. Users can also type in an `actual_total_fee_ils` correction from their statement; when present, treat it as the more reliable total and the `estimated_*` figures as the app's approximation. Both are USER-SUPPLIED, NOT authoritative fund/insurer data — whenever you mention them, remind the user to verify against official statements. If no fee is set for a holding, it has no `user_mgmt_fees` and values fall back to the published (usually net-of-fees) yield.
+- Do NOT discuss management fees, deposit fees, or "~mgmt fees paid" as features of this app — the app does not calculate fees for advice. Prefer allocation and growth topics instead.
 - Match the user's language (Hebrew or English).
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
 - This app does not model Israeli tax. Dashboard total excludes pension (tracked separately)."""
@@ -170,10 +170,6 @@ def _holding_summary(h: dict, kind: str) -> dict:
         "ytd_return_pct": _round_or_none(computed.get("ytd_return_pct"), 4),
         "twelve_m_return_pct": _round_or_none(computed.get("twelve_m_return_pct"), 4),
         "last_period": computed.get("last_period"),
-        "total_deposited_ils": _round_or_none(computed.get("total_deposited_ils")),
-        "total_employee_ils": _round_or_none(computed.get("total_employee_ils")),
-        "total_employer_ils": _round_or_none(computed.get("total_employer_ils")),
-        "yield_is_net_of_fees": h.get("yield_is_net_of_fees"),
     }
     if metrics:
         out["specialization"] = metrics.get("specialization")
@@ -192,36 +188,6 @@ def _holding_summary(h: dict, kind: str) -> dict:
             }
             for r in rules
         ]
-    # User-entered management fees (דמי ניהול מצבירה / מהפקדה). These are the
-    # user's OWN estimates, NOT the actual fees charged by the fund/insurer.
-    fee_schedule = h.get("fee_schedule") or []
-    eff = computed.get("effective_fee") or {}
-    cum_mgmt = computed.get("cumulative_mgmt_fee_ils")
-    cum_dep = computed.get("cumulative_deposit_fee_ils")
-    actual_total = computed.get("actual_total_fee_ils")
-    corrected_total = computed.get("corrected_total_fee_ils")
-    if fee_schedule or eff or cum_mgmt or cum_dep or actual_total is not None:
-        out["user_mgmt_fees"] = {
-            "note": "All figures are USER-supplied — NOT authoritative fund/insurer data. "
-                    "The estimate is derived from user-entered fee rates. The user may also "
-                    "record an actual total fee from a statement as of a date "
-                    "(actual_total_fee_as_of); from that date the estimate accrues on top of it, "
-                    "so corrected_total_fee_ils is the best running total when present. When fees "
-                    "are actually deducted, this correction also reconciles the fund balance at "
-                    "the as-of date (swapping the app's estimated fees for the actual), so the "
-                    "current_value reflects it. When fee rates are set, the published yield is "
-                    "treated as GROSS for this holding (overrides yield_is_net_of_fees). "
-                    "Remind the user to verify against official statements.",
-            "effective_balance_fee_pct_annual": _round_or_none(eff.get("balance_pct"), 4),
-            "effective_deposit_fee_pct": _round_or_none(eff.get("deposit_pct"), 4),
-            "estimated_cumulative_balance_fee_ils": _round_or_none(cum_mgmt),
-            "estimated_cumulative_deposit_fee_ils": _round_or_none(cum_dep),
-            "estimated_total_fee_ils": _round_or_none(computed.get("estimated_total_fee_ils")),
-            "actual_total_fee_ils": _round_or_none(actual_total),
-            "actual_total_fee_as_of": computed.get("actual_total_fee_date"),
-            "corrected_total_fee_ils": _round_or_none(corrected_total),
-            "fee_change_points": len(fee_schedule),
-        }
     return out
 
 
@@ -709,7 +675,7 @@ def run_chat(
 
 DAILY_INSIGHTS_PROMPT = """You write a short daily email insight for a personal Israeli savings tracker.
 Use ONLY the portfolio JSON provided. Educational only — not financial, tax, or legal advice.
-Focus on allocation, recent returns if present, concentration, vesting/RSU/ESPP, cash buffer, and one optional observation about growth. You may mention a holding's `user_mgmt_fees` only if notable, but state they are the user's own estimates (not the actual fees charged).
+Do NOT discuss management fees or deposit fees. Focus on allocation, recent returns if present, concentration, vesting/RSU/ESPP, cash buffer, and one optional observation about growth.
 Write 3 short bullet points (plain text with leading "- "). Max ~80 words total. Match the language of any Hebrew nicknames if the data is mostly Hebrew; otherwise English."""
 
 

@@ -272,17 +272,10 @@ def save_market():
 
 def bootstrap_storage() -> None:
     global MARKET
-    # Storage backend: real Postgres (Neon/Render) when DATABASE_URL is set,
-    # otherwise an embedded local SQLite file for zero-setup local development.
-    if db.IS_SQLITE:
-        print(f"storage: local SQLite at {db.sqlite_path()}")
+    if not db.DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is required")
     if not auth.SESSION_SECRET:
-        if db.IS_SQLITE:
-            auth.SESSION_SECRET = "local-dev-insecure-secret"
-            print("WARNING: SESSION_SECRET not set — using an insecure local dev "
-                  "secret (SQLite mode). Do NOT use this in production.")
-        else:
-            raise RuntimeError("SESSION_SECRET is required")
+        raise RuntimeError("SESSION_SECRET is required")
 
     db.init_schema()
 
@@ -307,12 +300,6 @@ def bootstrap_storage() -> None:
     if db.user_count() == 0:
         username = os.environ.get("ADMIN_USERNAME", "").strip()
         password = os.environ.get("ADMIN_PASSWORD", "")
-        # Local SQLite mode: seed a default dev admin so the app is usable with
-        # a single command. Production (Postgres) still requires explicit creds.
-        if (not username or not password) and db.IS_SQLITE:
-            username = username or "dev@example.com"
-            password = password or "devpass123"
-            print(f"Seeding local dev admin: {username} / {password}")
         if not username or not password:
             raise RuntimeError(
                 "No users in database. Set ADMIN_USERNAME and ADMIN_PASSWORD for first boot."
@@ -1189,31 +1176,6 @@ def expand_rule_for_period(rule: dict, period: int) -> dict:
     }
 
 
-# ── Management-fee schedule helpers ──────────────────────────────────────────
-def applicable_fee_for_period(fee_schedule: list, period: int):
-    """Return the fee entry in effect for `period` — the one with the greatest
-    start_date whose period is on or before `period` — or None.
-
-    Fee entries are effective-dated change points (no end_date): each entry
-    stays in effect until a later-dated entry supersedes it. This lets users
-    record discounts/renegotiations over time.
-    """
-    if not fee_schedule:
-        return None
-    candidates = []
-    for f in fee_schedule:
-        try:
-            fp = date_period(date.fromisoformat(f["start_date"]))
-        except (KeyError, ValueError, TypeError):
-            continue
-        if fp <= period:
-            candidates.append((fp, f))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return candidates[0][1]
-
-
 # ── Fund valuation ───────────────────────────────────────────────────────────
 def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     fund_id = str(holding["fund_id"])
@@ -1224,7 +1186,6 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     anchor_balance = float(holding["anchor_balance_ils"])
     yield_is_net = holding.get("yield_is_net_of_fees", DATA["settings"].get("yield_is_net_of_fees", True))
     rules = holding.get("recurring_rules", []) or []
-    fee_schedule = holding.get("fee_schedule", []) or []
 
     last_actual = max(rows_by_period.keys()) if rows_by_period else 0
     # Only walk months that have published yield data; periods beyond that are "pending".
@@ -1253,21 +1214,7 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     withdrawn = 0.0
     employee_total = 0.0
     employer_total = 0.0
-    cumulative_mgmt_fee = 0.0     # estimated דמי ניהול מצבירה (balance fee) paid
-    cumulative_deposit_fee = 0.0  # estimated דמי ניהול מהפקדה (deposit fee) paid
-    # Actual-total-fee correction (mirrors a balance correction): the user
-    # reports the real cumulative fee charged as of a statement date; from that
-    # period on the estimate accrues ON TOP of the corrected baseline.
-    actual_fee_amount = holding.get("actual_total_fee_ils")
-    actual_fee_date = holding.get("actual_total_fee_date")
-    actual_fee_period = None
-    if actual_fee_date:
-        try:
-            actual_fee_period = date_period(date.fromisoformat(actual_fee_date))
-        except (TypeError, ValueError):
-            actual_fee_period = None
-    corrected_total_fee = actual_fee_amount  # None when no correction set
-    fee_deducted_to_date = 0.0  # fees that actually reduced the fund balance
+    cumulative_mgmt_fee = 0.0   # estimated דמי ניהול מצבירה paid over the holding
     expanded_events_all = []  # for UI
 
     for period in period_iter(anchor_period, last_period):
@@ -1281,26 +1228,13 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         correction = None
         period_events = []
 
-        # Management-fee entry in effect this month (deposit fee + balance fee).
-        fee_entry = applicable_fee_for_period(fee_schedule, period)
-        deposit_fee_pct = fee_entry.get("deposit_pct") if fee_entry else None
-        period_deposit_fee = 0.0
-
         # Rule-generated event (employee/employer split tracked here only).
         rule = applicable_rule_for_period(rules, period)
         if rule:
             ve = expand_rule_for_period(rule, period)
-            amt = ve["amount_ils"]
-            if amt != 0:
-                net_amt = amt
-                if deposit_fee_pct and amt > 0:
-                    dfee = amt * (deposit_fee_pct / 100.0)
-                    net_amt = amt - dfee
-                    period_deposit_fee += dfee
-                # deposited tracks the GROSS contribution (out of pocket); only
-                # the net amount enters the fund, so the fee shows up as a cost.
-                delta_post += net_amt
-                deposited += amt
+            if ve["amount_ils"] != 0:
+                delta_post += ve["amount_ils"]
+                deposited += ve["amount_ils"]
                 employee_total += ve["employee"]
                 employer_total += ve["employer"]
                 period_events.append(ve)
@@ -1310,12 +1244,7 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
             kind = ev.get("kind")
             amt = float(ev.get("amount_ils") or 0)
             if kind == "deposit":
-                net_amt = amt
-                if deposit_fee_pct and amt > 0:
-                    dfee = amt * (deposit_fee_pct / 100.0)
-                    net_amt = amt - dfee
-                    period_deposit_fee += dfee
-                delta_post += net_amt
+                delta_post += amt
                 deposited += amt
             elif kind == "withdrawal":
                 delta_post -= amt
@@ -1324,18 +1253,11 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
                 correction = ev
             period_events.append({**ev, "synthetic": False})
 
-        cumulative_deposit_fee += period_deposit_fee
-
         start_balance = v
         row = rows_by_period.get(period)
         yield_pct = (row or {}).get("monthly_yield")
-        upstream_fee_pct = (row or {}).get("avg_annual_management_fee")
+        fee_pct = (row or {}).get("avg_annual_management_fee")
         is_pending = yield_pct is None
-        # A user-set balance fee (דמי ניהול מצבירה) in effect this month overrides
-        # the upstream average and is deducted (published yield treated as gross).
-        custom_balance_pct = fee_entry.get("balance_pct") if fee_entry else None
-        fee_pct = custom_balance_pct if custom_balance_pct is not None else upstream_fee_pct
-        deduct_balance_fee = (custom_balance_pct is not None) or (not yield_is_net)
         # Estimated management fee for this period (always tracked,
         # regardless of yield_is_net_of_fees — when net, fees are already baked
         # into yield_pct, but the absolute ₪ figure is still informative).
@@ -1345,27 +1267,10 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
             cumulative_mgmt_fee += period_fee
         if yield_pct is not None:
             v = start_balance * (1 + yield_pct / 100.0)
-            if deduct_balance_fee and (fee_pct is not None):
+            if (not yield_is_net) and (fee_pct is not None):
                 v -= period_fee
         else:
             v = start_balance
-        # Track the fees that actually reduced the fund: the balance fee only
-        # when it was deducted, plus deposit fees (which always shrink the net
-        # contribution that enters the fund).
-        if deduct_balance_fee and fee_pct is not None:
-            fee_deducted_to_date += period_fee
-        fee_deducted_to_date += period_deposit_fee
-        # Accrue estimated fees on top of a corrected baseline once we pass the
-        # correction's as-of period (before it, the reported total stands alone).
-        if corrected_total_fee is not None and actual_fee_period is not None and period > actual_fee_period:
-            corrected_total_fee += period_fee + period_deposit_fee
-        # A fee correction also reconciles the fund balance at its as-of period:
-        # swap the fees the app deducted so far for the user's actual figure, so
-        # an over/under-charged estimate no longer distorts the balance (and its
-        # future compounding). Only meaningful when fees were actually deducted.
-        if (actual_fee_amount is not None and actual_fee_period is not None
-                and period == actual_fee_period and fee_deducted_to_date > 0):
-            v += fee_deducted_to_date - actual_fee_amount
         # Apply deposits/withdrawals AFTER compounding (end-of-period semantics).
         v += delta_post
         # Corrections still override the balance entirely.
@@ -1382,8 +1287,6 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
             "yield_pct": yield_pct,
             "mgmt_fee_pct_annual": fee_pct,
             "mgmt_fee_ils": round(period_fee, 2),
-            "deposit_fee_pct": deposit_fee_pct,
-            "deposit_fee_ils": round(period_deposit_fee, 2),
             "is_anchor": False,
             "is_pending": is_pending,
             "events": period_events,
@@ -1471,12 +1374,6 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         "total_employee_ils": round(employee_total, 2),
         "total_employer_ils": round(employer_total, 2),
         "cumulative_mgmt_fee_ils": round(cumulative_mgmt_fee, 2),
-        "cumulative_deposit_fee_ils": round(cumulative_deposit_fee, 2),
-        "estimated_total_fee_ils": round(cumulative_mgmt_fee + cumulative_deposit_fee, 2),
-        "actual_total_fee_ils": actual_fee_amount,
-        "actual_total_fee_date": actual_fee_date,
-        "corrected_total_fee_ils": round(corrected_total_fee, 2) if corrected_total_fee is not None else None,
-        "effective_fee": applicable_fee_for_period(fee_schedule, last_actual or anchor_period),
         "profit_ils": round(profit, 2),
         "profit_pct": profit_pct,
         "three_m_return_pct": three_m,
@@ -1938,13 +1835,10 @@ def value_rsu(grant: dict) -> dict:
 
 # ── Projection (deterministic mean) ──────────────────────────────────────────
 def project_returns(returns: list, current: float, horizon_months: int,
-                    contributions_per_month: list = None,
-                    monthly_fee_drag: float = 0.0) -> dict:
+                    contributions_per_month: list = None) -> dict:
     """Project the mean monthly-return path. If contributions_per_month is
     provided (length must equal horizon_months), each future month adds that
-    contribution BEFORE compounding — i.e. dollar-cost-averaging math.
-    `monthly_fee_drag` (a fraction, e.g. 0.005/12) is subtracted from the
-    monthly return to model a user-set balance management fee."""
+    contribution BEFORE compounding — i.e. dollar-cost-averaging math."""
     if not returns or len(returns) < 6:
         return None
     mu = statistics.mean(returns)
@@ -1953,14 +1847,13 @@ def project_returns(returns: list, current: float, horizon_months: int,
     if len(contribs) < horizon_months:
         contribs = list(contribs) + [0.0] * (horizon_months - len(contribs))
 
-    drag = float(monthly_fee_drag or 0.0)
     paths = {"mean": []}
     cur_mean = current
     total_contrib = 0.0
     for t in range(horizon_months):
         c = float(contribs[t] or 0.0)
         total_contrib += c
-        cur_mean = (cur_mean + c) * (1 + mu - drag)
+        cur_mean = (cur_mean + c) * (1 + mu)
         paths["mean"].append(round(cur_mean, 2))
     annual_pct = round(((1 + mu) ** 12 - 1) * 100.0, 2) if returns else None
     return {
@@ -1981,7 +1874,6 @@ def _project_fund_contributions(holding: dict, computed: dict, horizon_months: i
     rules = holding.get("recurring_rules", []) or []
     if not rules:
         return [0.0] * horizon_months
-    fee_schedule = holding.get("fee_schedule", []) or []
     last_period = int(computed.get("last_period") or holding["anchor_period"])
     contribs = []
     p = last_period
@@ -1995,26 +1887,10 @@ def _project_fund_contributions(holding: dict, computed: dict, horizon_months: i
         rule = applicable_rule_for_period(rules, p)
         if rule:
             c = float(rule.get("employee") or 0) + float(rule.get("employer") or 0)
-            # Reduce future contributions by the deposit fee in effect that month.
-            fee_entry = applicable_fee_for_period(fee_schedule, p)
-            dpct = fee_entry.get("deposit_pct") if fee_entry else None
-            if dpct:
-                c *= (1 - dpct / 100.0)
         else:
             c = 0.0
         contribs.append(c)
     return contribs
-
-
-def _holding_balance_fee_drag(holding: dict, computed: dict) -> float:
-    """Monthly balance-fee drag (fraction) from the currently-effective fee
-    entry, used to model a user-set balance management fee in projections."""
-    fee_schedule = holding.get("fee_schedule", []) or []
-    ref_period = int(computed.get("last_period") or holding["anchor_period"])
-    fee_entry = applicable_fee_for_period(fee_schedule, ref_period)
-    if fee_entry and fee_entry.get("balance_pct") is not None:
-        return fee_entry["balance_pct"] / 100.0 / 12.0
-    return 0.0
 
 
 def project_fund(holding: dict, computed: dict, horizon_months: int, source: str = "gemelnet") -> dict:
@@ -2022,9 +1898,7 @@ def project_fund(holding: dict, computed: dict, horizon_months: int, source: str
     rows = MARKET.get(monthly_key, {}).get(str(holding["fund_id"]), {}).get("rows", [])
     returns = [r["monthly_yield"] / 100.0 for r in rows if r.get("monthly_yield") is not None]
     contribs = _project_fund_contributions(holding, computed, horizon_months)
-    drag = _holding_balance_fee_drag(holding, computed)
-    return project_returns(returns, computed["current_value_ils"], horizon_months, contribs,
-                           monthly_fee_drag=drag)
+    return project_returns(returns, computed["current_value_ils"], horizon_months, contribs)
 
 
 def what_if_fund(holding: dict, computed: dict, annual_pct, horizon_months: int) -> dict:
@@ -2033,13 +1907,11 @@ def what_if_fund(holding: dict, computed: dict, annual_pct, horizon_months: int)
     if annual_pct is None:
         return None
     contribs = _project_fund_contributions(holding, computed, horizon_months)
-    drag = _holding_balance_fee_drag(holding, computed)
     return compose_portfolio_what_if(
         computed.get("current_value_ils") or 0.0,
         annual_pct,
         horizon_months,
         contribs,
-        monthly_fee_drag=drag,
     )
 
 
@@ -2660,8 +2532,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
 
 def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_months: int,
                               monthly_recurring: list = None,
-                              deterministic_per_month: list = None,
-                              monthly_fee_drag: float = 0.0) -> dict:
+                              deterministic_per_month: list = None) -> dict:
     """Deterministic what-if compounding at annual_pct/year on `current_total`,
     with optional per-month recurring contributions added before each month's
     compounding, plus an optional deterministic per-month addition that bypasses
@@ -2678,7 +2549,6 @@ def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_m
     if 1 + annual <= 0:
         return None
     monthly = (1 + annual) ** (1 / 12) - 1
-    drag = float(monthly_fee_drag or 0.0)
     contribs = monthly_recurring or [0.0] * horizon_months
     if len(contribs) < horizon_months:
         contribs = list(contribs) + [0.0] * (horizon_months - len(contribs))
@@ -2691,7 +2561,7 @@ def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_m
     for t in range(horizon_months):
         c = float(contribs[t] or 0.0)
         total_contrib += c
-        cur = (cur + c) * (1 + monthly - drag)
+        cur = (cur + c) * (1 + monthly)
         paths.append(round(cur + float(deterministic[t] or 0.0), 2))
     return {
         "annual_pct": annual_pct,
@@ -3072,9 +2942,6 @@ def add_fund_holding(payload: dict) -> dict:
         "anchor_balance_ils": anchor_balance,
         "events": [],
         "recurring_rules": [],
-        "fee_schedule": _initial_fee_schedule(payload, anchor_period),
-        "actual_total_fee_ils": None,
-        "actual_total_fee_date": None,
         "archived": False,
         "included_in_dashboard": True,
     }
@@ -3118,87 +2985,6 @@ def _validate_rule_payload(payload: dict) -> tuple:
         "note": (payload.get("note") or "").strip(),
     }
     return cleaned, None
-
-
-def _clean_fee_pct(val):
-    """Parse a fee percentage. Return (value_or_None, error_or_None).
-    Blank/None means "not set" -> (None, None)."""
-    if val is None or val == "":
-        return None, None
-    try:
-        f = float(val)
-    except (TypeError, ValueError):
-        return None, "fee must be a number"
-    if f < 0 or f > 100:
-        return None, "fee must be between 0 and 100"
-    return f, None
-
-
-def _clean_actual_fee(val):
-    """Parse an actual total fee amount in ILS (from a statement).
-    Blank/None means "not set / clear the correction" -> (None, None)."""
-    if val is None or val == "":
-        return None, None
-    try:
-        f = float(val)
-    except (TypeError, ValueError):
-        return None, "actual total fee must be a number"
-    if f < 0:
-        return None, "actual total fee cannot be negative"
-    return round(f, 2), None
-
-
-def _clean_actual_fee_date(val):
-    """Parse the as-of statement date for an actual-fee correction.
-    Blank/None means "not set" -> (None, None)."""
-    if val is None or val == "":
-        return None, None
-    try:
-        date.fromisoformat(val)
-    except (TypeError, ValueError):
-        return None, "actual total fee date must be YYYY-MM-DD"
-    return val, None
-
-
-def _validate_fee_payload(payload: dict) -> tuple:
-    """Return (cleaned_dict, error_string_or_None) for a fee-schedule entry."""
-    try:
-        start = payload["start_date"]
-        date.fromisoformat(start)
-    except (KeyError, ValueError, TypeError):
-        return None, "start_date (YYYY-MM-DD) is required"
-    balance_pct, err = _clean_fee_pct(payload.get("balance_pct"))
-    if err:
-        return None, f"balance_pct: {err}"
-    deposit_pct, err = _clean_fee_pct(payload.get("deposit_pct"))
-    if err:
-        return None, f"deposit_pct: {err}"
-    if balance_pct is None and deposit_pct is None:
-        return None, "At least one of balance_pct/deposit_pct must be set"
-    cleaned = {
-        "start_date": start,
-        "balance_pct": balance_pct,
-        "deposit_pct": deposit_pct,
-        "note": (payload.get("note") or "").strip(),
-    }
-    return cleaned, None
-
-
-def _initial_fee_schedule(payload: dict, anchor_period: int) -> list:
-    """Build the initial fee_schedule from optional add-panel inputs. Returns an
-    entry effective from the anchor period's first day, or [] if none provided."""
-    bal, _ = _clean_fee_pct(payload.get("initial_balance_fee_pct"))
-    dep, _ = _clean_fee_pct(payload.get("initial_deposit_fee_pct"))
-    if bal is None and dep is None:
-        return []
-    return [{
-        "id": str(uuid.uuid4()),
-        "created_at": now_iso(),
-        "start_date": _period_first_day(int(anchor_period)).isoformat(),
-        "balance_pct": bal,
-        "deposit_pct": dep,
-        "note": "",
-    }]
 
 
 def _find_holding(holding_id: str) -> dict:
@@ -3288,66 +3074,6 @@ def delete_rule(holding_id: str, rule_id: str) -> dict:
     return {"ok": True}
 
 
-# ── Management-fee schedule CRUD (shared by funds + pension via _find_holding) ─
-def add_fee(holding_id: str, payload: dict) -> dict:
-    cleaned, err = _validate_fee_payload(payload)
-    if err:
-        return {"ok": False, "error": err}
-    fee = {
-        "id": str(uuid.uuid4()),
-        "created_at": now_iso(),
-        **cleaned,
-    }
-    with _data_lock:
-        h = _find_holding(holding_id)
-        if not h:
-            return {"ok": False, "error": "Holding not found"}
-        schedule = h.setdefault("fee_schedule", [])
-        if any(f.get("start_date") == fee["start_date"] for f in schedule):
-            return {"ok": False, "error": f"A fee change already exists for {fee['start_date']}"}
-        schedule.append(fee)
-        schedule.sort(key=lambda x: x["start_date"])
-        save_data()
-    return {"ok": True, "fee_id": fee["id"]}
-
-
-def update_fee(holding_id: str, fee_id: str, patch: dict) -> dict:
-    with _data_lock:
-        h = _find_holding(holding_id)
-        if not h:
-            return {"ok": False, "error": "Holding not found"}
-        schedule = h.get("fee_schedule", [])
-        f = next((x for x in schedule if x["id"] == fee_id), None)
-        if not f:
-            return {"ok": False, "error": "Fee entry not found"}
-        merged = {**f, **{k: v for k, v in patch.items()
-                          if k in ("start_date", "balance_pct", "deposit_pct", "note")}}
-        cleaned, err = _validate_fee_payload(merged)
-        if err:
-            return {"ok": False, "error": err}
-        if any(x["id"] != fee_id and x.get("start_date") == cleaned["start_date"] for x in schedule):
-            return {"ok": False, "error": f"A fee change already exists for {cleaned['start_date']}"}
-        for k, v in cleaned.items():
-            f[k] = v
-        schedule.sort(key=lambda x: x["start_date"])
-        save_data()
-    return {"ok": True}
-
-
-def delete_fee(holding_id: str, fee_id: str) -> dict:
-    with _data_lock:
-        h = _find_holding(holding_id)
-        if not h:
-            return {"ok": False, "error": "Holding not found"}
-        schedule = h.get("fee_schedule", [])
-        before = len(schedule)
-        h["fee_schedule"] = [f for f in schedule if f["id"] != fee_id]
-        if len(h["fee_schedule"]) == before:
-            return {"ok": False, "error": "Fee entry not found"}
-        save_data()
-    return {"ok": True}
-
-
 def update_fund_holding(holding_id: str, patch: dict) -> dict:
     with _data_lock:
         for h in DATA["fund_holdings"]:
@@ -3355,16 +3081,6 @@ def update_fund_holding(holding_id: str, patch: dict) -> dict:
                 for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived", "included_in_dashboard"):
                     if k in patch:
                         h[k] = patch[k]
-                if "actual_total_fee_ils" in patch:
-                    cleaned, err = _clean_actual_fee(patch["actual_total_fee_ils"])
-                    if err:
-                        return {"ok": False, "error": err}
-                    h["actual_total_fee_ils"] = cleaned
-                if "actual_total_fee_date" in patch:
-                    cleaned_date, err = _clean_actual_fee_date(patch["actual_total_fee_date"])
-                    if err:
-                        return {"ok": False, "error": err}
-                    h["actual_total_fee_date"] = cleaned_date
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Holding not found"}
@@ -3447,9 +3163,6 @@ def add_pension_holding(payload: dict) -> dict:
         "anchor_balance_ils": anchor_balance,
         "events": [],
         "recurring_rules": [],
-        "fee_schedule": _initial_fee_schedule(payload, anchor_period),
-        "actual_total_fee_ils": None,
-        "actual_total_fee_date": None,
         "archived": False,
     }
     with _data_lock:
@@ -3465,16 +3178,6 @@ def update_pension_holding(holding_id: str, patch: dict) -> dict:
                 for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived"):
                     if k in patch:
                         h[k] = patch[k]
-                if "actual_total_fee_ils" in patch:
-                    cleaned, err = _clean_actual_fee(patch["actual_total_fee_ils"])
-                    if err:
-                        return {"ok": False, "error": err}
-                    h["actual_total_fee_ils"] = cleaned
-                if "actual_total_fee_date" in patch:
-                    cleaned_date, err = _clean_actual_fee_date(patch["actual_total_fee_date"])
-                    if err:
-                        return {"ok": False, "error": err}
-                    h["actual_total_fee_date"] = cleaned_date
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Pension holding not found"}
@@ -4529,22 +4232,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if len(parts) == 5 and parts[3] == "rules":
                     self._json(200, delete_rule(parts[2], parts[4]))
                     return
-            # Pension management-fee schedule — same code path as fund fees.
-            if method == "POST" and path.startswith("/api/pension-holdings/") and path.endswith("/fees"):
-                parts = path.strip("/").split("/")
-                if len(parts) == 4:
-                    self._json(200, add_fee(parts[2], body))
-                    return
-            if method == "PATCH" and "/fees/" in path and path.startswith("/api/pension-holdings/"):
-                parts = path.strip("/").split("/")
-                if len(parts) == 5 and parts[3] == "fees":
-                    self._json(200, update_fee(parts[2], parts[4], body))
-                    return
-            if method == "DELETE" and "/fees/" in path and path.startswith("/api/pension-holdings/"):
-                parts = path.strip("/").split("/")
-                if len(parts) == 5 and parts[3] == "fees":
-                    self._json(200, delete_fee(parts[2], parts[4]))
-                    return
             if method == "POST" and path.startswith("/api/pension-holdings/") and path.endswith("/spot-check"):
                 parts = path.strip("/").split("/")
                 # /api/pension-holdings/{hid}/spot-check
@@ -4581,23 +4268,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 parts = path.strip("/").split("/")
                 if len(parts) == 5 and parts[3] == "rules":
                     self._json(200, delete_rule(parts[2], parts[4]))
-                    return
-
-            # Management-fee schedule (funds)
-            if method == "POST" and path.startswith("/api/fund-holdings/") and path.endswith("/fees"):
-                hid = path.split("/")[3]
-                self._json(200, add_fee(hid, body))
-                return
-            if method == "PATCH" and "/fees/" in path:
-                parts = path.strip("/").split("/")
-                # /api/fund-holdings/{hid}/fees/{fid}
-                if len(parts) == 5 and parts[3] == "fees":
-                    self._json(200, update_fee(parts[2], parts[4], body))
-                    return
-            if method == "DELETE" and "/fees/" in path:
-                parts = path.strip("/").split("/")
-                if len(parts) == 5 and parts[3] == "fees":
-                    self._json(200, delete_fee(parts[2], parts[4]))
                     return
 
             if method == "POST" and path == "/api/rsu-grants":
