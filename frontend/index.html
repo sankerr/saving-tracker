@@ -3529,6 +3529,7 @@ function renderPensionDetail(h) {
   const c = h.computed || {};
   const wf = h.what_if;
   const rules = (h.recurring_rules || []).slice().sort((a,b) => a.start_date.localeCompare(b.start_date));
+  const evs = (c.expanded_events || []).slice().sort((a,b) => (a.date || '').localeCompare(b.date || ''));
   const empTotal = c.total_employee_ils || 0;
   const emprTotal = c.total_employer_ils || 0;
   let whatIfHTML = '';
@@ -3591,6 +3592,33 @@ function renderPensionDetail(h) {
         </div>
       </div>
     </div>
+
+    <details class="collapse-section"${evs.length ? '' : ' open'}>
+    <summary class="collapse-summary">${t('detail.events')} <span class="h2-count">${evs.length}</span></summary>
+    ${evs.length ? `<div style="overflow-x:auto"><table class="event-table">
+      <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('table.amount')}</th><th>${t('table.source')}</th><th>${t('table.note')}</th><th></th></tr></thead>
+      <tbody>${evs.map(e => {
+        const isRule = !!e.synthetic;
+        return `<tr>
+          <td>${e.date}</td>
+          <td>${e.kind}</td>
+          <td><strong>${fmtILS.format(e.amount_ils || 0)}</strong></td>
+          <td>${isRule ? `<span class="badge">${t('badge.rule')}</span>` : `<span class="badge badge--funds">${t('badge.manual')}</span>`}</td>
+          <td dir="auto">${escapeHtml(e.note || '')}</td>
+          <td>${isRule ? '' : `<button class="btn btn--danger btn--small" data-del-event="${h.id}:${e.id}">×</button>`}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noEvents')}</p>`}
+    </details>
+    <div class="event-form">
+      <div class="field"><label>${t('table.date')}</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
+      <div class="field"><label>${t('ev.amountIls')}</label><input type="number" id="ev-amount-${h.id}" min="0" step="0.01"></div>
+      <div class="field"><label>${t('common.note')}</label><input type="text" id="ev-note-${h.id}"></div>
+      <button class="btn btn--primary btn--small" data-add-event="${h.id}">${t('common.add')}</button>
+      <span></span>
+    </div>
+    <p class="chart-caption">${t('detail.eventCaption')}</p>
 
     <div class="actions-row" style="justify-content:flex-start; margin-top:0.75rem">
       <button class="btn btn--ghost btn--small" data-edit-pension-balance="${h.id}" data-current="${h.anchor_balance_ils}">${t('action.editAnchorBalance')}</button>
@@ -5661,7 +5689,7 @@ function init() {
       const note = document.getElementById(`ev-note-${hid}`).value;
       if (!date) { toast(t('toast.dateRequired'), 'error'); return; }
       if (!amount && kind !== 'correction') { toast(t('toast.enterAmount'), 'error'); return; }
-      const j = await api('POST', `/api/fund-holdings/${hid}/events`, {
+      const j = await api('POST', `${ruleHoldingBaseUrl(hid)}/${hid}/events`, {
         date, kind, note, amount_ils: amount,
       });
       if (j.ok) { toast(t('toast.eventAdded'), 'info'); fetchData(); }
@@ -5735,7 +5763,7 @@ function init() {
     const delEvBtn = e.target.closest('[data-del-event]');
     if (delEvBtn) {
       const [hid, eid] = delEvBtn.dataset.delEvent.split(':');
-      const j = await api('DELETE', `/api/fund-holdings/${hid}/events/${eid}`);
+      const j = await api('DELETE', `${ruleHoldingBaseUrl(hid)}/${hid}/events/${eid}`);
       if (j.ok) { toast(t('toast.eventDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;

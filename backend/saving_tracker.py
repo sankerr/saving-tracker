@@ -3227,7 +3227,7 @@ def add_event(holding_id: str, payload: dict) -> dict:
         "source": "manual",
     }
     with _data_lock:
-        for h in DATA["fund_holdings"]:
+        for h in DATA["fund_holdings"] + DATA.get("pension_holdings", []):
             if h["id"] == holding_id:
                 h.setdefault("events", []).append(event)
                 h["events"].sort(key=lambda e: e["date"])
@@ -3238,7 +3238,7 @@ def add_event(holding_id: str, payload: dict) -> dict:
 
 def delete_event(holding_id: str, event_id: str) -> dict:
     with _data_lock:
-        for h in DATA["fund_holdings"]:
+        for h in DATA["fund_holdings"] + DATA.get("pension_holdings", []):
             if h["id"] == holding_id:
                 before = len(h.get("events", []))
                 h["events"] = [e for e in h.get("events", []) if e["id"] != event_id]
@@ -4261,6 +4261,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if len(parts) == 3:
                     self._json(200, delete_pension_holding(parts[2]))
                     return
+                if len(parts) == 5 and parts[3] == "events":
+                    self._json(200, delete_event(parts[2], parts[4]))
+                    return
+            if method == "POST" and path.startswith("/api/pension-holdings/") and path.endswith("/events"):
+                hid = path.split("/")[3]
+                self._json(200, add_event(hid, body))
+                return
             if method == "POST" and path.startswith("/api/fund-holdings/") and path.endswith("/events"):
                 hid = path.split("/")[3]
                 self._json(200, add_event(hid, body))
