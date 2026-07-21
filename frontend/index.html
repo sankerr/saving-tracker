@@ -356,6 +356,9 @@ h2 {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.25rem 0.75rem; border-radius: 999px;
   font-size: 0.875rem; font-weight: 600;
+  /* Amount + percentage is inherently a numeric run; keep it LTR so the
+     leading minus sign stays on the left even in RTL (Hebrew) mode. */
+  direction: ltr; unicode-bidi: isolate;
 }
 .dash-profit-chip[data-sign="pos"] { background: rgb(31 138 76 / 0.10); color: var(--color-success); }
 .dash-profit-chip[data-sign="neg"] { background: rgb(192 57 43 / 0.10); color: var(--color-danger); }
