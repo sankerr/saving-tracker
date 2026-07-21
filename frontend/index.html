@@ -567,6 +567,9 @@ html[dir="rtl"] .ai-insight__body ul { padding-right: 1.125rem; padding-left: 0;
 }
 .holding-row__value-sub {
   font-size: 0.75rem; color: var(--color-muted); font-weight: 500;
+  /* Amount + percentage is a numeric run; keep it LTR so the leading sign
+     stays on the left even in RTL (Hebrew) mode. */
+  direction: ltr; unicode-bidi: isolate;
 }
 .holding-row__sparkline {
   width: 100px; height: 36px; flex-shrink: 0;
@@ -2240,7 +2243,10 @@ function fmtPct(n, digits = 2) {
 }
 function fmtPctSigned(n, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
-  return (n >= 0 ? '+' : '') + (n * 100).toFixed(digits) + '%';
+  const s = (n >= 0 ? '+' : '') + (n * 100).toFixed(digits) + '%';
+  // Wrap in an LTR isolate (U+2066…U+2069) so the leading +/- sign stays on the
+  // left even when embedded in RTL (Hebrew) text, e.g. "יוני -2.55%".
+  return '\u2066' + s + '\u2069';
 }
 function timeAgo(iso) {
   if (!iso) return t('time.never');
