@@ -1306,6 +1306,28 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         })
         expanded_events_all.extend(period_events)
 
+    # Events dated in a month that has no published yield yet (typically the
+    # current calendar month) can't be valued — a monthly yield can only be
+    # applied once it's published. Rather than let them silently disappear until
+    # the next sync, surface them flagged as pending so the UI can show them with
+    # a "not included in total" label. They are intentionally NOT added to the
+    # value series or the deposited/withdrawn totals.
+    pending_events_all = []
+    for p in sorted(manual_by_period.keys()):
+        if p <= last_period:
+            continue
+        for ev in manual_by_period[p]:
+            pending_events_all.append({**ev, "synthetic": False, "pending": True})
+    pending_end = current_period()
+    if pending_end > last_period:
+        for period in period_iter(last_period + 1, pending_end):
+            rule = applicable_rule_for_period(rules, period)
+            if rule:
+                ve = expand_rule_for_period(rule, period)
+                if ve["amount_ils"] != 0:
+                    pending_events_all.append({**ve, "pending": True})
+    expanded_events_all.extend(pending_events_all)
+
     current_value = series[-1]["value_ils"]
     total_in = anchor_balance + deposited - withdrawn
     profit = current_value - total_in

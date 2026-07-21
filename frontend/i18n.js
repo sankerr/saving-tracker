@@ -358,6 +358,8 @@
       'badge.manual': 'manual',
       'badge.auto': 'auto',
       'badge.override': 'override',
+      'badge.pending': 'not in balance',
+      'badge.pendingTip': 'Recorded, but not included in the value or total yet — this month\'s yield hasn\'t been published. It will be applied automatically once it is.',
 
       'row.last': 'last',
       'row.ytdAsOf': 'As of {year} year-to-date',
@@ -1028,6 +1030,8 @@
       'badge.manual': 'ידני',
       'badge.auto': 'אוטומטי',
       'badge.override': 'דריסה',
+      'badge.pending': 'לא כלול ביתרה',
+      'badge.pendingTip': 'נרשם, אך עדיין לא נכלל בשווי או בסך הכולל — תשואת החודש טרם פורסמה. היא תיושם אוטומטית לכשתפורסם.',
 
       'row.last': 'אחרון',
       'row.ytdAsOf': 'נכון ל-{year} מתחילת השנה',

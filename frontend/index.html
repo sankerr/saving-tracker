@@ -596,6 +596,8 @@ html[dir="rtl"] .ai-insight__body ul { padding-right: 1.125rem; padding-left: 0;
 }
 .event-table th { font-weight: 600; color: var(--color-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .event-table td { font-family: var(--font-body); }
+.event-table tr.event-row--pending td { color: var(--color-muted); font-style: italic; }
+.event-table tr.event-row--pending .badge { font-style: normal; }
 .event-form {
   display: grid;
   grid-template-columns: 130px 130px 130px 1fr auto auto;
@@ -3357,11 +3359,12 @@ function renderFundDetail(h) {
       <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('table.amount')}</th><th>${t('table.source')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${expanded.map(e => {
         const isRule = !!e.synthetic;
-        return `<tr>
+        const isPending = !!e.pending;
+        return `<tr${isPending ? ' class="event-row--pending"' : ''}>
           <td>${e.date}</td>
           <td>${e.kind}</td>
           <td><strong>${fmtILS.format(e.amount_ils || 0)}</strong></td>
-          <td>${isRule ? `<span class="badge">${t('badge.rule')}</span>` : `<span class="badge badge--funds">${t('badge.manual')}</span>`}</td>
+          <td>${isRule ? `<span class="badge">${t('badge.rule')}</span>` : `<span class="badge badge--funds">${t('badge.manual')}</span>`}${isPending ? ` <span class="badge badge--pending" title="${escapeHtml(t('badge.pendingTip'))}">${t('badge.pending')}</span>` : ''}</td>
           <td dir="auto">${escapeHtml(e.note || '')}</td>
           <td>${isRule ? '' : `<button class="btn btn--danger btn--small" data-del-event="${h.id}:${e.id}">×</button>`}</td>
         </tr>`;
@@ -3602,11 +3605,12 @@ function renderPensionDetail(h) {
       <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('table.amount')}</th><th>${t('table.source')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${evs.map(e => {
         const isRule = !!e.synthetic;
-        return `<tr>
+        const isPending = !!e.pending;
+        return `<tr${isPending ? ' class="event-row--pending"' : ''}>
           <td>${e.date}</td>
           <td>${e.kind}</td>
           <td><strong>${fmtILS.format(e.amount_ils || 0)}</strong></td>
-          <td>${isRule ? `<span class="badge">${t('badge.rule')}</span>` : `<span class="badge badge--funds">${t('badge.manual')}</span>`}</td>
+          <td>${isRule ? `<span class="badge">${t('badge.rule')}</span>` : `<span class="badge badge--funds">${t('badge.manual')}</span>`}${isPending ? ` <span class="badge badge--pending" title="${escapeHtml(t('badge.pendingTip'))}">${t('badge.pending')}</span>` : ''}</td>
           <td dir="auto">${escapeHtml(e.note || '')}</td>
           <td>${isRule ? '' : `<button class="btn btn--danger btn--small" data-del-event="${h.id}:${e.id}">×</button>`}</td>
         </tr>`;
