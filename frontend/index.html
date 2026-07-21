@@ -1815,7 +1815,7 @@ html[dir="rtl"] .chat-panel {
     <p id="range-summary" hidden style="margin:0.5rem 0 0 0; padding:0.5rem 0.875rem;
         background:rgb(110 95 224 / 0.08); border-left:3px solid var(--color-primary);
         border-radius:var(--radius-sm); font-size:0.875rem;"></p>
-    <p class="chart-caption" data-i18n="dashboard.caption">Default view shows the current month forward through your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.</p>
+    <p class="chart-caption" data-i18n="dashboard.caption">Default view shows the last 2 months plus your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.</p>
   </section>
 
   <section class="card" id="funds-card">
@@ -2815,6 +2815,13 @@ function fmtGoalMonth(dateStr) {
   return new Date(y, (m || 1) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
 }
 
+// Shift a "YYYY-MM" label by `delta` calendar months (positive = future).
+function shiftMonthLabel(ym, delta) {
+  const [y0, m0] = ym.split('-').map(Number);
+  const d = new Date(y0, (m0 || 1) - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 // Compact savings-goal strip under the headline. Reads goal_status from the
 // backend (projection-based on-pace assessment); falls back to a "set a goal"
 // affordance when no goal is configured.
@@ -3018,9 +3025,8 @@ function drawDashboardChart() {
 
   // Build the full series: history (strictly before current month) + the
   // current-month snapshot + horizon future months. The chart always carries
-  // history in its data; the visible window is controlled by x.min/x.max so
-  // the default view shows future-only and the user can opt into history by
-  // picking a past month in the range filter.
+  // history in its data; the visible window is controlled by x.min/x.max.
+  // Default: last 2 months of history + current month + horizon.
   const histLabels = [];
   const histFunds = [];
   const histRsu = [];
@@ -3112,7 +3118,7 @@ function drawDashboardChart() {
   // Date inputs: allow picking from the earliest history through 50 years
   // out (matches backend HORIZON_CAP_MONTHS). Picking a month past the
   // current horizon auto-extends it via onRangeInputChange. Default visible
-  // window = current month → end of horizon.
+  // window = current month − 2 → end of horizon (clamped to earliest data).
   const earliestLabel = labels[0];
   const lastLabel = labels[labels.length - 1];
   const pickerMaxLabel = (() => {
@@ -3134,7 +3140,13 @@ function drawDashboardChart() {
     xMax = DASH_RANGE.endLabel;
   } else {
     if (DASH_RANGE) DASH_RANGE = null;  // out-of-bounds → drop it
-    xMin = currentMonthLabel;
+    const defaultStart = shiftMonthLabel(currentMonthLabel, -2);
+    xMin = (earliestLabel && defaultStart < earliestLabel) ? earliestLabel : defaultStart;
+    // If the preferred start isn't in the labels array (e.g. sparse history),
+    // snap to the earliest label that is >= preferred start, else earliest.
+    if (!labels.includes(xMin)) {
+      xMin = labels.find(l => l >= xMin) || earliestLabel;
+    }
     xMax = lastLabel;
   }
   document.getElementById('range-reset').hidden = !DASH_RANGE;
@@ -3229,7 +3241,7 @@ function updateRangeSummary() {
 
 function syncRangeInputs(visibleStart, visibleEnd) {
   // Always reflect the chart's current visible window — when no range is
-  // active, this shows "current month → current month + horizon" so picking
+  // active, this shows "current − 2 months → end of horizon" so picking
   // Horizon 24m surfaces those endpoints in the inputs immediately.
   document.getElementById('range-start').value = visibleStart || '';
   document.getElementById('range-end').value = visibleEnd || '';
@@ -4559,11 +4571,11 @@ const HELP_CONTENT = {
     title: 'About the Dashboard',
     body: `
       <p>The big number is your <strong>total portfolio value</strong> in ILS — the sum of every fund holding, RSU grant (USD value × current FX), and cash entry.</p>
-      <p>The <strong>stacked area chart</strong> looks forward only. The first column is the current month (today's snapshot of funds + RSU); subsequent columns are projected month-by-month. RSU layer = vested-and-held shares × current price × FX, growing as the vesting schedule fires (cliff + monthly/quarterly cadence) — flat-price assumption. Cash sits in its own flat layer at the bottom of the stack.</p>
+      <p>The <strong>stacked area chart</strong> shows the last 2 months of real history by default, then the current month (today's snapshot of funds + RSU), then projected months through your chosen horizon. RSU layer = vested-and-held shares × current price × FX, growing as the vesting schedule fires (cliff + monthly/quarterly cadence) — flat-price assumption. Cash sits in its own flat layer at the bottom of the stack.</p>
       <p>The <code>If funds grow %/yr</code> input sets the rate for <strong>both</strong> the future Funds stack and the dashed orange total line. <strong>Growth applies to funds only</strong> (and to projected fund contributions). <strong>Cash, RSU vesting, and ESPP are added flat</strong> on top — cash and ESPP as constants at today's value, RSU as the deterministic vesting curve at today's price/FX. With no rate entered, the Funds stack uses each fund's <strong>historical average monthly return</strong> from gemelnet instead.</p>
       <p>The dashed <strong>purple Projection mean</strong> line sums every holding's historical projection (funds at their hist-avg %/yr, RSU vesting, flat ESPP/cash). Its label shows the portfolio's <strong>value-weighted funds %/yr</strong>. Per-fund detail charts use the same purple line with each fund's own rate.</p>
       <p><strong>Horizon chips</strong> (6m / 12m / 24m / 60m / 120m) control how far forward the chart extends. Picking a chip resets any active range.</p>
-      <p><strong>Date range</strong>: pick start/end months in the inputs, or <strong>click and drag horizontally</strong> on the chart, to focus on a sub-range. Pick a month earlier than today to scroll back into history (the chart carries it under the hood — it's just hidden by default). Esc cancels an in-progress drag. The summary box below shows totals at both endpoints and the delta. Hit Reset (or any horizon chip) to return to the full view.</p>
+      <p><strong>Date range</strong>: pick start/end months in the inputs, or <strong>click and drag horizontally</strong> on the chart, to focus on a sub-range. Pick a month earlier than the default window to scroll further back into history (the chart carries full history under the hood). Esc cancels an in-progress drag. The summary box below shows totals at both endpoints and the delta. Hit Reset (or any horizon chip) to return to the default view (last 2 months + horizon).</p>
     `,
   },
   chat: {

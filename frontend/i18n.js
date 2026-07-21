@@ -119,7 +119,7 @@
       'insights.updated': 'Updated {ago}',
       'insights.disclaimer': 'AI-generated from your data — not financial advice.',
       'dashboard.pensionNote': '<span>🔒</span><span><strong>Pension ({amount})</strong> is tracked separately below — not included in this total or the chart. The growth assumption above still applies to it, shown per row.</span>',
-      'dashboard.caption': 'Default view shows the current month forward through your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.',
+      'dashboard.caption': 'Default view shows the last 2 months plus your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.',
 
       'chat.title': 'Portfolio chat',
       'chat.panelAria': 'AI portfolio chat',
@@ -791,7 +791,7 @@
       'insights.updated': 'עודכן {ago}',
       'insights.disclaimer': 'נוצר על ידי AI מהנתונים שלך — לא ייעוץ פיננסי.',
       'dashboard.pensionNote': '<span>🔒</span><span><strong>פנסיה ({amount})</strong> מנוהלת בנפרד למטה — לא נכללת בסך זה או בגרף. הנחת הצמיחה למעלה עדיין חלה עליה, לפי שורה.</span>',
-      'dashboard.caption': 'ברירת המחדל מציגה מהחודש הנוכחי קדימה לפי האופק שבחרתם. גררו אופקית בגרף או בחרו חודשי התחלה/סיום למיקוד — כל חודש אפשרי: חודשים בעבר מושכים היסטוריה, ובחירה רחוקה בעתיד מרחיבה אוטומטית את התחזית (עד 50 שנה). לחצו Esc תוך כדי גרירה לביטול; לחצו על שבב אופק לאיפוס.',
+      'dashboard.caption': 'ברירת המחדל מציגה את שני החודשים האחרונים בתוספת האופק שבחרתם. גררו אופקית בגרף או בחרו חודשי התחלה/סיום למיקוד — כל חודש אפשרי: חודשים בעבר מושכים היסטוריה, ובחירה רחוקה בעתיד מרחיבה אוטומטית את התחזית (עד 50 שנה). לחצו Esc תוך כדי גרירה לביטול; לחצו על שבב אופק לאיפוס.',
 
       'chat.title': 'צ׳אט על התיק',
       'chat.panelAria': 'צ׳אט AI על התיק',
