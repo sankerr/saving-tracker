@@ -18,6 +18,8 @@ MAX_OUTPUT_TOKENS = 1024
 REQUEST_TIMEOUT = 60
 MAX_TOOL_ROUNDS = 3
 HORIZON_CAP_MONTHS = 600
+# Months of real history embedded in the chat context (older months via query tool).
+HISTORY_CONTEXT_MONTHS = 24
 
 ComposeFn = Callable[[int, Optional[float]], dict]
 
@@ -40,7 +42,14 @@ You receive a compact JSON summary of the user's holdings (קופות גמל / �
 Backend capabilities (use tools — do not invent math):
 - project_portfolio: runs the same server projection as the app dashboard (compose_state / what-if).
   Growth % applies to funds (and pension when included). Cash and ESPP are held flat; RSU follows vesting at today's price/FX.
+- query_portfolio_history: returns real past monthly dashboard totals and month-over-month changes from synced holdings/yields.
+  Use for "what was my total in June?", "how much did I gain last month?", or comparing two past months.
 - describe_backend_apis: lists REST APIs and what they do.
+
+Past totals / change questions (e.g. "what was my portfolio worth in March?", "how much changed since last month?"):
+1. Prefer monthly_history in the portfolio JSON (recent months with change_from_prev_ils / change_from_prev_pct).
+2. For a specific older month or a custom date range, call query_portfolio_history with year_month or start_year_month/end_year_month.
+3. Explain totals using the returned numbers only. Note cash is held at today's amount for all past months (same as the dashboard chart). Pension is excluded from dashboard totals.
 
 Future value / profit questions (e.g. "what will my profit be in May 2030?"):
 1. If the user gave an annual growth % (year %), call project_portfolio with target_year_month=YYYY-MM and assumed_annual_pct.
@@ -85,7 +94,7 @@ BACKEND_API_CATALOG = {
     ],
     "chat": [
         "GET /api/chat/status",
-        "POST /api/chat — this assistant; may call project_portfolio tool",
+        "POST /api/chat — this assistant; may call project_portfolio or query_portfolio_history tools",
     ],
     "projection_rules": {
         "what_if_annual_pct": "Compounds funds (and pension what-if) at assumed %; cash+ESPP flat; RSU vesting curve at current price/FX",
@@ -123,6 +132,31 @@ TOOLS = [
                         },
                     },
                     "required": ["target_year_month"],
+                },
+            },
+            {
+                "name": "query_portfolio_history",
+                "description": (
+                    "Return real historical monthly portfolio totals and month-over-month changes "
+                    "(dashboard-style: funds + RSU + ESPP + cash; pension excluded). "
+                    "Use for past totals or 'what changed' questions."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "year_month": {
+                            "type": "string",
+                            "description": "Single month YYYY-MM, e.g. 2026-06",
+                        },
+                        "start_year_month": {
+                            "type": "string",
+                            "description": "Range start YYYY-MM (inclusive)",
+                        },
+                        "end_year_month": {
+                            "type": "string",
+                            "description": "Range end YYYY-MM (inclusive)",
+                        },
+                    },
                 },
             },
             {
@@ -231,8 +265,59 @@ def _cash_summary(c: dict) -> dict:
     }
 
 
+def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MONTHS) -> dict:
+    """Real monthly dashboard totals from portfolio.time_series_ils + cash (flat at today)."""
+    portfolio = state.get("portfolio") or {}
+    series = portfolio.get("time_series_ils") or []
+    cash_now = _round_or_none(portfolio.get("cash_value_ils")) or 0.0
+
+    rows = []
+    prev_total = None
+    for s in series:
+        period = s.get("period")
+        if not period:
+            continue
+        funds = _round_or_none(s.get("funds_ils")) or 0.0
+        rsu = _round_or_none(s.get("rsu_ils")) or 0.0
+        espp = _round_or_none(s.get("espp_ils")) or 0.0
+        subtotal = _round_or_none(s.get("total_ils"))
+        if subtotal is None:
+            subtotal = round(funds + rsu + espp, 2)
+        total = round(subtotal + cash_now, 2)
+        change_ils = round(total - prev_total, 2) if prev_total is not None else None
+        change_pct = None
+        if prev_total is not None and prev_total != 0 and change_ils is not None:
+            change_pct = round(change_ils / prev_total, 4)
+        rows.append({
+            "period": period,
+            "total_ils": total,
+            "funds_ils": funds,
+            "rsu_ils": rsu,
+            "espp_ils": espp,
+            "cash_ils": cash_now,
+            "change_from_prev_ils": change_ils,
+            "change_from_prev_pct": change_pct,
+        })
+        prev_total = total
+
+    truncated = 0
+    if max_months and len(rows) > max_months:
+        truncated = len(rows) - max_months
+        rows = rows[-max_months:]
+
+    return {
+        "months": rows,
+        "truncated_earlier_months": truncated,
+        "latest_period": rows[-1]["period"] if rows else None,
+        "note": (
+            "Real history from holdings + synced monthly yields. Matches dashboard total "
+            "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded."
+        ),
+    }
+
+
 def build_portfolio_context(state: dict) -> dict:
-    """Compact snapshot for the model — no time series / monthly caches."""
+    """Compact snapshot for the model, including recent monthly history."""
     portfolio = state.get("portfolio") or {}
     pension_summary = state.get("pension_summary") or {}
     settings = state.get("settings") or {}
@@ -292,6 +377,7 @@ def build_portfolio_context(state: dict) -> dict:
             "espp": espps,
             "cash": cash,
         },
+        "monthly_history": _build_monthly_history(state),
     }
 
 
@@ -456,6 +542,65 @@ def summarize_projection_state(
     return out
 
 
+def run_query_portfolio_history_tool(compose_fn: ComposeFn, args: dict) -> dict:
+    try:
+        state = compose_fn(24, None)
+        full = _build_monthly_history(state, max_months=0)
+        months = full.get("months") or []
+        if not months:
+            return {"ok": False, "error": "No monthly history available yet."}
+
+        ym = (args.get("year_month") or "").strip()
+        start = (args.get("start_year_month") or "").strip()
+        end = (args.get("end_year_month") or "").strip()
+
+        if ym:
+            _parse_year_month(ym)
+            matched = [m for m in months if m.get("period") == ym]
+            if not matched:
+                return {
+                    "ok": False,
+                    "error": f"No data for {ym}.",
+                    "available_range": {
+                        "earliest": months[0]["period"],
+                        "latest": months[-1]["period"],
+                    },
+                }
+            return {"ok": True, "months": matched, "note": full.get("note")}
+
+        if start or end:
+            if not start or not end:
+                return {"ok": False, "error": "Provide both start_year_month and end_year_month."}
+            _parse_year_month(start)
+            _parse_year_month(end)
+            lo, hi = (start, end) if start <= end else (end, start)
+            filtered = [m for m in months if lo <= m.get("period", "") <= hi]
+            if not filtered:
+                return {
+                    "ok": False,
+                    "error": f"No data between {lo} and {hi}.",
+                    "available_range": {
+                        "earliest": months[0]["period"],
+                        "latest": months[-1]["period"],
+                    },
+                }
+            return {"ok": True, "months": filtered, "note": full.get("note")}
+
+        # Default: last 12 months of full history.
+        tail = months[-12:]
+        return {
+            "ok": True,
+            "months": tail,
+            "available_range": {
+                "earliest": months[0]["period"],
+                "latest": months[-1]["period"],
+            },
+            "note": full.get("note"),
+        }
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+
+
 def run_project_portfolio_tool(compose_fn: ComposeFn, args: dict) -> dict:
     try:
         target = str(args.get("target_year_month") or "").strip()
@@ -547,6 +692,8 @@ def _parts_function_calls(parts: list[dict]) -> list[dict]:
 def _execute_tool(name: str, args: dict, compose_fn: ComposeFn) -> dict:
     if name == "describe_backend_apis":
         return {"ok": True, "apis": BACKEND_API_CATALOG}
+    if name == "query_portfolio_history":
+        return run_query_portfolio_history_tool(compose_fn, args or {})
     if name == "project_portfolio":
         return run_project_portfolio_tool(compose_fn, args or {})
     return {"ok": False, "error": f"Unknown tool: {name}"}
