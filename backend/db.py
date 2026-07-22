@@ -186,18 +186,6 @@ def get_user_by_username(username: str) -> dict | None:
         return _user_row(cur.fetchone())
 
 
-DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "demo@saving-tracker.app").strip().lower()
-
-
-def is_demo_username(username: str) -> bool:
-    return (username or "").strip().lower() == DEMO_USERNAME
-
-
-def is_demo_user(user_id: int) -> bool:
-    user = get_user_by_id(user_id)
-    return bool(user and is_demo_username(user.get("username") or ""))
-
-
 def create_user(username: str, password_hash: str, *, approved: bool = False) -> int:
     with _conn() as conn:
         cur = conn.cursor()
