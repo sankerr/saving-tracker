@@ -39,6 +39,10 @@
       'auth.error.signInFailed': 'Sign in failed',
       'auth.error.registerFailed': 'Registration failed',
       'auth.toast.accountCreated': 'Account created. An admin must approve your account before you can sign in.',
+      'auth.tryDemo': 'Try demo portfolio',
+      'demo.banner': 'Demo mode — changes are not saved.',
+      'demo.createAccount': 'Create account',
+      'toast.demoReadOnly': 'Demo mode is read-only',
 
       'hero.eyebrow': 'Cloud · Private · Password Protected',
       'hero.title': 'Saving Tracker',
@@ -711,6 +715,10 @@
       'auth.error.signInFailed': 'ההתחברות נכשלה',
       'auth.error.registerFailed': 'ההרשמה נכשלה',
       'auth.toast.accountCreated': 'החשבון נוצר. מנהל חייב לאשר לפני התחברות.',
+      'auth.tryDemo': 'נסו תיק הדגמה',
+      'demo.banner': 'מצב הדגמה — השינויים לא נשמרים.',
+      'demo.createAccount': 'יצירת חשבון',
+      'toast.demoReadOnly': 'מצב הדגמה הוא לקריאה בלבד',
 
       'hero.eyebrow': 'ענן · פרטי · מוגן בסיסמה',
       'hero.title': 'מעקב חיסכון',

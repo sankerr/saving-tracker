@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY saving_tracker.py db.py auth.py notify.py chat.py .
+COPY saving_tracker.py db.py auth.py notify.py chat.py demo_data.json .
 
 ENV PORT=8000
 ENV NO_BROWSER=1

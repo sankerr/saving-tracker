@@ -36,6 +36,7 @@ Key behavior:
   - This app is informational only and does NOT compute Israeli tax.
 """
 
+import copy
 import http.server
 import json
 import math
@@ -56,6 +57,9 @@ import auth
 import chat as portfolio_chat
 import db
 import notify
+
+DEMO_FIXTURE_PATH = Path(__file__).resolve().parent / "demo_data.json"
+_DEMO_FIXTURE_CACHE: dict | None = None
 
 
 # ── Config ───────────────────────────────────────────────────────────────────
@@ -253,15 +257,42 @@ def _migrate_market_payload() -> None:
             MARKET.setdefault(_k, _v)
 
 
+def load_demo_fixture() -> dict:
+    """Load the static demo portfolio (cached after first read)."""
+    global _DEMO_FIXTURE_CACHE
+    if _DEMO_FIXTURE_CACHE is None:
+        with DEMO_FIXTURE_PATH.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict) or "version" not in payload:
+            raise RuntimeError(f"Invalid demo fixture at {DEMO_FIXTURE_PATH}")
+        _DEMO_FIXTURE_CACHE = payload
+    return _DEMO_FIXTURE_CACHE
+
+
+def ensure_demo_user() -> int:
+    """Create the shared read-only demo user if missing; return its id."""
+    existing = db.get_user_by_username(db.DEMO_USERNAME)
+    if existing:
+        return existing["id"]
+    # Random unguessable password — login is only via POST /api/demo.
+    password = secrets.token_urlsafe(32)
+    user_id = db.create_user(
+        db.DEMO_USERNAME, auth.hash_password(password), approved=True
+    )
+    db.upsert_state(user_id, copy.deepcopy(load_demo_fixture()), default_user_cache())
+    print(f"Created demo user: {db.DEMO_USERNAME} (id={user_id}, read-only)")
+    return user_id
+
+
 def save_data():
     with _data_lock:
-        if ACTIVE_USER_ID is not None:
+        if ACTIVE_USER_ID is not None and not db.is_demo_user(ACTIVE_USER_ID):
             db.save_data_state(ACTIVE_USER_ID, DATA)
 
 
 def save_cache():
     with _cache_lock:
-        if ACTIVE_USER_ID is not None:
+        if ACTIVE_USER_ID is not None and not db.is_demo_user(ACTIVE_USER_ID):
             db.save_cache_state(ACTIVE_USER_ID, CACHE)
 
 
@@ -322,9 +353,20 @@ def bootstrap_storage() -> None:
         user_id = db.create_user(username, auth.hash_password(password), approved=True)
         print(f"Created admin user: {username} (id={user_id}, approved=true)")
 
+    ensure_demo_user()
+
 
 def _activate_user(user_id: int) -> None:
     global DATA, CACHE, ACTIVE_USER_ID
+    # Demo always reloads the static fixture so concurrent explorers cannot
+    # leave residual mutations in the in-memory DATA blob.
+    if db.is_demo_user(user_id):
+        with _data_lock:
+            DATA = copy.deepcopy(load_demo_fixture())
+            CACHE = copy.deepcopy(default_user_cache())
+            _migrate_state_payload()
+            ACTIVE_USER_ID = user_id
+        return
     if ACTIVE_USER_ID == user_id:
         return
     loaded_data, loaded_cache = db.load_state(user_id)
@@ -1039,6 +1081,8 @@ def run_scheduled_sync_for_all_users(send_email: bool = True) -> dict:
                 entry["email_skipped"] = "no new yield"
             elif not send_email:
                 entry["email_skipped"] = "email disabled"
+            elif db.is_demo_username(to_email):
+                entry["email_skipped"] = "demo user"
             else:
                 synced_at = CACHE.get("last_full_sync_at") or now_iso()
                 try:
@@ -2537,6 +2581,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             "ok": True,
             "now": now_iso(),
             "horizon_months": horizon_months,
+            "is_demo": bool(ACTIVE_USER_ID is not None and db.is_demo_user(ACTIVE_USER_ID)),
             "settings": dict(DATA["settings"]),
             "goal_status": goal_status,
             "fund_holdings": fund_holdings_out,
@@ -3810,7 +3855,10 @@ def change_password(user_id: int, current_password: str, new_password: str) -> d
 
 
 # ── HTTP server ──────────────────────────────────────────────────────────────
-PUBLIC_PATHS = {"/api/login", "/api/register", "/api/health", "/api/version"}
+PUBLIC_PATHS = {"/api/login", "/api/register", "/api/demo", "/api/health", "/api/version"}
+
+# Authenticated POST routes that demo users may still call (shared market sync).
+DEMO_ALLOWED_MUTATIONS = {"/api/sync"}
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -3990,6 +4038,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
 
         if path == "/api/insights":
+            if ACTIVE_USER_ID is not None and db.is_demo_user(ACTIVE_USER_ID):
+                # Static copy — avoid Gemini cost and cache writes for shared demo.
+                demo_en = (
+                    "This is a read-only demo portfolio with sample holdings. "
+                    "Explore the dashboard, charts, and what-if tools. "
+                    "Create an account to track your own savings."
+                )
+                demo_he = (
+                    "זהו תיק הדגמה לקריאה בלבד עם נכסים לדוגמה. "
+                    "חקרו את לוח הבקרה, הגרפים וכלי ה-what-if. "
+                    "צרו חשבון כדי לעקוב אחרי החיסכון שלכם."
+                )
+                lang = (qs.get("lang") or ["en"])[0].lower()
+                if lang not in ("en", "he"):
+                    lang = "en"
+                texts = {"en": demo_en, "he": demo_he}
+                self._json(200, {
+                    "ok": True,
+                    "insights": texts[lang],
+                    "insights_all": texts,
+                    "generated_at": now_iso(),
+                    "cached": True,
+                    "is_demo": True,
+                })
+                return
             if not portfolio_chat.insights_enabled():
                 self._json(200, {"ok": False, "error": "insights_disabled"})
                 return
@@ -4119,8 +4192,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "error": "Account pending approval. An admin must approve your account before you can sign in.",
                 })
                 return
-            token = auth.create_token(user["id"], user["username"])
-            self._json(200, {"ok": True, "token": token, "username": user["username"]})
+            is_demo = db.is_demo_username(user["username"])
+            token = auth.create_token(user["id"], user["username"], is_demo=is_demo)
+            self._json(200, {
+                "ok": True,
+                "token": token,
+                "username": user["username"],
+                "is_demo": is_demo,
+            })
+            return
+
+        if method == "POST" and path == "/api/demo":
+            try:
+                user_id = ensure_demo_user()
+            except Exception as ex:
+                self._json(500, {"ok": False, "error": f"Demo unavailable: {ex}"})
+                return
+            user = db.get_user_by_id(user_id)
+            if not user:
+                self._json(500, {"ok": False, "error": "Demo user missing"})
+                return
+            token = auth.create_token(user["id"], user["username"], is_demo=True)
+            self._json(200, {
+                "ok": True,
+                "token": token,
+                "username": user["username"],
+                "is_demo": True,
+            })
             return
 
         if method == "POST" and path == "/api/register":
@@ -4129,6 +4227,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             err = _validate_username(username)
             if err:
                 self._json(400, {"ok": False, "error": err})
+                return
+            if db.is_demo_username(username):
+                self._json(400, {"ok": False, "error": "This email is reserved for the demo account"})
                 return
             err = _validate_password(password)
             if err:
@@ -4149,6 +4250,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if user_id == 0:
             self.send_error(404)
+            return
+
+        if db.is_demo_user(user_id) and path not in DEMO_ALLOWED_MUTATIONS:
+            self._json(403, {"ok": False, "error": "demo_read_only"})
             return
 
         with _user_ctx_lock:

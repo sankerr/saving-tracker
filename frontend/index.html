@@ -1166,6 +1166,78 @@ html[dir="rtl"] .collapse-section[open] > .collapse-summary::before { transform:
 }
 .tour-link:hover { text-decoration: underline; color: var(--color-primary-strong); }
 
+.demo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 1rem;
+  background: color-mix(in srgb, var(--color-warning) 18%, var(--color-surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  text-align: center;
+}
+.demo-banner[hidden] { display: none !important; }
+.demo-banner strong { font-weight: 600; }
+.demo-banner .demo-banner__cta {
+  font-weight: 600;
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+/* Demo mode: hide all mutation controls; keep read-only exploration. */
+body.demo-mode #add-fund-btn,
+body.demo-mode #add-pension-btn,
+body.demo-mode #add-rsu-btn,
+body.demo-mode #add-espp-btn,
+body.demo-mode #add-cash-btn,
+body.demo-mode #add-fund-panel,
+body.demo-mode #add-pension-panel,
+body.demo-mode #add-rsu-panel,
+body.demo-mode #add-espp-panel,
+body.demo-mode #add-cash-panel,
+body.demo-mode #goal-open,
+body.demo-mode #goal-save,
+body.demo-mode #goal-clear,
+body.demo-mode #export-btn,
+body.demo-mode #import-btn,
+body.demo-mode #change-password-btn,
+body.demo-mode #clear-cache-btn,
+body.demo-mode #delete-account-btn,
+body.demo-mode .danger-zone,
+body.demo-mode [data-empty-add],
+body.demo-mode [data-add-rule],
+body.demo-mode [data-add-event],
+body.demo-mode [data-add-sale],
+body.demo-mode [data-add-espp-purchase],
+body.demo-mode [data-add-espp-sale],
+body.demo-mode [data-delete-fund],
+body.demo-mode [data-delete-rsu],
+body.demo-mode [data-delete-espp],
+body.demo-mode [data-delete-cash],
+body.demo-mode [data-del-pension],
+body.demo-mode [data-del-event],
+body.demo-mode [data-del-sale],
+body.demo-mode [data-del-espp-purchase],
+body.demo-mode [data-del-espp-sale],
+body.demo-mode [data-rule-del],
+body.demo-mode [data-rule-end],
+body.demo-mode [data-rule-save],
+body.demo-mode [data-archive-espp],
+body.demo-mode #setting-net-of-fees,
+body.demo-mode label[for="setting-net-of-fees"],
+body.demo-mode #setting-usdils,
+body.demo-mode label[for="setting-usdils"] {
+  display: none !important;
+}
+
 .disclaimer-banner {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -1686,6 +1758,7 @@ html[dir="rtl"] .chat-panel {
     </div>
     <div id="login-error" class="login-error"></div>
     <button class="btn btn--primary" id="login-btn" type="button" style="width:100%" data-i18n="auth.submit.login">Sign in</button>
+    <button class="btn btn--ghost" id="demo-btn" type="button" style="width:100%;margin-top:0.75rem" data-i18n="auth.tryDemo">Try demo portfolio</button>
     <p style="margin:1rem 0 0;font-size:0.875rem;text-align:center;color:var(--color-muted)">
       <button type="button" class="btn btn--ghost btn--small" id="auth-toggle-btn" data-i18n="auth.toggle.toRegister">Create an account</button>
     </p>
@@ -1721,6 +1794,10 @@ html[dir="rtl"] .chat-panel {
       </div>
     </div>
     <nav class="section-nav" id="section-nav" data-i18n-aria-label="nav.aria" aria-label="Sections"></nav>
+  </div>
+  <div id="demo-banner" class="demo-banner" hidden role="status">
+    <strong id="demo-banner-text" data-i18n="demo.banner">Demo mode — changes are not saved.</strong>
+    <button type="button" class="demo-banner__cta" id="demo-create-account-btn" data-i18n="demo.createAccount">Create account</button>
   </div>
 
   <aside class="disclaimer" id="disclaimer" data-i18n-aria-label="disclaimer.aria" aria-label="Important disclaimers">
@@ -2264,6 +2341,7 @@ function timeAgo(iso) {
 }
 
 let APP = null;
+let IS_DEMO = false;
 let SESSION_EPOCH = 0;
 let HORIZON = 24;
 let WHAT_IF_PCT = (() => {
@@ -2419,6 +2497,10 @@ function clearUserSession() {
   localStorage.removeItem('saving_what_if_pct');
   WHAT_IF_PCT = null;
   APP = null;
+  IS_DEMO = false;
+  document.body.classList.remove('demo-mode');
+  const demoBanner = document.getElementById('demo-banner');
+  if (demoBanner) demoBanner.hidden = true;
   EXPANDED.clear();
   DASH_RANGE = null;
   const whatIfInput = document.getElementById('what-if-input');
@@ -2490,12 +2572,18 @@ async function api(method, path, body, { retries = 1, silent = false } = {}) {
         logout(t('toast.sessionExpired'));
         return { ok: false, error: t('api.unauthorized') };
       }
+      let payload;
+      try { payload = await r.json(); }
+      catch { return { ok: false, error: t('api.invalidJson') }; }
+      if (r.status === 403 && payload && payload.error === 'demo_read_only') {
+        if (!silent) toast(t('toast.demoReadOnly'), 'error');
+        return { ok: false, error: 'demo_read_only' };
+      }
       if (!r.ok && r.status >= 500) {
         lastError = `HTTP ${r.status}`;
         continue;
       }
-      try { return await r.json(); }
-      catch { return { ok: false, error: t('api.invalidJson') }; }
+      return payload;
     } catch (err) {
       lastError = err.message || t('api.networkError');
     }
@@ -2509,12 +2597,39 @@ async function login(username, password) {
     SESSION_EPOCH += 1;
     clearPortfolioUi();
     APP = null;
+    IS_DEMO = !!j.is_demo;
     setToken(j.token);
     hideLogin();
     return true;
   }
   document.getElementById('login-error').textContent = j.error || t('auth.error.signInFailed');
   return false;
+}
+
+async function loginDemo() {
+  const j = await api('POST', '/api/demo', {}, { retries: 2 });
+  if (j.ok && j.token) {
+    SESSION_EPOCH += 1;
+    clearPortfolioUi();
+    APP = null;
+    IS_DEMO = true;
+    setToken(j.token);
+    hideLogin();
+    return true;
+  }
+  document.getElementById('login-error').textContent = j.error || t('auth.error.signInFailed');
+  return false;
+}
+
+function applyDemoMode() {
+  IS_DEMO = !!(APP && APP.is_demo);
+  document.body.classList.toggle('demo-mode', IS_DEMO);
+  const banner = document.getElementById('demo-banner');
+  if (banner) banner.hidden = !IS_DEMO;
+  if (IS_DEMO) {
+    CHAT_ENABLED = false;
+    setChatChromeVisible(false);
+  }
 }
 
 let authMode = 'login';
@@ -2534,6 +2649,8 @@ function setAuthMode(mode) {
   document.getElementById('login-error').textContent = '';
   const forgot = document.getElementById('forgot-password-note');
   if (forgot) forgot.hidden = !isLogin;
+  const demoBtn = document.getElementById('demo-btn');
+  if (demoBtn) demoBtn.hidden = !isLogin;
 }
 
 async function register(username, password) {
@@ -2568,6 +2685,7 @@ async function fetchData(showSpinner = false) {
     return;
   }
   APP = j;
+  applyDemoMode();
   setStatus('ok', t('status.loadedUsdils', { rate: (j.cache_status.current_usdils || 0).toFixed(3) }));
   renderAll();
 }
@@ -2605,6 +2723,7 @@ async function runSync() {
     return;
   }
   APP = j;
+  applyDemoMode();
   setStatus('ok', t('status.synced'));
   toast(t('toast.synced'), 'info');
   renderAll();
@@ -6622,6 +6741,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (ok && mode === 'login') startApp();
   });
 
+  document.getElementById('demo-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('demo-btn');
+    btn.disabled = true;
+    document.getElementById('login-error').textContent = '';
+    const ok = await loginDemo();
+    btn.disabled = false;
+    if (ok) startApp();
+  });
+
+  document.getElementById('demo-create-account-btn').addEventListener('click', () => {
+    logout();
+    setAuthMode('register');
+  });
+
   document.getElementById('login-password').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') document.getElementById('login-btn').click();
   });
@@ -6719,6 +6852,14 @@ function ensureChatInitialized() {
 
 async function refreshChatAvailability() {
   if (!getToken()) return;
+  if (IS_DEMO || (APP && APP.is_demo)) {
+    CHAT_STATUS_FETCHED = true;
+    CHAT_ENABLED = false;
+    setChatChromeVisible(false);
+    CHAT_MESSAGES = [];
+    renderChatThread();
+    return;
+  }
   const j = await api('GET', '/api/chat/status', undefined, { silent: true });
   CHAT_STATUS_FETCHED = true;
   CHAT_ENABLED = !!(j && j.ok !== false && j.enabled);

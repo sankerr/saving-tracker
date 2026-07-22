@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "settings": {
+    "yield_is_net_of_fees": true,
+    "usdils_rate_override": null,
+    "goal": {
+      "target_amount_ils": 2000000,
+      "target_date": "2032-12-01"
+    }
+  },
+  "fund_holdings": [
+    {
+      "id": "demo-fund-gemel-001",
+      "created_at": "2024-03-15T10:00:00+00:00",
+      "fund_id": 512,
+      "data_source": "gemelnet",
+      "fund_name_snapshot": "אלטשולר שחם גמל מניות",
+      "managing_corporation_snapshot": "אלטשולר שחם גמל ופנסיה בע\"מ",
+      "classification_snapshot": "מניות",
+      "nickname": "Gemel — equities",
+      "yield_is_net_of_fees": true,
+      "anchor_period": 202401,
+      "anchor_balance_ils": 185000,
+      "events": [
+        {
+          "id": "demo-fund-ev-001",
+          "date": "2024-06-20",
+          "kind": "deposit",
+          "amount_ils": 15000,
+          "note": "Bonus deposit",
+          "source": "manual"
+        }
+      ],
+      "recurring_rules": [
+        {
+          "id": "demo-fund-rule-001",
+          "created_at": "2024-03-15T10:00:00+00:00",
+          "start_date": "2024-02-01",
+          "end_date": null,
+          "employee": 2500,
+          "employer": 2500,
+          "day_of_month": 1,
+          "note": "Monthly salary contribution"
+        }
+      ],
+      "archived": false,
+      "included_in_dashboard": true
+    },
+    {
+      "id": "demo-fund-hishtalmut-001",
+      "created_at": "2024-03-15T10:05:00+00:00",
+      "fund_id": 9945,
+      "data_source": "gemelnet",
+      "fund_name_snapshot": "הראל השתלמות כללי",
+      "managing_corporation_snapshot": "הראל פנסיה וגמל בע\"מ",
+      "classification_snapshot": "כללי",
+      "nickname": "Hishtalmut — general",
+      "yield_is_net_of_fees": true,
+      "anchor_period": 202401,
+      "anchor_balance_ils": 72000,
+      "events": [],
+      "recurring_rules": [
+        {
+          "id": "demo-fund-rule-002",
+          "created_at": "2024-03-15T10:05:00+00:00",
+          "start_date": "2024-01-01",
+          "end_date": null,
+          "employee": 800,
+          "employer": 1200,
+          "day_of_month": 1,
+          "note": "Study fund contributions"
+        }
+      ],
+      "archived": false,
+      "included_in_dashboard": true
+    }
+  ],
+  "pension_holdings": [
+    {
+      "id": "demo-pension-001",
+      "created_at": "2024-03-15T10:10:00+00:00",
+      "fund_id": 1339,
+      "fund_name_snapshot": "מנורה מבטחים פנסיה מקיפה",
+      "managing_corporation_snapshot": "מנורה מבטחים פנסיה וגמל בע\"מ",
+      "classification_snapshot": "מקיפה",
+      "nickname": "Pension — comprehensive",
+      "yield_is_net_of_fees": true,
+      "anchor_period": 202401,
+      "anchor_balance_ils": 420000,
+      "events": [],
+      "recurring_rules": [
+        {
+          "id": "demo-pension-rule-001",
+          "created_at": "2024-03-15T10:10:00+00:00",
+          "start_date": "2023-01-01",
+          "end_date": null,
+          "employee": 3200,
+          "employer": 6400,
+          "day_of_month": 1,
+          "note": "Employer + employee pension"
+        }
+      ],
+      "archived": false
+    }
+  ],
+  "rsu_grants": [
+    {
+      "id": "demo-rsu-aapl-001",
+      "created_at": "2024-03-15T10:15:00+00:00",
+      "ticker": "AAPL",
+      "nickname": "Apple RSU 2023",
+      "grant_date": "2023-03-15",
+      "total_shares": 400,
+      "vesting_start": "2023-03-15",
+      "vesting_months": 48,
+      "cliff_months": 12,
+      "vesting_cadence": "monthly",
+      "grant_price_override_usd": 152.5,
+      "sales": [
+        {
+          "id": "demo-rsu-sale-001",
+          "date": "2024-09-15",
+          "shares_sold": 50,
+          "sale_price_usd": 220.0,
+          "note": "Partial sell after cliff"
+        }
+      ],
+      "archived": false
+    }
+  ],
+  "espp_plans": [
+    {
+      "id": "demo-espp-msft-001",
+      "created_at": "2024-03-15T10:20:00+00:00",
+      "ticker": "MSFT",
+      "nickname": "Microsoft ESPP",
+      "discount_pct": 15.0,
+      "has_lookback": true,
+      "offering_months": 6,
+      "purchases": [
+        {
+          "id": "demo-espp-purchase-001",
+          "date": "2024-06-28",
+          "contribution_usd": 3000,
+          "period_start_price_usd": 370.0,
+          "period_end_price_usd": 445.0,
+          "purchase_price_usd": 314.5,
+          "shares": 9.538,
+          "note": "H1 2024 offering"
+        },
+        {
+          "id": "demo-espp-purchase-002",
+          "date": "2024-12-31",
+          "contribution_usd": 3000,
+          "period_start_price_usd": 420.0,
+          "period_end_price_usd": 430.0,
+          "purchase_price_usd": 357.0,
+          "shares": 8.403,
+          "note": "H2 2024 offering"
+        }
+      ],
+      "sales": [
+        {
+          "id": "demo-espp-sale-001",
+          "date": "2025-01-15",
+          "shares_sold": 4.0,
+          "sale_price_usd": 428.0,
+          "note": "Sold half of first purchase"
+        }
+      ],
+      "archived": false
+    }
+  ],
+  "cash_holdings": [
+    {
+      "id": "demo-cash-ils-001",
+      "created_at": "2024-03-15T10:25:00+00:00",
+      "nickname": "Checking — Bank Leumi",
+      "amount": 45000,
+      "currency": "ILS",
+      "note": "Emergency buffer",
+      "archived": false
+    },
+    {
+      "id": "demo-cash-usd-001",
+      "created_at": "2024-03-15T10:26:00+00:00",
+      "nickname": "USD brokerage cash",
+      "amount": 8500,
+      "currency": "USD",
+      "note": "Settled cash",
+      "archived": false
+    }
+  ]
+}
