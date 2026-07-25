@@ -1190,60 +1190,6 @@ def expand_rule_for_period(rule: dict, period: int) -> dict:
 
 
 # ── Fund valuation ───────────────────────────────────────────────────────────
-def _ytd_money_profit(series: list, current_value: float,
-                      calendar_year: int | None = None) -> dict:
-    """True-money calendar-year P/L from a fund/pension value series.
-
-    ytd_profit = current − start_of_year_value − net_deposits_YTD
-    Start value is the last series point before January of ``calendar_year``
-    (0 if the holding has no prior-year point).
-    """
-    year = int(calendar_year or date.today().year)
-    year_start_period = year * 100 + 1
-
-    start_value = 0.0
-    start_deposited = 0.0
-    start_withdrawn = 0.0
-    for pt in series or []:
-        try:
-            p = int(pt["period"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if p < year_start_period:
-            start_value = float(pt.get("value_ils") or 0)
-            start_deposited = float(pt.get("deposited_to_date") or 0)
-            start_withdrawn = float(pt.get("withdrawn_to_date") or 0)
-
-    cur_dep = 0.0
-    cur_with = 0.0
-    if series:
-        last = series[-1]
-        cur_dep = float(last.get("deposited_to_date") or 0)
-        cur_with = float(last.get("withdrawn_to_date") or 0)
-
-    net_deposits_ytd = (cur_dep - start_deposited) - (cur_with - start_withdrawn)
-    try:
-        current = float(current_value or 0)
-    except (TypeError, ValueError):
-        current = 0.0
-    profit = current - start_value - net_deposits_ytd
-
-    if start_value > 0:
-        pct = profit / start_value
-    elif net_deposits_ytd > 0:
-        pct = profit / net_deposits_ytd
-    else:
-        pct = None
-
-    return {
-        "ytd_profit_ils": round(profit, 2),
-        "ytd_profit_pct": pct,
-        "ytd_calendar_year": year,
-        "ytd_start_value_ils": round(start_value, 2),
-        "ytd_net_deposits_ils": round(net_deposits_ytd, 2),
-    }
-
-
 def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     fund_id = str(holding["fund_id"])
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
@@ -1454,8 +1400,6 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     last_month_yield = (rows_by_period.get(last_actual) or {}).get("monthly_yield") if last_actual else None
     is_pending_current = (last_actual or 0) < current_period()
 
-    ytd_money = _ytd_money_profit(series, current_value)
-
     return {
         "last_period": last_actual or anchor_period,
         "is_pending_current_month": is_pending_current,
@@ -1467,11 +1411,6 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         "cumulative_mgmt_fee_ils": round(cumulative_mgmt_fee, 2),
         "profit_ils": round(profit, 2),
         "profit_pct": profit_pct,
-        "ytd_profit_ils": ytd_money["ytd_profit_ils"],
-        "ytd_profit_pct": ytd_money["ytd_profit_pct"],
-        "ytd_calendar_year": ytd_money["ytd_calendar_year"],
-        "ytd_start_value_ils": ytd_money["ytd_start_value_ils"],
-        "ytd_net_deposits_ils": ytd_money["ytd_net_deposits_ils"],
         "three_m_return_pct": three_m,
         "six_m_return_pct": six_m,
         "twelve_m_return_pct": twelve_m,
@@ -2775,45 +2714,6 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             if goal else None
         )
 
-        # Calendar-year true-money P/L for funds (dashboard-included) + pension.
-        pension_ytd_profit = sum(
-            float((h.get("computed") or {}).get("ytd_profit_ils") or 0)
-            for h in pension_holdings_out if not h.get("archived")
-        )
-        pension_ytd_start = sum(
-            float((h.get("computed") or {}).get("ytd_start_value_ils") or 0)
-            for h in pension_holdings_out if not h.get("archived")
-        )
-        pension_ytd_net = sum(
-            float((h.get("computed") or {}).get("ytd_net_deposits_ils") or 0)
-            for h in pension_holdings_out if not h.get("archived")
-        )
-        funds_ytd_profit = float(portfolio.get("funds_ytd_profit_ils") or 0)
-        funds_ytd_start = sum(
-            float((h.get("computed") or {}).get("ytd_start_value_ils") or 0)
-            for h in fund_holdings_out
-            if not h.get("archived") and h.get("included_in_dashboard", True)
-        )
-        funds_ytd_net = sum(
-            float((h.get("computed") or {}).get("ytd_net_deposits_ils") or 0)
-            for h in fund_holdings_out
-            if not h.get("archived") and h.get("included_in_dashboard", True)
-        )
-        ytd_profit = funds_ytd_profit + pension_ytd_profit
-        ytd_start = funds_ytd_start + pension_ytd_start
-        ytd_net = funds_ytd_net + pension_ytd_net
-        if ytd_start > 0:
-            ytd_pct = ytd_profit / ytd_start
-        elif ytd_net > 0:
-            ytd_pct = ytd_profit / ytd_net
-        else:
-            ytd_pct = None
-        ytd_year = portfolio.get("funds_ytd_calendar_year") or date.today().year
-        portfolio["ytd_profit_ils"] = round(ytd_profit, 2)
-        portfolio["ytd_profit_pct"] = ytd_pct
-        portfolio["ytd_calendar_year"] = ytd_year
-        portfolio["pension_ytd_profit_ils"] = round(pension_ytd_profit, 2)
-
         cashout_tax_estimate = compute_cashout_tax_estimate(
             fund_holdings_out, rsu_grants_out, espp_plans_out,
             cash_holdings_out, pension_holdings_out,
@@ -2836,7 +2736,6 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
                 "total_value_ils": round(pension_total_ils, 2),
                 "count": len([p for p in pension_holdings_out if not p.get("archived")]),
                 "excluded_from_total": True,
-                "ytd_profit_ils": round(pension_ytd_profit, 2),
                 "what_if": pension_what_if,
             },
             "sync_status": dict(_sync_status),
@@ -2916,12 +2815,6 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "cash_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
-            "funds_ytd_profit_ils": 0,
-            "funds_ytd_profit_pct": None,
-            "funds_ytd_calendar_year": date.today().year,
-            "ytd_profit_ils": 0,
-            "ytd_profit_pct": None,
-            "ytd_calendar_year": date.today().year,
             "time_series_ils": [],
             "projection": None,
             "rsu_value_usd": 0,
@@ -2953,12 +2846,6 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "cash_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
-            "funds_ytd_profit_ils": 0,
-            "funds_ytd_profit_pct": None,
-            "funds_ytd_calendar_year": date.today().year,
-            "ytd_profit_ils": 0,
-            "ytd_profit_pct": None,
-            "ytd_calendar_year": date.today().year,
             "time_series_ils": [],
             "projection": None,
             "rsu_value_usd": 0,
@@ -3070,32 +2957,6 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     funds_profit = sum(h["computed"]["profit_ils"] for h in funds if not h.get("archived"))
     rsu_profit_ils = sum(g["computed"]["profit_ils"] for g in grants if not g.get("archived"))
     espp_profit_ils = sum(p["computed"]["profit_ils"] for p in espp if not p.get("archived"))
-    funds_ytd_profit = sum(
-        float((h.get("computed") or {}).get("ytd_profit_ils") or 0)
-        for h in funds if not h.get("archived")
-    )
-    funds_ytd_start = sum(
-        float((h.get("computed") or {}).get("ytd_start_value_ils") or 0)
-        for h in funds if not h.get("archived")
-    )
-    funds_ytd_net_deposits = sum(
-        float((h.get("computed") or {}).get("ytd_net_deposits_ils") or 0)
-        for h in funds if not h.get("archived")
-    )
-    ytd_year = date.today().year
-    for h in funds:
-        if h.get("archived"):
-            continue
-        y = (h.get("computed") or {}).get("ytd_calendar_year")
-        if y:
-            ytd_year = int(y)
-            break
-    if funds_ytd_start > 0:
-        funds_ytd_pct = funds_ytd_profit / funds_ytd_start
-    elif funds_ytd_net_deposits > 0:
-        funds_ytd_pct = funds_ytd_profit / funds_ytd_net_deposits
-    else:
-        funds_ytd_pct = None
 
     employee_total = sum(h["computed"].get("total_employee_ils", 0) for h in funds if not h.get("archived"))
     employer_total = sum(h["computed"].get("total_employer_ils", 0) for h in funds if not h.get("archived"))
@@ -3145,9 +3006,6 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         "rsu_profit_ils": round(rsu_profit_ils, 2),
         "espp_profit_ils": round(espp_profit_ils, 2),
         "total_profit_ils": round(funds_profit + rsu_profit_ils + espp_profit_ils, 2),
-        "funds_ytd_profit_ils": round(funds_ytd_profit, 2),
-        "funds_ytd_profit_pct": funds_ytd_pct,
-        "funds_ytd_calendar_year": ytd_year,
         "total_employee_ils": round(employee_total, 2),
         "total_employer_ils": round(employer_total, 2),
         "time_series_ils": series,

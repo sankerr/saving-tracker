@@ -931,30 +931,85 @@ def run_chat(
     return {"ok": True, "reply": reply, "model": _gemini_model()}
 
 
-DAILY_INSIGHTS_PROMPT = """You write a short daily insight for a personal Israeli savings tracker (in-app card and email).
+DAILY_INSIGHTS_PROMPT = """You write short daily insights for a personal Israeli savings tracker (in-app card and email).
 Use ONLY the portfolio JSON provided. Educational only — not financial, tax, or legal advice.
 Do NOT discuss management fees or deposit fees.
-Do NOT invent tax numbers — only use cashout_tax_estimate when present.
+Focus on allocation, recent returns if present, concentration, vesting/RSU/ESPP, cash buffer, goals/pace if present, and optional growth observations.
+Do NOT invent holdings or numbers missing from the JSON.
 
-Write exactly 6 short bullet points (plain text with leading "- "), in this exact order:
-1. Overall Total Wealth — state portfolio_totals.total_value_ils in ₪ (dashboard total; pension excluded).
-2. Last month profit/loss — use the latest monthly_history month's change_from_prev_ils / change_from_prev_pct (and its period). If missing, say last-month change is not available yet.
-3. Goal status — use savings_goal. If configured: progress_pct, on_pace, gap_ils vs target_amount_ils by target_date. If not configured: say no savings goal is set.
-4. Suggestion — one concrete educational suggestion (allocation, contributions, vesting, cash buffer, or growth assumptions).
-5. Risks — one notable risk (concentration, single-ticker RSU/ESPP, low cash buffer, aggressive horizon, or behind-pace goal).
-6. Cash-out tax estimate — from cashout_tax_estimate: estimated_tax_ils and net_after_tax_ils. Note tax is on profit/gains only; קרן השתלמות tax-free; pension excluded. End with "estimate only, not tax advice." If unavailable, say the estimate is not available.
+Return ONLY valid JSON (no markdown fences, no prose outside JSON):
+{"insights":[{"text":"...","confidence":0.0}]}
 
-Rules:
-- One bullet per line; no numbering prefixes beyond "- "; no intro or closing.
-- Use real numbers from the JSON; do not invent holdings or values.
-- Keep each bullet to one sentence. Max ~150 words total.
-- When a language directive is given below, follow it; otherwise match Hebrew nicknames if the data is mostly Hebrew, else English."""
+Rules for insights:
+- Include at most 5 items. Fewer is fine; use an empty array if nothing is solidly supported.
+- Each "text" is one short sentence (no leading "- ").
+- "confidence" is a number from 0 to 1: how sure you are the insight is grounded in the provided data (not speculation).
+- Prefer high-confidence, specific observations over vague advice.
+- Match the language directive below when present; otherwise English."""
 
 
 _INSIGHTS_LANG_DIRECTIVE = {
-    "he": "\nWrite the entire response in Hebrew.",
-    "en": "\nWrite the entire response in English.",
+    "he": "\nWrite every insight text in Hebrew.",
+    "en": "\nWrite every insight text in English.",
 }
+
+# Only surface insights the model marks as high-confidence.
+INSIGHTS_MIN_CONFIDENCE = 0.75
+INSIGHTS_MAX_COUNT = 5
+
+
+def _parse_insights_payload(raw: str) -> list[dict]:
+    """Parse model JSON into [{text, confidence}, ...]. Tolerates markdown fences."""
+    text = (raw or "").strip()
+    if not text:
+        return []
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Fallback: treat plain "- " bullets as medium-confidence insights.
+        out = []
+        for ln in text.splitlines():
+            s = ln.strip()
+            if s.startswith("- ") or s.startswith("• "):
+                out.append({"text": s[2:].strip(), "confidence": 0.7})
+            elif s.startswith("* "):
+                out.append({"text": s[2:].strip(), "confidence": 0.7})
+        return out
+    items = data.get("insights") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    out = []
+    for it in items:
+        if isinstance(it, str) and it.strip():
+            out.append({"text": it.strip(), "confidence": 0.7})
+            continue
+        if not isinstance(it, dict):
+            continue
+        t = (it.get("text") or it.get("insight") or "").strip()
+        if not t:
+            continue
+        try:
+            conf = float(it.get("confidence", 0))
+        except (TypeError, ValueError):
+            conf = 0.0
+        out.append({"text": t, "confidence": conf})
+    return out
+
+
+def _format_insights_bullets(items: list[dict]) -> str:
+    lines = []
+    for it in items:
+        t = (it.get("text") or "").strip()
+        if t:
+            lines.append(f"- {t}")
+    return "\n".join(lines)
 
 
 def generate_daily_insights(context: dict, lang: str = None) -> str:
@@ -963,6 +1018,9 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
     Requires GEMINI_API_KEY only (not CHAT_ENABLED). When ``lang`` is 'he' or
     'en' the output is forced to that language; otherwise the model matches the
     data's language (default used by the email path).
+
+    Asks for up to 5 free-form insights with confidence scores; only insights
+    at or above INSIGHTS_MIN_CONFIDENCE are returned (may be empty).
     """
     api_key = _gemini_api_key()
     if not api_key:
@@ -979,8 +1037,8 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
                 "parts": [
                     {
                         "text": (
-                            "Write today's 6-bullet portfolio insights from this JSON:\n"
-                            f"{context_json}"
+                            "Propose up to 5 portfolio insights from this JSON "
+                            f"(only high-confidence ones):\n{context_json}"
                         )
                     }
                 ],
@@ -988,7 +1046,8 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
         ],
         "generationConfig": {
             "temperature": 0.4,
-            "maxOutputTokens": 550,
+            "maxOutputTokens": 500,
+            "responseMimeType": "application/json",
         },
     }
     r = requests.post(
@@ -999,12 +1058,27 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
         timeout=REQUEST_TIMEOUT,
     )
     if r.status_code >= 400:
-        raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:400]}")
+        # Some models reject responseMimeType — retry without it.
+        body["generationConfig"].pop("responseMimeType", None)
+        r = requests.post(
+            GEMINI_URL.format(model=model),
+            params={"key": api_key},
+            headers={"Content-Type": "application/json"},
+            json=body,
+            timeout=REQUEST_TIMEOUT,
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:400]}")
     parts = _extract_candidate_parts(r.json())
-    text = _parts_text(parts)
-    if not text:
+    raw = _parts_text(parts)
+    if not raw:
         raise RuntimeError("Gemini returned empty insights")
-    return text
+    parsed = _parse_insights_payload(raw)
+    kept = [
+        it for it in parsed
+        if float(it.get("confidence") or 0) >= INSIGHTS_MIN_CONFIDENCE
+    ][:INSIGHTS_MAX_COUNT]
+    return _format_insights_bullets(kept)
 
 
 _INSIGHTS_LANG_NAMES = {"he": "Hebrew", "en": "English"}
@@ -1012,15 +1086,18 @@ _INSIGHTS_LANG_NAMES = {"he": "Hebrew", "en": "English"}
 _TRANSLATE_INSIGHTS_PROMPT = (
     "You are a professional translator. Translate the user's text to {lang_name}.\n"
     "Preserve the exact meaning, order, numbers, and any leading \"- \" bullet markers.\n"
-    "Keep exactly 6 bullets in the same order. Do not add, remove, reorder, or\n"
-    "reinterpret any content. Keep numbers and currency symbols unchanged.\n"
-    "Output only the translation, nothing else."
+    "Do not add, remove, reorder, or reinterpret any content. Keep numbers and\n"
+    "currency symbols unchanged. Output only the translation, nothing else.\n"
+    "If the input is empty, output nothing."
 )
 
 
 def _translate_insights(text: str, target_lang: str) -> str:
     """Translate an insight string to ``target_lang`` ('he'/'en') preserving
     content, so both language versions convey identical information."""
+    text = (text or "").strip()
+    if not text:
+        return ""
     api_key = _gemini_api_key()
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not configured")
@@ -1030,7 +1107,7 @@ def _translate_insights(text: str, target_lang: str) -> str:
     body = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": text}]}],
-        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 600},
+        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 500},
     }
     r = requests.post(
         GEMINI_URL.format(model=model),
@@ -1042,9 +1119,9 @@ def _translate_insights(text: str, target_lang: str) -> str:
     if r.status_code >= 400:
         raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:400]}")
     translated = _parts_text(_extract_candidate_parts(r.json()))
-    if not translated:
+    if not translated and text:
         raise RuntimeError("Gemini returned empty translation")
-    return translated
+    return translated or ""
 
 
 def generate_daily_insights_bilingual(context: dict) -> dict:
@@ -1053,8 +1130,12 @@ def generate_daily_insights_bilingual(context: dict) -> dict:
     language. Returns ``{"en": text, "he": text}``.
 
     If translation fails, falls back to an independent Hebrew generation so the
-    card still works (content may then differ slightly)."""
+    card still works (content may then differ slightly). Empty English (no
+    high-confidence insights) yields empty Hebrew without another API call.
+    """
     en = generate_daily_insights(context, lang="en")
+    if not (en or "").strip():
+        return {"en": "", "he": ""}
     try:
         he = _translate_insights(en, "he")
     except Exception:

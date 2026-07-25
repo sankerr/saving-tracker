@@ -174,6 +174,11 @@ def _build_dashboard_html(
     usdils = cache.get("current_usdils")
     usdils_txt = f"{float(usdils):.3f}" if usdils is not None else "—"
 
+    if (insights_text or "").strip():
+        insights_body = _insights_html(insights_text)
+    else:
+        insights_body = '<p style="margin:0;color:#8A8A9C;">No high-confidence insights today.</p>'
+
     return f"""<!DOCTYPE html>
 <html><body style="margin:0;padding:0;background:#FCFBF8;color:#2B2B3E;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:640px;margin:0 auto;padding:24px 16px;">
@@ -223,7 +228,7 @@ def _build_dashboard_html(
 
     <div style="background:#fff;border:1px solid #ECE8DF;border-radius:12px;padding:1rem 1.125rem;margin-bottom:1rem;">
       <div style="font-size:15px;font-weight:600;">AI insights</div>
-      <div style="font-size:14px;line-height:1.5;color:#2B2B3E;">{_insights_html(insights_text)}</div>
+      <div style="font-size:14px;line-height:1.5;color:#2B2B3E;">{insights_body}</div>
       <p style="margin:0.75rem 0 0;font-size:11px;color:#8A8A9C;">
         Educational only — not financial, tax, or investment advice. Verify against official statements.
       </p>
