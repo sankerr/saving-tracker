@@ -44,6 +44,8 @@ Backend capabilities (use tools — do not invent math):
   Growth % applies to funds (and pension when included). Cash and ESPP are held flat; RSU follows vesting at today's price/FX.
 - query_portfolio_history: returns real past monthly dashboard totals and month-over-month changes from synced holdings/yields.
   Use for "what was my total in June?", "how much did I gain last month?", or comparing two past months.
+- evaluate_savings_goal: returns the user's savings-goal status (same as the dashboard goal strip).
+  Pace uses historical fund averages projected to the goal month; Total Wealth only (pension excluded). No growth-% override.
 - describe_backend_apis: lists REST APIs and what they do.
 
 Past totals / change questions (e.g. "what was my portfolio worth in March?", "how much changed since last month?"):
@@ -57,8 +59,15 @@ Future value / profit questions (e.g. "what will my profit be in May 2030?"):
 3. After the tool returns, explain projected total, change vs today, and assumptions. Never invent projected numbers.
 4. Say clearly that projections are estimates, not guarantees, and not tax/financial advice.
 
+Savings goal questions (e.g. "am I on pace?", "how far from my goal?", "what's my savings goal?"):
+1. Prefer savings_goal in the portfolio JSON when present and configured.
+2. For an explicit pace/gap check, call evaluate_savings_goal.
+3. Explain using returned numbers only: progress_pct, projected_value_ils at target_date, on_pace, gap_ils.
+4. Note the basis: historical fund averages; headline Total Wealth (funds+RSU+ESPP+cash); pension excluded.
+5. You cannot set or clear the goal — tell the user to use the dashboard goal strip / Set a goal modal (POST /api/settings).
+
 When asked what the app can do / how to use it:
-- Call describe_backend_apis if helpful, then explain in plain language: track gemelnet/provident funds, pension (separate), RSU, ESPP, cash; dashboard projections/what-if; spot-check; sync; AI chat for questions and projections. Keep it short and numbered.
+- Call describe_backend_apis if helpful, then explain in plain language: track gemelnet/provident funds, pension (separate), RSU, ESPP, cash; savings goal toward Total Wealth; dashboard projections/what-if; spot-check; sync; AI chat for questions, projections, and goal pace. Keep it short and numbered.
 
 Guidelines:
 - Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP.
@@ -72,9 +81,10 @@ Guidelines:
 BACKEND_API_CATALOG = {
     "auth": ["POST /api/login", "POST /api/register", "POST /api/account/password", "DELETE /api/account"],
     "portfolio": [
-        "GET /api/data?horizon=&assumed_annual_pct= — composed holdings + projections/what-if",
+        "GET /api/data?horizon=&assumed_annual_pct= — composed holdings + projections/what-if + goal_status",
         "POST /api/sync — refresh gemelnet/pensia/Yahoo caches then return composed state",
         "GET /api/export / POST /api/import",
+        "POST /api/settings — patch settings including goal ({target_amount_ils, target_date} or null to clear)",
     ],
     "funds": [
         "GET /api/funds/search",
@@ -94,13 +104,17 @@ BACKEND_API_CATALOG = {
     ],
     "chat": [
         "GET /api/chat/status",
-        "POST /api/chat — this assistant; may call project_portfolio or query_portfolio_history tools",
+        "POST /api/chat — this assistant; may call project_portfolio, query_portfolio_history, or evaluate_savings_goal",
     ],
     "projection_rules": {
         "what_if_annual_pct": "Compounds funds (and pension what-if) at assumed %; cash+ESPP flat; RSU vesting curve at current price/FX",
         "historical_default": "Without assumed %, funds use historical average monthly return from gemelnet/pensia",
         "horizon_cap_months": HORIZON_CAP_MONTHS,
         "pension": "Excluded from dashboard total; surfaced separately in pension_summary",
+        "savings_goal": (
+            "Single target Total Wealth (ILS) by target month; on_pace compares historical projection "
+            "at that month to the target; pension excluded; chat evaluates via evaluate_savings_goal (read-only)"
+        ),
     },
 }
 
@@ -160,6 +174,16 @@ TOOLS = [
                 },
             },
             {
+                "name": "evaluate_savings_goal",
+                "description": (
+                    "Return the user's savings-goal status (same as the dashboard goal strip): "
+                    "target, progress, projected Total Wealth at the goal month, on_pace, and gap. "
+                    "Uses historical fund averages; pension excluded. Call for on-pace / goal questions. "
+                    "No parameters. Cannot set or clear the goal."
+                ),
+                "parameters": {"type": "object", "properties": {}},
+            },
+            {
                 "name": "describe_backend_apis",
                 "description": "Describe Saving Tracker backend REST APIs and projection rules.",
                 "parameters": {"type": "object", "properties": {}},
@@ -167,6 +191,10 @@ TOOLS = [
         ]
     }
 ]
+
+GOAL_BASIS_NOTE = (
+    "historical fund averages; Total Wealth (funds+RSU+ESPP+cash); pension excluded"
+)
 
 
 def chat_enabled() -> bool:
@@ -370,6 +398,7 @@ def build_portfolio_context(state: dict) -> dict:
             "count": pension_summary.get("count"),
             "excluded_from_dashboard_total": True,
         },
+        "savings_goal": _savings_goal_context(state.get("goal_status")),
         "holdings": {
             "funds": funds,
             "pensions": pensions,
@@ -378,6 +407,24 @@ def build_portfolio_context(state: dict) -> dict:
             "cash": cash,
         },
         "monthly_history": _build_monthly_history(state),
+    }
+
+
+def _savings_goal_context(goal_status: Any) -> dict:
+    """Compact savings-goal snapshot for the model (dashboard goal_status)."""
+    if not isinstance(goal_status, dict):
+        return {"configured": False}
+    return {
+        "configured": True,
+        "target_amount_ils": _round_or_none(goal_status.get("target_amount_ils")),
+        "target_date": goal_status.get("target_date"),
+        "current_value_ils": _round_or_none(goal_status.get("current_value_ils")),
+        "progress_pct": _round_or_none(goal_status.get("progress_pct"), 1),
+        "projected_value_ils": _round_or_none(goal_status.get("projected_value_ils")),
+        "on_pace": bool(goal_status.get("on_pace")),
+        "gap_ils": _round_or_none(goal_status.get("gap_ils")),
+        "months_remaining": goal_status.get("months_remaining"),
+        "basis": GOAL_BASIS_NOTE,
     }
 
 
@@ -636,6 +683,27 @@ def run_project_portfolio_tool(compose_fn: ComposeFn, args: dict) -> dict:
         return {"ok": False, "error": str(ex)}
 
 
+def run_evaluate_savings_goal_tool(compose_fn: ComposeFn) -> dict:
+    """Return dashboard goal_status (historical projection; pension excluded)."""
+    try:
+        state = compose_fn(24, None)
+        goal_status = state.get("goal_status")
+        if not isinstance(goal_status, dict):
+            return {
+                "ok": True,
+                "configured": False,
+                "message": (
+                    "No savings goal set. User can set target amount + target month "
+                    "in the dashboard goal strip (POST /api/settings)."
+                ),
+            }
+        out = _savings_goal_context(goal_status)
+        out["ok"] = True
+        return out
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+
+
 def _normalize_messages(raw: Any) -> list[dict]:
     if not isinstance(raw, list):
         return []
@@ -696,6 +764,8 @@ def _execute_tool(name: str, args: dict, compose_fn: ComposeFn) -> dict:
         return run_query_portfolio_history_tool(compose_fn, args or {})
     if name == "project_portfolio":
         return run_project_portfolio_tool(compose_fn, args or {})
+    if name == "evaluate_savings_goal":
+        return run_evaluate_savings_goal_tool(compose_fn)
     return {"ok": False, "error": f"Unknown tool: {name}"}
 
 
@@ -820,10 +890,22 @@ def run_chat(
     return {"ok": True, "reply": reply, "model": _gemini_model()}
 
 
-DAILY_INSIGHTS_PROMPT = """You write a short daily email insight for a personal Israeli savings tracker.
+DAILY_INSIGHTS_PROMPT = """You write a short daily insight for a personal Israeli savings tracker (in-app card and email).
 Use ONLY the portfolio JSON provided. Educational only — not financial, tax, or legal advice.
-Do NOT discuss management fees or deposit fees. Focus on allocation, recent returns if present, concentration, vesting/RSU/ESPP, cash buffer, and one optional observation about growth.
-Write 3 short bullet points (plain text with leading "- "). Max ~80 words total. Match the language of any Hebrew nicknames if the data is mostly Hebrew; otherwise English."""
+Do NOT discuss management fees, deposit fees, or Israeli tax.
+
+Write exactly 5 short bullet points (plain text with leading "- "), in this exact order:
+1. Overall Total Wealth — state portfolio_totals.total_value_ils in ₪ (dashboard total; pension excluded).
+2. Last month profit/loss — use the latest monthly_history month's change_from_prev_ils / change_from_prev_pct (and its period). If missing, say last-month change is not available yet.
+3. Goal status — use savings_goal. If configured: progress_pct, on_pace, gap_ils vs target_amount_ils by target_date. If not configured: say no savings goal is set.
+4. Suggestion — one concrete educational suggestion (allocation, contributions, vesting, cash buffer, or growth assumptions).
+5. Risks — one notable risk (concentration, single-ticker RSU/ESPP, low cash buffer, aggressive horizon, or behind-pace goal).
+
+Rules:
+- One bullet per line; no numbering prefixes beyond "- "; no intro or closing.
+- Use real numbers from the JSON; do not invent holdings or values.
+- Keep each bullet to one sentence. Max ~120 words total.
+- When a language directive is given below, follow it; otherwise match Hebrew nicknames if the data is mostly Hebrew, else English."""
 
 
 _INSIGHTS_LANG_DIRECTIVE = {
@@ -854,7 +936,7 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
                 "parts": [
                     {
                         "text": (
-                            "Write today's portfolio insights from this JSON:\n"
+                            "Write today's 5-bullet portfolio insights from this JSON:\n"
                             f"{context_json}"
                         )
                     }
@@ -863,7 +945,7 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
         ],
         "generationConfig": {
             "temperature": 0.4,
-            "maxOutputTokens": 280,
+            "maxOutputTokens": 450,
         },
     }
     r = requests.post(
@@ -887,8 +969,9 @@ _INSIGHTS_LANG_NAMES = {"he": "Hebrew", "en": "English"}
 _TRANSLATE_INSIGHTS_PROMPT = (
     "You are a professional translator. Translate the user's text to {lang_name}.\n"
     "Preserve the exact meaning, order, numbers, and any leading \"- \" bullet markers.\n"
-    "Do not add, remove, reorder, or reinterpret any content. Keep numbers and\n"
-    "currency symbols unchanged. Output only the translation, nothing else."
+    "Keep exactly 5 bullets in the same order. Do not add, remove, reorder, or\n"
+    "reinterpret any content. Keep numbers and currency symbols unchanged.\n"
+    "Output only the translation, nothing else."
 )
 
 
@@ -904,7 +987,7 @@ def _translate_insights(text: str, target_lang: str) -> str:
     body = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": text}]}],
-        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 400},
+        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 500},
     }
     r = requests.post(
         GEMINI_URL.format(model=model),
