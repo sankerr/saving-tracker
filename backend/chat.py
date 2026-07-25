@@ -66,8 +66,14 @@ Savings goal questions (e.g. "am I on pace?", "how far from my goal?", "what's m
 4. Note the basis: historical fund averages; headline Total Wealth (funds+RSU+ESPP+cash); pension excluded.
 5. You cannot set or clear the goal — tell the user to use the dashboard goal strip / Set a goal modal (POST /api/settings).
 
+Cash-out / tax questions (e.g. "how much tax if I cash out everything?"):
+1. Use cashout_tax_estimate from the portfolio JSON only — never invent tax figures.
+2. Report estimated_tax_ils, net_after_tax_ils, taxable_profit_ils, and that tax is on profit/gains only.
+3. Note: קרן השתלמות is treated as tax-free; cash 0%; pension excluded from cash-out; other funds/RSU/ESPP use 25% on gains.
+4. Always repeat the disclaimer: rough educational estimate, not tax advice.
+
 When asked what the app can do / how to use it:
-- Call describe_backend_apis if helpful, then explain in plain language: track gemelnet/provident funds, pension (separate), RSU, ESPP, cash; savings goal toward Total Wealth; dashboard projections/what-if; spot-check; sync; AI chat for questions, projections, and goal pace. Keep it short and numbered.
+- Call describe_backend_apis if helpful, then explain in plain language: track gemelnet/provident funds, pension (separate), RSU, ESPP, cash; savings goal toward Total Wealth; dashboard projections/what-if; spot-check; sync; AI chat for questions, projections, goal pace, and rough cash-out tax estimate. Keep it short and numbered.
 
 Guidelines:
 - Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP.
@@ -75,7 +81,7 @@ Guidelines:
 - Do NOT discuss management fees, deposit fees, or "~mgmt fees paid" as features of this app — the app does not calculate fees for advice. Prefer allocation and growth topics instead.
 - Match the user's language (Hebrew or English).
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
-- This app does not model Israeli tax. Dashboard total excludes pension (tracked separately)."""
+- Dashboard total excludes pension (tracked separately). For tax/cash-out, only use cashout_tax_estimate."""
 
 
 BACKEND_API_CATALOG = {
@@ -114,6 +120,10 @@ BACKEND_API_CATALOG = {
         "savings_goal": (
             "Single target Total Wealth (ILS) by target month; on_pace compares historical projection "
             "at that month to the target; pension excluded; chat evaluates via evaluate_savings_goal (read-only)"
+        ),
+        "cashout_tax_estimate": (
+            "Rough educational estimate if liquidating accessible holdings: 25% on profit/gains only; "
+            "קרן השתלמות tax-free; cash 0%; pension excluded; not tax advice"
         ),
     },
 }
@@ -399,6 +409,7 @@ def build_portfolio_context(state: dict) -> dict:
             "excluded_from_dashboard_total": True,
         },
         "savings_goal": _savings_goal_context(state.get("goal_status")),
+        "cashout_tax_estimate": _cashout_tax_context(state.get("cashout_tax_estimate")),
         "holdings": {
             "funds": funds,
             "pensions": pensions,
@@ -425,6 +436,36 @@ def _savings_goal_context(goal_status: Any) -> dict:
         "gap_ils": _round_or_none(goal_status.get("gap_ils")),
         "months_remaining": goal_status.get("months_remaining"),
         "basis": GOAL_BASIS_NOTE,
+    }
+
+
+def _cashout_tax_context(est: Any) -> dict:
+    """Compact cash-out tax estimate for insights/chat (deterministic backend)."""
+    if not isinstance(est, dict):
+        return {"available": False}
+    return {
+        "available": True,
+        "accessible_value_ils": _round_or_none(est.get("accessible_value_ils")),
+        "tax_free_value_ils": _round_or_none(est.get("tax_free_value_ils")),
+        "taxable_profit_ils": _round_or_none(est.get("taxable_profit_ils")),
+        "estimated_tax_ils": _round_or_none(est.get("estimated_tax_ils")),
+        "net_after_tax_ils": _round_or_none(est.get("net_after_tax_ils")),
+        "capital_gains_rate": est.get("capital_gains_rate"),
+        "pension_excluded_value_ils": _round_or_none(est.get("pension_excluded_value_ils")),
+        "assumptions": est.get("assumptions") or [],
+        "disclaimer": est.get("disclaimer"),
+        "by_holding": [
+            {
+                "kind": row.get("kind"),
+                "label": row.get("label"),
+                "value_ils": _round_or_none(row.get("value_ils")),
+                "taxable_profit_ils": _round_or_none(row.get("taxable_profit_ils")),
+                "estimated_tax_ils": _round_or_none(row.get("estimated_tax_ils")),
+                "rate": row.get("rate"),
+                "note": row.get("note"),
+            }
+            for row in (est.get("by_holding") or [])[:40]
+        ],
     }
 
 
@@ -892,19 +933,21 @@ def run_chat(
 
 DAILY_INSIGHTS_PROMPT = """You write a short daily insight for a personal Israeli savings tracker (in-app card and email).
 Use ONLY the portfolio JSON provided. Educational only — not financial, tax, or legal advice.
-Do NOT discuss management fees, deposit fees, or Israeli tax.
+Do NOT discuss management fees or deposit fees.
+Do NOT invent tax numbers — only use cashout_tax_estimate when present.
 
-Write exactly 5 short bullet points (plain text with leading "- "), in this exact order:
+Write exactly 6 short bullet points (plain text with leading "- "), in this exact order:
 1. Overall Total Wealth — state portfolio_totals.total_value_ils in ₪ (dashboard total; pension excluded).
 2. Last month profit/loss — use the latest monthly_history month's change_from_prev_ils / change_from_prev_pct (and its period). If missing, say last-month change is not available yet.
 3. Goal status — use savings_goal. If configured: progress_pct, on_pace, gap_ils vs target_amount_ils by target_date. If not configured: say no savings goal is set.
 4. Suggestion — one concrete educational suggestion (allocation, contributions, vesting, cash buffer, or growth assumptions).
 5. Risks — one notable risk (concentration, single-ticker RSU/ESPP, low cash buffer, aggressive horizon, or behind-pace goal).
+6. Cash-out tax estimate — from cashout_tax_estimate: estimated_tax_ils and net_after_tax_ils. Note tax is on profit/gains only; קרן השתלמות tax-free; pension excluded. End with "estimate only, not tax advice." If unavailable, say the estimate is not available.
 
 Rules:
 - One bullet per line; no numbering prefixes beyond "- "; no intro or closing.
 - Use real numbers from the JSON; do not invent holdings or values.
-- Keep each bullet to one sentence. Max ~120 words total.
+- Keep each bullet to one sentence. Max ~150 words total.
 - When a language directive is given below, follow it; otherwise match Hebrew nicknames if the data is mostly Hebrew, else English."""
 
 
@@ -936,7 +979,7 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
                 "parts": [
                     {
                         "text": (
-                            "Write today's 5-bullet portfolio insights from this JSON:\n"
+                            "Write today's 6-bullet portfolio insights from this JSON:\n"
                             f"{context_json}"
                         )
                     }
@@ -945,7 +988,7 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
         ],
         "generationConfig": {
             "temperature": 0.4,
-            "maxOutputTokens": 450,
+            "maxOutputTokens": 550,
         },
     }
     r = requests.post(
@@ -969,7 +1012,7 @@ _INSIGHTS_LANG_NAMES = {"he": "Hebrew", "en": "English"}
 _TRANSLATE_INSIGHTS_PROMPT = (
     "You are a professional translator. Translate the user's text to {lang_name}.\n"
     "Preserve the exact meaning, order, numbers, and any leading \"- \" bullet markers.\n"
-    "Keep exactly 5 bullets in the same order. Do not add, remove, reorder, or\n"
+    "Keep exactly 6 bullets in the same order. Do not add, remove, reorder, or\n"
     "reinterpret any content. Keep numbers and currency symbols unchanged.\n"
     "Output only the translation, nothing else."
 )
@@ -987,7 +1030,7 @@ def _translate_insights(text: str, target_lang: str) -> str:
     body = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": text}]}],
-        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 500},
+        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 600},
     }
     r = requests.post(
         GEMINI_URL.format(model=model),

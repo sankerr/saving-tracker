@@ -360,6 +360,11 @@ h2 {
      leading minus sign stays on the left even in RTL (Hebrew) mode. */
   direction: ltr; unicode-bidi: isolate;
 }
+.dash-profit-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+.dash-profit-chip__label {
+  font-weight: 500; opacity: 0.8;
+  direction: inherit; unicode-bidi: isolate;
+}
 .dash-profit-chip[data-sign="pos"] { background: rgb(31 138 76 / 0.10); color: var(--color-success); }
 .dash-profit-chip[data-sign="neg"] { background: rgb(192 57 43 / 0.10); color: var(--color-danger); }
 .dash-subline {
@@ -1781,7 +1786,10 @@ html[dir="rtl"] .chat-panel {
     </div>
     <div class="dash-headline">
       <div class="dash-total" id="dash-total">—</div>
-      <div class="dash-profit-chip" id="dash-profit" data-sign="pos">—</div>
+      <div class="dash-profit-chips">
+        <div class="dash-profit-chip" id="dash-profit" data-sign="pos">—</div>
+        <div class="dash-profit-chip" id="dash-ytd-profit" data-sign="pos" hidden>—</div>
+      </div>
     </div>
     <p class="dash-subline" id="dash-subline">—</p>
     <div class="dash-goal" id="dash-goal" hidden></div>
@@ -2367,6 +2375,8 @@ function clearPortfolioUi() {
   document.getElementById('dash-total').textContent = '—';
   document.getElementById('dash-profit').textContent = '—';
   document.getElementById('dash-profit').dataset.sign = 'pos';
+  const ytdReset = document.getElementById('dash-ytd-profit');
+  if (ytdReset) { ytdReset.textContent = '—'; ytdReset.dataset.sign = 'pos'; ytdReset.hidden = true; }
   document.getElementById('dash-subline').textContent = '—';
   document.getElementById('what-if-summary').hidden = true;
   document.getElementById('projection-summary').hidden = true;
@@ -2576,7 +2586,7 @@ async function fetchData(showSpinner = false) {
 // chart, and holding lists while the first data load (often a 30-50s Render
 // wake) is in flight, instead of bare "—" placeholders that read as stuck.
 function setDashboardSkeleton(on) {
-  ['dash-total', 'dash-profit', 'dash-subline'].forEach((id) => {
+  ['dash-total', 'dash-profit', 'dash-ytd-profit', 'dash-subline'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('skel', on);
   });
@@ -2747,7 +2757,23 @@ function renderDashboard() {
   const invested = p.total_invested_ils || 0;
   const profitPct = invested ? (profit / invested) : 0;
   profitChip.dataset.sign = profit >= 0 ? 'pos' : 'neg';
-  profitChip.textContent = `${profit >= 0 ? '+' : ''}${fmtILS.format(profit)} (${fmtPctSigned(profitPct)})`;
+  profitChip.innerHTML = `<span class="dash-profit-chip__label">${escapeHtml(t('dash.profitAllTime'))}</span> ${profit >= 0 ? '+' : ''}${fmtILS.format(profit)} (${fmtPctSigned(profitPct)})`;
+
+  const ytdChip = document.getElementById('dash-ytd-profit');
+  const ytdProfit = p.ytd_profit_ils;
+  if (ytdChip) {
+    if (ytdProfit === null || ytdProfit === undefined) {
+      ytdChip.hidden = true;
+    } else {
+      const ytdYear = p.ytd_calendar_year || new Date().getFullYear();
+      const ytdPct = p.ytd_profit_pct;
+      const ytdPctText = (ytdPct !== null && ytdPct !== undefined) ? ` (${fmtPctSigned(ytdPct)})` : '';
+      ytdChip.hidden = false;
+      ytdChip.dataset.sign = ytdProfit >= 0 ? 'pos' : 'neg';
+      ytdChip.title = t('dash.profitYtdTitle');
+      ytdChip.innerHTML = `<span class="dash-profit-chip__label">${escapeHtml(t('dash.profitYtd', { year: ytdYear }))}</span> ${ytdProfit >= 0 ? '+' : ''}${fmtILS.format(ytdProfit)}${ytdPctText}`;
+    }
+  }
   const rsuUSD = p.rsu_value_usd || 0;
   const esppUSD = p.espp_value_usd || 0;
   let subline = `${t('label.funds')} <strong>${fmtILS.format(p.funds_value_ils || 0)}</strong> · ` +
@@ -3286,6 +3312,15 @@ function renderFundRow(h) {
   const excludedBadge = h.included_in_dashboard === false ? `<span class="badge" style="background:rgb(148 163 184 / 0.18); color:var(--color-muted)">${t('funds.excludedBadge')}</span>` : '';
   const profitClass = (c.profit_ils || 0) >= 0 ? 'pos' : 'neg';
   const profitSign = (c.profit_ils || 0) >= 0 ? '+' : '';
+  const ytdMoney = c.ytd_profit_ils;
+  const ytdMoneyYear = c.ytd_calendar_year || new Date().getFullYear();
+  const ytdMoneyPct = c.ytd_profit_pct;
+  const ytdMoneyClass = (ytdMoney || 0) >= 0 ? 'pos' : 'neg';
+  const ytdMoneySign = (ytdMoney || 0) >= 0 ? '+' : '';
+  const ytdMoneyPctText = (ytdMoneyPct !== null && ytdMoneyPct !== undefined) ? ` (${fmtPctSigned(ytdMoneyPct)})` : '';
+  const ytdMoneyLine = (ytdMoney !== null && ytdMoney !== undefined)
+    ? `<div class="holding-row__value-sub" style="color: var(--color-${ytdMoneyClass === 'pos' ? 'success' : 'danger'})" title="${escapeHtml(t('row.profitYtdTitle'))}">${escapeHtml(t('row.profitYtd', { year: ytdMoneyYear }))} ${ytdMoneySign}${fmtILS.format(ytdMoney)}${ytdMoneyPctText}</div>`
+    : '';
   const srcBadge = h.data_source === 'insurance' ? `<span class="badge" style="background:rgb(110 95 224 / 0.12); color:var(--color-primary)">פוליסת חיסכון</span>` : '';
   return `
   <div class="holding-row" data-id="${h.id}" data-archived="${!!h.archived}" data-expanded="${expanded}">
@@ -3305,7 +3340,8 @@ function renderFundRow(h) {
       <svg class="holding-row__sparkline" id="spark-fund-${h.id}"></svg>
       <div style="text-align:right">
         <div class="holding-row__value">${fmtILS.format(c.current_value_ils || 0)}</div>
-        <div class="holding-row__value-sub" style="color: var(--color-${profitClass === 'pos' ? 'success' : 'danger'})">${profitSign}${fmtILS.format(c.profit_ils || 0)} (${fmtPctSigned(c.profit_pct || 0)})</div>
+        <div class="holding-row__value-sub" style="color: var(--color-${profitClass === 'pos' ? 'success' : 'danger'})" title="${escapeHtml(t('row.profitAllTime'))}">${profitSign}${fmtILS.format(c.profit_ils || 0)} (${fmtPctSigned(c.profit_pct || 0)})</div>
+        ${ytdMoneyLine}
         <span class="holding-row__chev">▾</span>
       </div>
     </div>
@@ -3523,6 +3559,15 @@ function renderPensionRow(h) {
   const lastMonthLabel = lastPeriod ? periodMonthShort(lastPeriod) : '';
   const profitClass = (c.profit_ils || 0) >= 0 ? 'pos' : 'neg';
   const profitSign = (c.profit_ils || 0) >= 0 ? '+' : '';
+  const ytdMoney = c.ytd_profit_ils;
+  const ytdMoneyYear = c.ytd_calendar_year || new Date().getFullYear();
+  const ytdMoneyPct = c.ytd_profit_pct;
+  const ytdMoneyClass = (ytdMoney || 0) >= 0 ? 'pos' : 'neg';
+  const ytdMoneySign = (ytdMoney || 0) >= 0 ? '+' : '';
+  const ytdMoneyPctText = (ytdMoneyPct !== null && ytdMoneyPct !== undefined) ? ` (${fmtPctSigned(ytdMoneyPct)})` : '';
+  const ytdMoneyLine = (ytdMoney !== null && ytdMoney !== undefined)
+    ? `<div class="holding-row__value-sub" style="color: var(--color-${ytdMoneyClass === 'pos' ? 'success' : 'danger'})" title="${escapeHtml(t('row.profitYtdTitle'))}">${escapeHtml(t('row.profitYtd', { year: ytdMoneyYear }))} ${ytdMoneySign}${fmtILS.format(ytdMoney)}${ytdMoneyPctText}</div>`
+    : '';
   return `
   <div class="holding-row" data-id="${h.id}" data-expanded="${expanded}">
     <div class="holding-row__head" data-toggle="pension:${h.id}">
@@ -3541,7 +3586,8 @@ function renderPensionRow(h) {
       <svg class="holding-row__sparkline" id="spark-pension-${h.id}"></svg>
       <div style="text-align:right">
         <div class="holding-row__value">${fmtILS.format(c.current_value_ils || 0)}</div>
-        <div class="holding-row__value-sub" style="color: var(--color-${profitClass === 'pos' ? 'success' : 'danger'})">${profitSign}${fmtILS.format(c.profit_ils || 0)} (${fmtPctSigned(c.profit_pct || 0)})</div>
+        <div class="holding-row__value-sub" style="color: var(--color-${profitClass === 'pos' ? 'success' : 'danger'})" title="${escapeHtml(t('row.profitAllTime'))}">${profitSign}${fmtILS.format(c.profit_ils || 0)} (${fmtPctSigned(c.profit_pct || 0)})</div>
+        ${ytdMoneyLine}
         <span class="holding-row__chev">▾</span>
       </div>
     </div>

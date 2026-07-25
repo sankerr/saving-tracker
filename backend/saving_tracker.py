@@ -1190,6 +1190,60 @@ def expand_rule_for_period(rule: dict, period: int) -> dict:
 
 
 # ── Fund valuation ───────────────────────────────────────────────────────────
+def _ytd_money_profit(series: list, current_value: float,
+                      calendar_year: int | None = None) -> dict:
+    """True-money calendar-year P/L from a fund/pension value series.
+
+    ytd_profit = current − start_of_year_value − net_deposits_YTD
+    Start value is the last series point before January of ``calendar_year``
+    (0 if the holding has no prior-year point).
+    """
+    year = int(calendar_year or date.today().year)
+    year_start_period = year * 100 + 1
+
+    start_value = 0.0
+    start_deposited = 0.0
+    start_withdrawn = 0.0
+    for pt in series or []:
+        try:
+            p = int(pt["period"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if p < year_start_period:
+            start_value = float(pt.get("value_ils") or 0)
+            start_deposited = float(pt.get("deposited_to_date") or 0)
+            start_withdrawn = float(pt.get("withdrawn_to_date") or 0)
+
+    cur_dep = 0.0
+    cur_with = 0.0
+    if series:
+        last = series[-1]
+        cur_dep = float(last.get("deposited_to_date") or 0)
+        cur_with = float(last.get("withdrawn_to_date") or 0)
+
+    net_deposits_ytd = (cur_dep - start_deposited) - (cur_with - start_withdrawn)
+    try:
+        current = float(current_value or 0)
+    except (TypeError, ValueError):
+        current = 0.0
+    profit = current - start_value - net_deposits_ytd
+
+    if start_value > 0:
+        pct = profit / start_value
+    elif net_deposits_ytd > 0:
+        pct = profit / net_deposits_ytd
+    else:
+        pct = None
+
+    return {
+        "ytd_profit_ils": round(profit, 2),
+        "ytd_profit_pct": pct,
+        "ytd_calendar_year": year,
+        "ytd_start_value_ils": round(start_value, 2),
+        "ytd_net_deposits_ils": round(net_deposits_ytd, 2),
+    }
+
+
 def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     fund_id = str(holding["fund_id"])
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
@@ -1400,6 +1454,8 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     last_month_yield = (rows_by_period.get(last_actual) or {}).get("monthly_yield") if last_actual else None
     is_pending_current = (last_actual or 0) < current_period()
 
+    ytd_money = _ytd_money_profit(series, current_value)
+
     return {
         "last_period": last_actual or anchor_period,
         "is_pending_current_month": is_pending_current,
@@ -1411,6 +1467,11 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         "cumulative_mgmt_fee_ils": round(cumulative_mgmt_fee, 2),
         "profit_ils": round(profit, 2),
         "profit_pct": profit_pct,
+        "ytd_profit_ils": ytd_money["ytd_profit_ils"],
+        "ytd_profit_pct": ytd_money["ytd_profit_pct"],
+        "ytd_calendar_year": ytd_money["ytd_calendar_year"],
+        "ytd_start_value_ils": ytd_money["ytd_start_value_ils"],
+        "ytd_net_deposits_ils": ytd_money["ytd_net_deposits_ils"],
         "three_m_return_pct": three_m,
         "six_m_return_pct": six_m,
         "twelve_m_return_pct": twelve_m,
@@ -2300,6 +2361,187 @@ def project_espp(plan: dict, computed: dict, horizon_months: int) -> dict:
 
 
 # ── Savings goal ─────────────────────────────────────────────────────────────
+_HISHTALMUT_MARKERS = (
+    "השתלמות",
+    "hishtalmut",
+    "hishtalm",
+    "study fund",
+    "קרן השתלמות",
+)
+CASHOUT_CAPITAL_GAINS_RATE = 0.25
+
+
+def _is_hishtalmut_holding(holding: dict) -> bool:
+    """Best-effort detect קרן השתלמות from name / specialization text."""
+    computed = holding.get("computed") or {}
+    metrics = computed.get("fund_metrics") or {}
+    parts = [
+        holding.get("nickname") or "",
+        holding.get("fund_name_snapshot") or "",
+        metrics.get("specialization") or "",
+        metrics.get("sub_specialization") or "",
+    ]
+    blob = " ".join(str(p) for p in parts).lower()
+    return any(m.lower() in blob for m in _HISHTALMUT_MARKERS)
+
+
+def _positive(v) -> float:
+    try:
+        return max(0.0, float(v or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def compute_cashout_tax_estimate(
+    funds_out: list,
+    grants_out: list,
+    espp_out: list,
+    cash_out: list,
+    pension_out: list,
+) -> dict:
+    """Rough educational estimate of tax if liquidating accessible holdings today.
+
+    Tax applies to profit/gains only (not principal). קרן השתלמות is treated as
+    tax-free. Pension is excluded from the cash-out total (locked until retirement).
+    Not Israeli Tax Authority advice — no CPI, §102 tracks, withholding, etc.
+    """
+    rate = CASHOUT_CAPITAL_GAINS_RATE
+    lines = []
+    tax_free_value = 0.0
+    taxable_profit = 0.0
+    estimated_tax = 0.0
+    accessible_value = 0.0
+
+    for h in funds_out or []:
+        if h.get("archived"):
+            continue
+        c = h.get("computed") or {}
+        value = _positive(c.get("current_value_ils"))
+        profit = float(c.get("profit_ils") or 0)
+        accessible_value += value
+        name = h.get("nickname") or h.get("fund_name_snapshot") or str(h.get("fund_id") or "")
+        if _is_hishtalmut_holding(h):
+            tax_free_value += value
+            lines.append({
+                "kind": "hishtalmut",
+                "label": name,
+                "value_ils": round(value, 2),
+                "taxable_profit_ils": 0.0,
+                "estimated_tax_ils": 0.0,
+                "rate": 0.0,
+                "note": "קרן השתלמות treated as tax-free",
+            })
+            continue
+        base = max(0.0, profit)
+        tax = round(base * rate, 2)
+        taxable_profit += base
+        estimated_tax += tax
+        lines.append({
+            "kind": "fund",
+            "label": name,
+            "value_ils": round(value, 2),
+            "taxable_profit_ils": round(base, 2),
+            "estimated_tax_ils": tax,
+            "rate": rate,
+            "note": "25% on lifetime profit only (not principal)",
+        })
+
+    for g in grants_out or []:
+        if g.get("archived"):
+            continue
+        c = g.get("computed") or {}
+        value = _positive(c.get("current_value_ils"))
+        accessible_value += value
+        unrealized = c.get("unrealized_gain_ils")
+        if unrealized is None:
+            unrealized = c.get("profit_ils")
+        base = max(0.0, float(unrealized or 0))
+        tax = round(base * rate, 2)
+        taxable_profit += base
+        estimated_tax += tax
+        lines.append({
+            "kind": "rsu",
+            "label": g.get("nickname") or g.get("ticker") or "RSU",
+            "value_ils": round(value, 2),
+            "taxable_profit_ils": round(base, 2),
+            "estimated_tax_ils": tax,
+            "rate": rate,
+            "note": "25% on unrealized gain (held shares)",
+        })
+
+    for p in espp_out or []:
+        if p.get("archived"):
+            continue
+        c = p.get("computed") or {}
+        value = _positive(c.get("current_value_ils"))
+        accessible_value += value
+        unrealized = c.get("unrealized_gain_ils")
+        if unrealized is None:
+            unrealized = c.get("profit_ils")
+        base = max(0.0, float(unrealized or 0))
+        tax = round(base * rate, 2)
+        taxable_profit += base
+        estimated_tax += tax
+        lines.append({
+            "kind": "espp",
+            "label": p.get("nickname") or p.get("ticker") or "ESPP",
+            "value_ils": round(value, 2),
+            "taxable_profit_ils": round(base, 2),
+            "estimated_tax_ils": tax,
+            "rate": rate,
+            "note": "25% on unrealized gain (held shares)",
+        })
+
+    for csh in cash_out or []:
+        if csh.get("archived"):
+            continue
+        c = csh.get("computed") or {}
+        value = _positive(c.get("value_ils"))
+        accessible_value += value
+        tax_free_value += value
+        lines.append({
+            "kind": "cash",
+            "label": csh.get("nickname") or "Cash",
+            "value_ils": round(value, 2),
+            "taxable_profit_ils": 0.0,
+            "estimated_tax_ils": 0.0,
+            "rate": 0.0,
+            "note": "Cash assumed already after-tax",
+        })
+
+    pension_value = 0.0
+    for h in pension_out or []:
+        if h.get("archived"):
+            continue
+        pension_value += _positive((h.get("computed") or {}).get("current_value_ils"))
+
+    estimated_tax = round(estimated_tax, 2)
+    net_after_tax = round(accessible_value - estimated_tax, 2)
+    return {
+        "accessible_value_ils": round(accessible_value, 2),
+        "tax_free_value_ils": round(tax_free_value, 2),
+        "taxable_profit_ils": round(taxable_profit, 2),
+        "estimated_tax_ils": estimated_tax,
+        "net_after_tax_ils": net_after_tax,
+        "capital_gains_rate": rate,
+        "pension_excluded_value_ils": round(pension_value, 2),
+        "assumptions": [
+            "Tax on profit/gains only — not principal",
+            "קרן השתלמות treated as fully tax-free (no maturity check)",
+            "Other funds / savings policies: 25% on lifetime profit",
+            "RSU/ESPP: 25% on unrealized gain of held shares",
+            "Cash: 0% (assumed after-tax)",
+            "Pension excluded from cash-out (locked until retirement)",
+            "Ignores CPI adjustment, §102 tracks, withholding, brackets, and penalties",
+        ],
+        "disclaimer": (
+            "Rough educational estimate only — not tax, financial, or legal advice. "
+            "Verify with your accountant / Israel Tax Authority."
+        ),
+        "by_holding": lines,
+    }
+
+
 def _months_until(target_date: str) -> int:
     """Whole months from the current month to the target month (may be <= 0)."""
     d = date.fromisoformat(target_date)
@@ -2533,12 +2775,57 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             if goal else None
         )
 
+        # Calendar-year true-money P/L for funds (dashboard-included) + pension.
+        pension_ytd_profit = sum(
+            float((h.get("computed") or {}).get("ytd_profit_ils") or 0)
+            for h in pension_holdings_out if not h.get("archived")
+        )
+        pension_ytd_start = sum(
+            float((h.get("computed") or {}).get("ytd_start_value_ils") or 0)
+            for h in pension_holdings_out if not h.get("archived")
+        )
+        pension_ytd_net = sum(
+            float((h.get("computed") or {}).get("ytd_net_deposits_ils") or 0)
+            for h in pension_holdings_out if not h.get("archived")
+        )
+        funds_ytd_profit = float(portfolio.get("funds_ytd_profit_ils") or 0)
+        funds_ytd_start = sum(
+            float((h.get("computed") or {}).get("ytd_start_value_ils") or 0)
+            for h in fund_holdings_out
+            if not h.get("archived") and h.get("included_in_dashboard", True)
+        )
+        funds_ytd_net = sum(
+            float((h.get("computed") or {}).get("ytd_net_deposits_ils") or 0)
+            for h in fund_holdings_out
+            if not h.get("archived") and h.get("included_in_dashboard", True)
+        )
+        ytd_profit = funds_ytd_profit + pension_ytd_profit
+        ytd_start = funds_ytd_start + pension_ytd_start
+        ytd_net = funds_ytd_net + pension_ytd_net
+        if ytd_start > 0:
+            ytd_pct = ytd_profit / ytd_start
+        elif ytd_net > 0:
+            ytd_pct = ytd_profit / ytd_net
+        else:
+            ytd_pct = None
+        ytd_year = portfolio.get("funds_ytd_calendar_year") or date.today().year
+        portfolio["ytd_profit_ils"] = round(ytd_profit, 2)
+        portfolio["ytd_profit_pct"] = ytd_pct
+        portfolio["ytd_calendar_year"] = ytd_year
+        portfolio["pension_ytd_profit_ils"] = round(pension_ytd_profit, 2)
+
+        cashout_tax_estimate = compute_cashout_tax_estimate(
+            fund_holdings_out, rsu_grants_out, espp_plans_out,
+            cash_holdings_out, pension_holdings_out,
+        )
+
         return {
             "ok": True,
             "now": now_iso(),
             "horizon_months": horizon_months,
             "settings": dict(DATA["settings"]),
             "goal_status": goal_status,
+            "cashout_tax_estimate": cashout_tax_estimate,
             "fund_holdings": fund_holdings_out,
             "pension_holdings": pension_holdings_out,
             "rsu_grants": rsu_grants_out,
@@ -2549,6 +2836,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
                 "total_value_ils": round(pension_total_ils, 2),
                 "count": len([p for p in pension_holdings_out if not p.get("archived")]),
                 "excluded_from_total": True,
+                "ytd_profit_ils": round(pension_ytd_profit, 2),
                 "what_if": pension_what_if,
             },
             "sync_status": dict(_sync_status),
@@ -2625,8 +2913,15 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "rsu_value_ils": 0,
             "espp_value_ils": 0,
             "espp_value_usd": 0,
+            "cash_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
+            "funds_ytd_profit_ils": 0,
+            "funds_ytd_profit_pct": None,
+            "funds_ytd_calendar_year": date.today().year,
+            "ytd_profit_ils": 0,
+            "ytd_profit_pct": None,
+            "ytd_calendar_year": date.today().year,
             "time_series_ils": [],
             "projection": None,
             "rsu_value_usd": 0,
@@ -2655,8 +2950,15 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "rsu_value_ils": 0,
             "espp_value_ils": 0,
             "espp_value_usd": 0,
+            "cash_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
+            "funds_ytd_profit_ils": 0,
+            "funds_ytd_profit_pct": None,
+            "funds_ytd_calendar_year": date.today().year,
+            "ytd_profit_ils": 0,
+            "ytd_profit_pct": None,
+            "ytd_calendar_year": date.today().year,
             "time_series_ils": [],
             "projection": None,
             "rsu_value_usd": 0,
@@ -2768,6 +3070,32 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     funds_profit = sum(h["computed"]["profit_ils"] for h in funds if not h.get("archived"))
     rsu_profit_ils = sum(g["computed"]["profit_ils"] for g in grants if not g.get("archived"))
     espp_profit_ils = sum(p["computed"]["profit_ils"] for p in espp if not p.get("archived"))
+    funds_ytd_profit = sum(
+        float((h.get("computed") or {}).get("ytd_profit_ils") or 0)
+        for h in funds if not h.get("archived")
+    )
+    funds_ytd_start = sum(
+        float((h.get("computed") or {}).get("ytd_start_value_ils") or 0)
+        for h in funds if not h.get("archived")
+    )
+    funds_ytd_net_deposits = sum(
+        float((h.get("computed") or {}).get("ytd_net_deposits_ils") or 0)
+        for h in funds if not h.get("archived")
+    )
+    ytd_year = date.today().year
+    for h in funds:
+        if h.get("archived"):
+            continue
+        y = (h.get("computed") or {}).get("ytd_calendar_year")
+        if y:
+            ytd_year = int(y)
+            break
+    if funds_ytd_start > 0:
+        funds_ytd_pct = funds_ytd_profit / funds_ytd_start
+    elif funds_ytd_net_deposits > 0:
+        funds_ytd_pct = funds_ytd_profit / funds_ytd_net_deposits
+    else:
+        funds_ytd_pct = None
 
     employee_total = sum(h["computed"].get("total_employee_ils", 0) for h in funds if not h.get("archived"))
     employer_total = sum(h["computed"].get("total_employer_ils", 0) for h in funds if not h.get("archived"))
@@ -2817,6 +3145,9 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         "rsu_profit_ils": round(rsu_profit_ils, 2),
         "espp_profit_ils": round(espp_profit_ils, 2),
         "total_profit_ils": round(funds_profit + rsu_profit_ils + espp_profit_ils, 2),
+        "funds_ytd_profit_ils": round(funds_ytd_profit, 2),
+        "funds_ytd_profit_pct": funds_ytd_pct,
+        "funds_ytd_calendar_year": ytd_year,
         "total_employee_ils": round(employee_total, 2),
         "total_employer_ils": round(employer_total, 2),
         "time_series_ils": series,

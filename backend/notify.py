@@ -124,7 +124,7 @@ def _insights_html(text: str) -> str:
             bullets.append(ln)
     if not bullets:
         return f"<p>{_esc(text)}</p>"
-    items = "".join(f"<li>{_esc(b)}</li>" for b in bullets[:6])
+    items = "".join(f"<li>{_esc(b)}</li>" for b in bullets[:8])
     return f"<ul style=\"margin:0.5rem 0 0;padding-left:1.25rem;\">{items}</ul>"
 
 
