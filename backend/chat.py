@@ -343,13 +343,36 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         truncated = len(rows) - max_months
         rows = rows[-max_months:]
 
+    latest = rows[-1] if rows else None
+    # Prefer the last month that has a real MoM change (needs a prior month).
+    latest_with_change = None
+    for row in reversed(rows):
+        if row.get("change_from_prev_ils") is not None:
+            latest_with_change = row
+            break
+
     return {
         "months": rows,
         "truncated_earlier_months": truncated,
-        "latest_period": rows[-1]["period"] if rows else None,
+        "latest_period": latest["period"] if latest else None,
+        "latest_yield_month": (
+            {
+                "period": latest_with_change["period"],
+                "total_ils": latest_with_change["total_ils"],
+                "change_from_prev_ils": latest_with_change["change_from_prev_ils"],
+                "change_from_prev_pct": latest_with_change["change_from_prev_pct"],
+                "note": (
+                    "Last month with published yield data and a month-over-month change. "
+                    "This may lag the calendar month (e.g. May data while today is July)."
+                ),
+            }
+            if latest_with_change
+            else None
+        ),
         "note": (
             "Real history from holdings + synced monthly yields. Matches dashboard total "
-            "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded."
+            "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded. "
+            "For 'last month', use latest_yield_month — the latest published-yield month, not necessarily calendar last month."
         ),
     }
 
@@ -383,6 +406,7 @@ def build_portfolio_context(state: dict) -> dict:
     ]
     cash = [_cash_summary(c) for c in (state.get("cash_holdings") or [])]
 
+    monthly_history = _build_monthly_history(state)
     return {
         "as_of": state.get("now"),
         "settings": {
@@ -417,7 +441,47 @@ def build_portfolio_context(state: dict) -> dict:
             "espp": espps,
             "cash": cash,
         },
-        "monthly_history": _build_monthly_history(state),
+        "monthly_history": monthly_history,
+        "insight_slots_hint": _insight_slots_hint(portfolio, monthly_history, state.get("goal_status")),
+    }
+
+
+def _insight_slots_hint(portfolio: dict, monthly_history: dict, goal_status: Any) -> dict:
+    """Compact facts for the five fixed insight slots (deterministic helpers)."""
+    total = float(portfolio.get("total_value_ils") or 0)
+    sleeves = [
+        ("funds", float(portfolio.get("funds_value_ils") or 0)),
+        ("rsu", float(portfolio.get("rsu_value_ils") or 0)),
+        ("espp", float(portfolio.get("espp_value_ils") or 0)),
+        ("cash", float(portfolio.get("cash_value_ils") or 0)),
+    ]
+    sleeves = [(k, v) for k, v in sleeves if v > 0]
+    top = max(sleeves, key=lambda x: x[1]) if sleeves else None
+    latest = monthly_history.get("latest_yield_month") if isinstance(monthly_history, dict) else None
+    goal = _savings_goal_context(goal_status)
+    return {
+        "slot1_recent_move": latest,
+        "slot2_allocation": (
+            {
+                "top_sleeve": top[0],
+                "top_sleeve_value_ils": _round_or_none(top[1]),
+                "top_sleeve_share_pct": _round_or_none(top[1] / total * 100, 1) if total > 0 else None,
+                "total_value_ils": _round_or_none(total),
+            }
+            if top and total > 0
+            else None
+        ),
+        "slot3_goal_or_lifetime_pl": {
+            "goal": goal if goal.get("configured") else None,
+            "lifetime_profit_ils": _round_or_none(portfolio.get("total_profit_ils")),
+            "total_invested_ils": _round_or_none(portfolio.get("total_invested_ils")),
+        },
+        "notes": {
+            "last_month_means": (
+                "Use monthly_history.latest_yield_month — the last month with published "
+                "yield data and MoM change, which may lag the calendar."
+            ),
+        },
     }
 
 
@@ -933,18 +997,27 @@ def run_chat(
 
 DAILY_INSIGHTS_PROMPT = """You write short daily insights for a personal Israeli savings tracker (in-app card and email).
 Use ONLY the portfolio JSON provided. Educational only — not financial, tax, or legal advice.
-Do NOT discuss management fees or deposit fees.
-Focus on allocation, recent returns if present, concentration, vesting/RSU/ESPP, cash buffer, goals/pace if present, and optional growth observations.
-Do NOT invent holdings or numbers missing from the JSON.
+Do NOT discuss management fees or deposit fees. Do NOT invent holdings or numbers missing from the JSON.
+
+Write insights for these FIXED SLOTS in order (skip a slot entirely if data is missing or the observation is weak):
+1. recent_move — Profit/loss for the latest month with published yield data.
+   Use monthly_history.latest_yield_month (or insight_slots_hint.slot1_recent_move).
+   Name that period (YYYY-MM). This is NOT necessarily the calendar last month — yields publish with lag.
+2. allocation — Which sleeve (funds/RSU/ESPP/cash) or concentration stands out vs Total Wealth.
+   Prefer insight_slots_hint.slot2_allocation when present.
+3. goal_or_lifetime_pl — If savings_goal.configured: pace/progress vs target. Else: lifetime total_profit_ils vs invested.
+4. risk — One material risk (concentration, single-ticker RSU/ESPP, thin cash buffer, behind-pace goal).
+5. suggestion — One concrete educational next step grounded in the data (not generic advice).
 
 Return ONLY valid JSON (no markdown fences, no prose outside JSON):
-{"insights":[{"text":"...","confidence":0.0}]}
+{"insights":[{"slot":1,"text":"...","confidence":0.0}]}
 
-Rules for insights:
-- Include at most 5 items. Fewer is fine; use an empty array if nothing is solidly supported.
+Rules:
+- At most one insight per slot; at most 5 total. Omit slots you skip.
+- "slot" must be 1–5 matching the list above.
 - Each "text" is one short sentence (no leading "- ").
-- "confidence" is a number from 0 to 1: how sure you are the insight is grounded in the provided data (not speculation).
-- Prefer high-confidence, specific observations over vague advice.
+- "confidence" is 0–1: how sure the insight is grounded in the provided JSON (not speculation).
+- Prefer specific numbers from the JSON over vague wording.
 - Match the language directive below when present; otherwise English."""
 
 
@@ -959,7 +1032,7 @@ INSIGHTS_MAX_COUNT = 5
 
 
 def _parse_insights_payload(raw: str) -> list[dict]:
-    """Parse model JSON into [{text, confidence}, ...]. Tolerates markdown fences."""
+    """Parse model JSON into [{slot?, text, confidence}, ...]. Tolerates markdown fences."""
     text = (raw or "").strip()
     if not text:
         return []
@@ -977,10 +1050,8 @@ def _parse_insights_payload(raw: str) -> list[dict]:
         out = []
         for ln in text.splitlines():
             s = ln.strip()
-            if s.startswith("- ") or s.startswith("• "):
-                out.append({"text": s[2:].strip(), "confidence": 0.7})
-            elif s.startswith("* "):
-                out.append({"text": s[2:].strip(), "confidence": 0.7})
+            if s.startswith("- ") or s.startswith("• ") or s.startswith("* "):
+                out.append({"text": s[2:].strip(), "confidence": 0.7, "slot": None})
         return out
     items = data.get("insights") if isinstance(data, dict) else data
     if not isinstance(items, list):
@@ -988,7 +1059,7 @@ def _parse_insights_payload(raw: str) -> list[dict]:
     out = []
     for it in items:
         if isinstance(it, str) and it.strip():
-            out.append({"text": it.strip(), "confidence": 0.7})
+            out.append({"text": it.strip(), "confidence": 0.7, "slot": None})
             continue
         if not isinstance(it, dict):
             continue
@@ -999,8 +1070,40 @@ def _parse_insights_payload(raw: str) -> list[dict]:
             conf = float(it.get("confidence", 0))
         except (TypeError, ValueError):
             conf = 0.0
-        out.append({"text": t, "confidence": conf})
+        slot = it.get("slot")
+        try:
+            slot = int(slot) if slot is not None else None
+        except (TypeError, ValueError):
+            slot = None
+        if slot is not None and (slot < 1 or slot > INSIGHTS_MAX_COUNT):
+            slot = None
+        out.append({"text": t, "confidence": conf, "slot": slot})
     return out
+
+
+def _select_insight_items(parsed: list[dict]) -> list[dict]:
+    """Keep high-confidence insights, prefer one per slot, preserve slot order."""
+    kept = [
+        it for it in parsed
+        if float(it.get("confidence") or 0) >= INSIGHTS_MIN_CONFIDENCE
+        and (it.get("text") or "").strip()
+    ]
+    by_slot: dict[int, dict] = {}
+    unslotted: list[dict] = []
+    for it in kept:
+        slot = it.get("slot")
+        if isinstance(slot, int):
+            # First high-confidence hit for each slot wins.
+            by_slot.setdefault(slot, it)
+        else:
+            unslotted.append(it)
+    ordered = [by_slot[s] for s in range(1, INSIGHTS_MAX_COUNT + 1) if s in by_slot]
+    # Fill remaining capacity with unslotted high-confidence items (legacy/fallback).
+    for it in unslotted:
+        if len(ordered) >= INSIGHTS_MAX_COUNT:
+            break
+        ordered.append(it)
+    return ordered[:INSIGHTS_MAX_COUNT]
 
 
 def _format_insights_bullets(items: list[dict]) -> str:
@@ -1019,7 +1122,7 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
     'en' the output is forced to that language; otherwise the model matches the
     data's language (default used by the email path).
 
-    Asks for up to 5 free-form insights with confidence scores; only insights
+    Asks for up to 5 fixed-slot insights with confidence scores; only insights
     at or above INSIGHTS_MIN_CONFIDENCE are returned (may be empty).
     """
     api_key = _gemini_api_key()
@@ -1037,8 +1140,9 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
                 "parts": [
                     {
                         "text": (
-                            "Propose up to 5 portfolio insights from this JSON "
-                            f"(only high-confidence ones):\n{context_json}"
+                            "Fill the fixed insight slots from this JSON "
+                            "(skip weak/missing slots; last month = latest published yield month):\n"
+                            f"{context_json}"
                         )
                     }
                 ],
@@ -1074,10 +1178,7 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
     if not raw:
         raise RuntimeError("Gemini returned empty insights")
     parsed = _parse_insights_payload(raw)
-    kept = [
-        it for it in parsed
-        if float(it.get("confidence") or 0) >= INSIGHTS_MIN_CONFIDENCE
-    ][:INSIGHTS_MAX_COUNT]
+    kept = _select_insight_items(parsed)
     return _format_insights_bullets(kept)
 
 
