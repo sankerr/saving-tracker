@@ -303,11 +303,51 @@ def _cash_summary(c: dict) -> dict:
     }
 
 
+def _period_key_to_int(period: Any) -> int | None:
+    """Parse portfolio period ('YYYY-MM' or YYYYMM) to YYYYMM int."""
+    if period is None:
+        return None
+    if isinstance(period, int):
+        return period if period > 0 else None
+    s = str(period).strip()
+    m = re.fullmatch(r"(\d{4})-(\d{1,2})", s)
+    if m:
+        return int(m.group(1)) * 100 + int(m.group(2))
+    m = re.fullmatch(r"(\d{6})", s)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def _resolve_latest_published_period(state: dict) -> int | None:
+    """Best-effort latest month that has published fund/pension/insurance yields."""
+    cache = state.get("cache_status") or {}
+    pub = cache.get("latest_published_period")
+    try:
+        if pub is not None and int(pub) > 0:
+            return int(pub)
+    except (TypeError, ValueError):
+        pass
+    latest = 0
+    for h in (state.get("fund_holdings") or []) + (state.get("pension_holdings") or []):
+        if h.get("archived"):
+            continue
+        lp = (h.get("computed") or {}).get("last_period")
+        try:
+            lp = int(lp or 0)
+        except (TypeError, ValueError):
+            lp = 0
+        if lp > latest:
+            latest = lp
+    return latest if latest > 0 else None
+
+
 def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MONTHS) -> dict:
     """Real monthly dashboard totals from portfolio.time_series_ils + cash (flat at today)."""
     portfolio = state.get("portfolio") or {}
     series = portfolio.get("time_series_ils") or []
     cash_now = _round_or_none(portfolio.get("cash_value_ils")) or 0.0
+    published_through = _resolve_latest_published_period(state)
 
     rows = []
     prev_total = None
@@ -315,6 +355,7 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         period = s.get("period")
         if not period:
             continue
+        period_int = _period_key_to_int(period)
         funds = _round_or_none(s.get("funds_ils")) or 0.0
         rsu = _round_or_none(s.get("rsu_ils")) or 0.0
         espp = _round_or_none(s.get("espp_ils")) or 0.0
@@ -326,8 +367,18 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         change_pct = None
         if prev_total is not None and prev_total != 0 and change_ils is not None:
             change_pct = round(change_ils / prev_total, 4)
+        has_published_yield = False
+        if period_int is not None:
+            if published_through is not None:
+                has_published_yield = period_int <= published_through
+            else:
+                # No cache cutoff: never treat the current calendar month as published.
+                today = date.today()
+                current_ym = today.year * 100 + today.month
+                has_published_yield = period_int < current_ym
         rows.append({
             "period": period,
+            "period_yyyymm": period_int,
             "total_ils": total,
             "funds_ils": funds,
             "rsu_ils": rsu,
@@ -335,6 +386,7 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
             "cash_ils": cash_now,
             "change_from_prev_ils": change_ils,
             "change_from_prev_pct": change_pct,
+            "has_published_yield": has_published_yield,
         })
         prev_total = total
 
@@ -344,35 +396,39 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         rows = rows[-max_months:]
 
     latest = rows[-1] if rows else None
-    # Prefer the last month that has a real MoM change (needs a prior month).
-    latest_with_change = None
+    # Last month that actually has published yields (and a MoM delta when possible).
+    # Portfolio series often extends to the calendar month via forward-fill — those
+    # pending months must not be used for "last month yield" insights.
+    latest_yield_month = None
     for row in reversed(rows):
-        if row.get("change_from_prev_ils") is not None:
-            latest_with_change = row
-            break
+        if published_through is not None and not row.get("has_published_yield"):
+            continue
+        if row.get("change_from_prev_ils") is None:
+            continue
+        latest_yield_month = {
+            "period": row["period"],
+            "total_ils": row["total_ils"],
+            "change_from_prev_ils": row["change_from_prev_ils"],
+            "change_from_prev_pct": row["change_from_prev_pct"],
+            "published_through_yyyymm": published_through,
+            "note": (
+                "Last month with published yield data (and a month-over-month change). "
+                "Ignores later calendar months that are only forward-filled without yields."
+            ),
+        }
+        break
 
     return {
         "months": rows,
         "truncated_earlier_months": truncated,
         "latest_period": latest["period"] if latest else None,
-        "latest_yield_month": (
-            {
-                "period": latest_with_change["period"],
-                "total_ils": latest_with_change["total_ils"],
-                "change_from_prev_ils": latest_with_change["change_from_prev_ils"],
-                "change_from_prev_pct": latest_with_change["change_from_prev_pct"],
-                "note": (
-                    "Last month with published yield data and a month-over-month change. "
-                    "This may lag the calendar month (e.g. May data while today is July)."
-                ),
-            }
-            if latest_with_change
-            else None
-        ),
+        "published_through_yyyymm": published_through,
+        "latest_yield_month": latest_yield_month,
         "note": (
             "Real history from holdings + synced monthly yields. Matches dashboard total "
             "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded. "
-            "For 'last month', use latest_yield_month — the latest published-yield month, not necessarily calendar last month."
+            "For 'last month' / recent move, use ONLY latest_yield_month (has_published_yield). "
+            "Do not use months after published_through_yyyymm — those lack published yields."
         ),
     }
 
@@ -478,8 +534,9 @@ def _insight_slots_hint(portfolio: dict, monthly_history: dict, goal_status: Any
         },
         "notes": {
             "last_month_means": (
-                "Use monthly_history.latest_yield_month — the last month with published "
-                "yield data and MoM change, which may lag the calendar."
+                "Use monthly_history.latest_yield_month only — the last month with "
+                "has_published_yield=true (at or before published_through_yyyymm). "
+                "Never cite later forward-filled months without yields."
             ),
         },
     }
@@ -1001,13 +1058,16 @@ Do NOT discuss management fees or deposit fees. Do NOT invent holdings or number
 
 Write insights for these FIXED SLOTS in order (skip a slot entirely if data is missing or the observation is weak):
 1. recent_move — Profit/loss for the latest month with published yield data.
-   Use monthly_history.latest_yield_month (or insight_slots_hint.slot1_recent_move).
-   Name that period (YYYY-MM). This is NOT necessarily the calendar last month — yields publish with lag.
+   Use monthly_history.latest_yield_month (or insight_slots_hint.slot1_recent_move) ONLY.
+   Name that period (YYYY-MM). Never use a month where has_published_yield is false, or any
+   period after published_through_yyyymm — those are forward-filled without yields (often 0% change).
+   This may lag the calendar month (e.g. May yields while today is July).
 2. allocation — Which sleeve (funds/RSU/ESPP/cash) or concentration stands out vs Total Wealth.
    Prefer insight_slots_hint.slot2_allocation when present.
-3. goal_or_lifetime_pl — If savings_goal.configured: pace/progress vs target. Else: lifetime total_profit_ils vs invested.
-4. risk — One material risk (concentration, single-ticker RSU/ESPP, thin cash buffer, behind-pace goal).
-5. suggestion — One concrete educational next step grounded in the data (not generic advice).
+3. goal_or_lifetime_pl — If savings_goal.configured: ONE summary of pace/progress vs target (include progress_pct and gap or projected value — pick one framing, not both). Else: lifetime total_profit_ils vs invested.
+4. risk — A DIFFERENT topic from slots 1–3. Prefer concentration, single-ticker RSU/ESPP, or cash-buffer size.
+   Do NOT restate that the savings goal is on/off pace, the target amount, progress %, gap, or projected value if slot 3 already covered the goal.
+5. suggestion — One concrete educational next step grounded in the data. Must not repeat slots 1–4; build on them (e.g. what to review next).
 
 Return ONLY valid JSON (no markdown fences, no prose outside JSON):
 {"insights":[{"slot":1,"text":"...","confidence":0.0}]}
@@ -1016,8 +1076,10 @@ Rules:
 - At most one insight per slot; at most 5 total. Omit slots you skip.
 - "slot" must be 1–5 matching the list above.
 - Each "text" is one short sentence (no leading "- ").
+- Every insight must cover a distinct topic — no near-duplicates across slots.
 - "confidence" is 0–1: how sure the insight is grounded in the provided JSON (not speculation).
 - Prefer specific numbers from the JSON over vague wording.
+- Round money to whole shekels when speaking (no long decimals) unless precision matters.
 - Match the language directive below when present; otherwise English."""
 
 
@@ -1029,6 +1091,29 @@ _INSIGHTS_LANG_DIRECTIVE = {
 # Only surface insights the model marks as high-confidence.
 INSIGHTS_MIN_CONFIDENCE = 0.75
 INSIGHTS_MAX_COUNT = 5
+
+
+def _insight_overlap_key(text: str) -> set[str]:
+    """Normalize insight text into tokens used for near-duplicate detection."""
+    s = (text or "").lower()
+    # Keep digits/amounts and alphabetic/Hebrew tokens; drop tiny words.
+    raw = re.findall(r"[0-9]+(?:[.,][0-9]+)?|[a-z\u0590-\u05ff]{3,}", s)
+    return {t.replace(",", "") for t in raw}
+
+
+def _insights_are_near_duplicates(a: str, b: str) -> bool:
+    """True when two insights largely repeat the same topic/numbers."""
+    ka, kb = _insight_overlap_key(a), _insight_overlap_key(b)
+    if not ka or not kb:
+        return False
+    inter = ka & kb
+    if len(inter) < 3:
+        return False
+    # High Jaccard or many shared numeric tokens → duplicate.
+    union = ka | kb
+    jaccard = len(inter) / max(len(union), 1)
+    shared_nums = {t for t in inter if t[:1].isdigit()}
+    return jaccard >= 0.45 or len(shared_nums) >= 2
 
 
 def _parse_insights_payload(raw: str) -> list[dict]:
@@ -1082,7 +1167,7 @@ def _parse_insights_payload(raw: str) -> list[dict]:
 
 
 def _select_insight_items(parsed: list[dict]) -> list[dict]:
-    """Keep high-confidence insights, prefer one per slot, preserve slot order."""
+    """Keep high-confidence insights, one per slot, drop near-duplicates, preserve order."""
     kept = [
         it for it in parsed
         if float(it.get("confidence") or 0) >= INSIGHTS_MIN_CONFIDENCE
@@ -1097,13 +1182,19 @@ def _select_insight_items(parsed: list[dict]) -> list[dict]:
             by_slot.setdefault(slot, it)
         else:
             unslotted.append(it)
-    ordered = [by_slot[s] for s in range(1, INSIGHTS_MAX_COUNT + 1) if s in by_slot]
-    # Fill remaining capacity with unslotted high-confidence items (legacy/fallback).
+    candidates = [by_slot[s] for s in range(1, INSIGHTS_MAX_COUNT + 1) if s in by_slot]
     for it in unslotted:
+        candidates.append(it)
+
+    ordered: list[dict] = []
+    for it in candidates:
         if len(ordered) >= INSIGHTS_MAX_COUNT:
             break
+        text = it.get("text") or ""
+        if any(_insights_are_near_duplicates(text, prev.get("text") or "") for prev in ordered):
+            continue
         ordered.append(it)
-    return ordered[:INSIGHTS_MAX_COUNT]
+    return ordered
 
 
 def _format_insights_bullets(items: list[dict]) -> str:
