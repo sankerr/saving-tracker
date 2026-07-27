@@ -4183,43 +4183,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._json(200, {"ok": False, "error": "insights_disabled"})
                 return
             refresh = (qs.get("refresh") or ["0"])[0] in ("1", "true", "yes")
-            lang = (qs.get("lang") or ["en"])[0].lower()
-            if lang not in ("en", "he"):
-                lang = "en"
+            lang = "he"
             today = date.today().isoformat()
-            # Insights are cached per user per day AND per language, so a
-            # language switch serves/generates the right copy without a call on
-            # every dashboard load.
+            # Insights are cached per user per day (Hebrew only).
             with _cache_lock:
-                by_lang = dict(CACHE.get("insights") or {})
+                raw_cache = CACHE.get("insights") or {}
+                # Migrate away from the pre-i18n flat shape ({text,date,...}).
+                if isinstance(raw_cache, dict) and "text" in raw_cache and "he" not in raw_cache:
+                    by_lang = {"he": dict(raw_cache)}
+                else:
+                    by_lang = dict(raw_cache) if isinstance(raw_cache, dict) else {}
                 cached = dict(by_lang.get(lang) or {})
-            def _all_today(by):
-                # Both language copies cached for today, so the client can swap
-                # languages instantly without another request.
-                return {
-                    lg: (e or {}).get("text")
-                    for lg, e in by.items()
-                    if (e or {}).get("text") and (e or {}).get("date") == today
-                }
+                # Ignore legacy English-only cache — regenerate in Hebrew.
 
             if not refresh and cached.get("text") and cached.get("date") == today:
                 self._json(200, {
                     "ok": True, "insights": cached["text"],
-                    "insights_all": _all_today(by_lang),
                     "generated_at": cached.get("generated_at"), "cached": True,
                 })
                 return
             try:
                 state = compose_state(24, None)
                 context = portfolio_chat.build_portfolio_context(state)
-                # Generate all languages together (EN generated, HE translated)
-                # so both convey identical content, each in its own language.
-                texts = portfolio_chat.generate_daily_insights_bilingual(context)
+                text = portfolio_chat.generate_daily_insights(context, lang="he")
             except Exception as ex:
                 if cached.get("text"):
                     self._json(200, {
                         "ok": True, "insights": cached["text"],
-                        "insights_all": _all_today(by_lang),
                         "generated_at": cached.get("generated_at"),
                         "cached": True, "stale": True,
                     })
@@ -4232,13 +4222,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # Migrate away from the pre-i18n flat shape ({text,date,...}).
                 if not isinstance(store, dict) or "text" in store:
                     store = {}
-                for lg, txt in texts.items():
-                    store[lg] = {"text": txt, "date": today, "generated_at": gen_at}
+                store["he"] = {"text": text, "date": today, "generated_at": gen_at}
+                store.pop("en", None)
                 CACHE["insights"] = store
             save_cache()
-            text = texts.get(lang) or next(iter(texts.values()))
             self._json(200, {
-                "ok": True, "insights": text, "insights_all": dict(texts),
+                "ok": True, "insights": text,
                 "generated_at": gen_at, "cached": False,
             })
             return

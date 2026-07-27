@@ -56,8 +56,8 @@ def _holding_rows(state: dict, limit: int = 8) -> list[dict]:
         c = h.get("computed") or {}
         rows.append(
             {
-                "kind": "Fund",
-                "name": h.get("nickname") or h.get("fund_name_snapshot") or "Fund",
+                "kind": "קופה",
+                "name": h.get("nickname") or h.get("fund_name_snapshot") or "קופה",
                 "value": c.get("current_value_ils"),
                 "profit": c.get("profit_ils"),
             }
@@ -68,8 +68,8 @@ def _holding_rows(state: dict, limit: int = 8) -> list[dict]:
         c = h.get("computed") or {}
         rows.append(
             {
-                "kind": "Pension",
-                "name": h.get("nickname") or h.get("fund_name_snapshot") or "Pension",
+                "kind": "פנסיה",
+                "name": h.get("nickname") or h.get("fund_name_snapshot") or "פנסיה",
                 "value": c.get("current_value_ils"),
                 "profit": c.get("profit_ils"),
             }
@@ -104,8 +104,8 @@ def _holding_rows(state: dict, limit: int = 8) -> list[dict]:
         c = csh.get("computed") or {}
         rows.append(
             {
-                "kind": "Cash",
-                "name": csh.get("nickname") or "Cash",
+                "kind": "מזומן",
+                "name": csh.get("nickname") or "מזומן",
                 "value": c.get("value_ils"),
                 "profit": None,
             }
@@ -125,7 +125,7 @@ def _insights_html(text: str) -> str:
     if not bullets:
         return f"<p>{_esc(text)}</p>"
     items = "".join(f"<li>{_esc(b)}</li>" for b in bullets[:8])
-    return f"<ul style=\"margin:0.5rem 0 0;padding-left:1.25rem;\">{items}</ul>"
+    return f"<ul style=\"margin:0.5rem 0 0;padding-inline-start:1.25rem;\">{items}</ul>"
 
 
 def _build_dashboard_html(
@@ -152,7 +152,7 @@ def _build_dashboard_html(
         banner = (
             "<div style=\"margin:0 0 1rem;padding:0.75rem 1rem;border-radius:8px;"
             "background:#fff8e8;border-left:3px solid #B76E00;color:#2B2B3E;font-size:14px;\">"
-            f"<strong>New yields published</strong> for {_esc(_period_label(new_yield_period))}."
+            f"<strong>פורסמו תשואות חדשות</strong> עבור {_esc(_period_label(new_yield_period))}."
             "</div>"
         )
 
@@ -168,7 +168,7 @@ def _build_dashboard_html(
         )
     if not rows_html:
         rows_html.append(
-            "<tr><td colspan=\"4\" style=\"padding:8px;color:#8A8A9C;\">No holdings yet.</td></tr>"
+            "<tr><td colspan=\"4\" style=\"padding:8px;color:#8A8A9C;\">אין עדיין אחזקות.</td></tr>"
         )
 
     usdils = cache.get("current_usdils")
@@ -177,47 +177,47 @@ def _build_dashboard_html(
     if (insights_text or "").strip():
         insights_body = _insights_html(insights_text)
     else:
-        insights_body = '<p style="margin:0;color:#8A8A9C;">No high-confidence insights today.</p>'
+        insights_body = '<p style="margin:0;color:#8A8A9C;">אין תובנות בביטחון גבוה להיום.</p>'
 
     return f"""<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#FCFBF8;color:#2B2B3E;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<html lang="he" dir="rtl"><body style="margin:0;padding:0;background:#FCFBF8;color:#2B2B3E;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:640px;margin:0 auto;padding:24px 16px;">
-    <h1 style="margin:0 0 0.35rem;font-size:22px;color:#1A1A2E;">Saving Tracker</h1>
-    <p style="margin:0 0 1.25rem;color:#8A8A9C;font-size:13px;">Daily snapshot · synced {_esc(synced_at)} · USDILS {_esc(usdils_txt)}</p>
+    <h1 style="margin:0 0 0.35rem;font-size:22px;color:#1A1A2E;">מעקב חיסכון</h1>
+    <p style="margin:0 0 1.25rem;color:#8A8A9C;font-size:13px;">סיכום יומי · סונכרן {_esc(synced_at)} · USDILS {_esc(usdils_txt)}</p>
     {banner}
     <div style="background:#fff;border:1px solid #ECE8DF;border-radius:12px;padding:1rem 1.125rem;margin-bottom:1rem;">
-      <div style="font-size:13px;color:#8A8A9C;text-transform:uppercase;letter-spacing:0.06em;">Dashboard total</div>
+      <div style="font-size:13px;color:#8A8A9C;text-transform:uppercase;letter-spacing:0.06em;">סך התיק</div>
       <div style="font-size:28px;font-weight:700;margin:0.25rem 0;">{_esc(_fmt_ils(total))}</div>
-      <div style="font-size:14px;color:#1F8A4C;">Profit {_esc(_fmt_ils(profit))}</div>
-      <p style="margin:0.75rem 0 0;font-size:12px;color:#8A8A9C;">Pension is tracked separately and not included in this total.</p>
+      <div style="font-size:14px;color:#1F8A4C;">רווח {_esc(_fmt_ils(profit))}</div>
+      <p style="margin:0.75rem 0 0;font-size:12px;color:#8A8A9C;">פנסיה מנוהלת בנפרד ואינה כלולה בסכום זה.</p>
       <table style="width:100%;border-collapse:collapse;margin-top:0.75rem;font-size:13px;">
         <tr>
-          <td style="padding:4px 0;">Funds</td><td style="text-align:right;">{_esc(_fmt_ils(funds))}</td>
+          <td style="padding:4px 0;">קופות / גמל</td><td style="text-align:left;">{_esc(_fmt_ils(funds))}</td>
         </tr>
         <tr>
-          <td style="padding:4px 0;">RSU</td><td style="text-align:right;">{_esc(_fmt_ils(rsu))}</td>
+          <td style="padding:4px 0;">RSU</td><td style="text-align:left;">{_esc(_fmt_ils(rsu))}</td>
         </tr>
         <tr>
-          <td style="padding:4px 0;">ESPP</td><td style="text-align:right;">{_esc(_fmt_ils(espp))}</td>
+          <td style="padding:4px 0;">ESPP</td><td style="text-align:left;">{_esc(_fmt_ils(espp))}</td>
         </tr>
         <tr>
-          <td style="padding:4px 0;">Cash</td><td style="text-align:right;">{_esc(_fmt_ils(cash))}</td>
+          <td style="padding:4px 0;">מזומן</td><td style="text-align:left;">{_esc(_fmt_ils(cash))}</td>
         </tr>
         <tr>
-          <td style="padding:4px 0;">Pension (excluded)</td><td style="text-align:right;">{_esc(_fmt_ils(pension_total))}</td>
+          <td style="padding:4px 0;">פנסיה (לא כלול)</td><td style="text-align:left;">{_esc(_fmt_ils(pension_total))}</td>
         </tr>
       </table>
     </div>
 
     <div style="background:#fff;border:1px solid #ECE8DF;border-radius:12px;padding:1rem 1.125rem;margin-bottom:1rem;">
-      <div style="font-size:15px;font-weight:600;margin-bottom:0.5rem;">Holdings snapshot</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:0.5rem;">צילום אחזקות</div>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
-          <tr style="color:#8A8A9C;text-align:left;">
-            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;">Type</th>
-            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;">Name</th>
-            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;text-align:right;">Value</th>
-            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;text-align:right;">Profit</th>
+          <tr style="color:#8A8A9C;text-align:right;">
+            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;">סוג</th>
+            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;">שם</th>
+            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;text-align:left;">ערך</th>
+            <th style="padding:6px 8px;border-bottom:1px solid #ECE8DF;font-weight:500;text-align:left;">רווח</th>
           </tr>
         </thead>
         <tbody>
@@ -227,14 +227,14 @@ def _build_dashboard_html(
     </div>
 
     <div style="background:#fff;border:1px solid #ECE8DF;border-radius:12px;padding:1rem 1.125rem;margin-bottom:1rem;">
-      <div style="font-size:15px;font-weight:600;">AI insights</div>
+      <div style="font-size:15px;font-weight:600;">תובנות AI</div>
       <div style="font-size:14px;line-height:1.5;color:#2B2B3E;">{insights_body}</div>
       <p style="margin:0.75rem 0 0;font-size:11px;color:#8A8A9C;">
-        Educational only — not financial, tax, or investment advice. Verify against official statements.
+        לצורכי לימוד בלבד — אינו ייעוץ פיננסי, מס או השקעות. אמתו מול דוחות רשמיים.
       </p>
     </div>
 
-    <p style="margin:0;font-size:12px;color:#8A8A9C;">Open Saving Tracker to review charts, spot-check yields, or ask the AI chat.</p>
+    <p style="margin:0;font-size:12px;color:#8A8A9C;">פתחו את מעקב החיסכון לגרפים, בדיקת תשואות או שיחת AI.</p>
   </div>
 </body></html>"""
 
@@ -289,14 +289,14 @@ def send_daily_insight_email(
     try:
         context = portfolio_chat.build_portfolio_context(state)
         try:
-            insights = portfolio_chat.generate_daily_insights(context)
+            insights = portfolio_chat.generate_daily_insights(context, lang="he")
         except Exception as ex:
             _log(f"notify: Gemini insights failed for {to}: {ex}")
-            insights = "Insights unavailable today — open Saving Tracker for the full dashboard."
+            insights = "התובנות אינן זמינות היום — פתחו את מעקב החיסכון ללוח המלא."
 
-        subject = "Saving Tracker — daily snapshot"
+        subject = "מעקב חיסכון — סיכום יומי"
         if new_yield_period:
-            subject += f" · new yields {_period_label(new_yield_period)}"
+            subject += f" · תשואות חדשות {_period_label(new_yield_period)}"
 
         html_body = _build_dashboard_html(
             state=state,

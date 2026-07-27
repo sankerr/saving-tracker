@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -13,10 +13,9 @@
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
   var meta = document.getElementById('meta-theme-color');
   if (meta) meta.content = dark ? '#0F0F1A' : '#F4F5F8';
-  var lang = localStorage.getItem('st_lang') || 'en';
-  if (lang !== 'he' && lang !== 'en') lang = 'en';
-  document.documentElement.lang = lang;
-  document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
+  document.documentElement.lang = 'he';
+  document.documentElement.dir = 'rtl';
+  try { localStorage.setItem('st_lang', 'he'); } catch (e) {}
 })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1670,9 +1669,6 @@ html[dir="rtl"] .chat-panel {
 <body>
 <div id="login-overlay" class="login-overlay" hidden>
   <div class="login-card" id="login-card">
-    <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem;">
-      <button type="button" class="btn btn--ghost btn--small" data-lang-toggle id="login-lang-toggle">עב</button>
-    </div>
     <h2 id="auth-title" data-i18n="auth.title.login">Sign in</h2>
     <span class="beta-badge" data-i18n="auth.betaBadge" style="margin:0 0 0.75rem;margin-inline-start:0;">Private Beta</span>
     <p id="auth-subtitle" data-i18n="auth.subtitle.login">Enter your email and password to access your portfolio.</p>
@@ -1712,7 +1708,6 @@ html[dir="rtl"] .chat-panel {
       </div>
       <span class="status-data-month" id="status-data-month" hidden></span>
       <div class="status-actions">
-        <button type="button" class="btn btn--ghost btn--small" data-lang-toggle id="lang-toggle-btn">עב</button>
         <button class="btn btn--ghost btn--small" id="chat-toggle-btn" type="button" hidden data-i18n="chrome.aiChat" data-i18n-title="chrome.openAiChat" data-i18n-aria-label="chrome.openAiChat" title="Open AI chat" aria-label="Open AI chat" aria-expanded="false" aria-controls="chat-panel">AI chat</button>
         <button class="btn btn--ghost btn--small" id="theme-toggle-btn" type="button" data-i18n-title="chrome.toggleTheme" data-i18n-aria-label="chrome.toggleTheme" title="Toggle light/dark mode" aria-label="Toggle theme">🌙</button>
         <button class="btn btn--ghost btn--small" id="settings-btn" type="button" data-i18n-title="section.settings" data-i18n-aria-label="section.settings" title="Settings" aria-label="Settings" aria-haspopup="dialog">⚙</button>
@@ -2406,7 +2401,7 @@ function clearPortfolioUi() {
   document.querySelectorAll('.add-panel').forEach((p) => { p.hidden = true; });
   closeSettings();
   INSIGHTS_STATE = 'idle';
-  INSIGHTS_TEXT = { en: null, he: null };
+  INSIGHTS_TEXT = null;
   INSIGHTS_GENERATED_AT = null;
   const insightCard = document.getElementById('ai-insight');
   if (insightCard) insightCard.hidden = true;
@@ -2810,8 +2805,7 @@ function renderDashboard() {
 // Month-year label for a "YYYY-MM-DD" (or "YYYY-MM") string, localized.
 function fmtGoalMonth(dateStr) {
   const [y, m] = dateStr.split('-').map(Number);
-  const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
-  const locale = lang === 'he' ? 'he-IL' : 'en-US';
+  const locale = 'he-IL';
   return new Date(y, (m || 1) - 1, 1).toLocaleDateString(locale, { month: 'short', year: 'numeric' });
 }
 
@@ -2911,9 +2905,7 @@ function renderAllocation() {
 // daily email, cached server-side per day, fetched lazily so it never blocks
 // the dashboard render. Hidden entirely when GEMINI_API_KEY isn't configured.
 let INSIGHTS_STATE = 'idle'; // idle | loading | done | disabled
-// Both language copies are cached client-side (the API returns them together),
-// so switching language is an instant swap with no request and no loading.
-let INSIGHTS_TEXT = { en: null, he: null };
+let INSIGHTS_TEXT = null;
 let INSIGHTS_GENERATED_AT = null;
 
 function insightsToHtml(text) {
@@ -2944,10 +2936,6 @@ async function loadInsights(force = false) {
   if (!card || !getToken()) return;
   if (INSIGHTS_STATE === 'disabled' && !force) return;
   if (INSIGHTS_STATE === 'loading') return;
-  // On a language switch we already have insight text on screen. Keep it
-  // visible (dimmed) while re-fetching the other language's copy instead of
-  // flashing a long "Analyzing…" spinner — the server serves the matching
-  // pre-translated text, so this is usually a fast cache hit.
   const hadContent = INSIGHTS_STATE === 'done';
   INSIGHTS_STATE = 'loading';
   card.hidden = false;
@@ -2960,8 +2948,7 @@ async function loadInsights(force = false) {
     meta.hidden = true;
   }
   const epoch = SESSION_EPOCH;
-  const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
-  const j = await api('GET', `/api/insights?lang=${encodeURIComponent(lang)}${force ? '&refresh=1' : ''}`, undefined, { silent: true });
+  const j = await api('GET', `/api/insights${force ? '?refresh=1' : ''}`, undefined, { silent: true });
   bodyEl.classList.remove('is-refreshing');
   // A session change (login/logout) invalidated this request. Release the
   // loading lock so a later load can retry instead of getting stuck.
@@ -2975,13 +2962,8 @@ async function loadInsights(force = false) {
   }
   INSIGHTS_STATE = 'done';
   INSIGHTS_GENERATED_AT = j.generated_at || null;
-  // Cache both language copies so a later language switch is instant.
-  if (j.insights_all && typeof j.insights_all === 'object') {
-    if ('en' in j.insights_all) INSIGHTS_TEXT.en = j.insights_all.en || '';
-    if ('he' in j.insights_all) INSIGHTS_TEXT.he = j.insights_all.he || '';
-  }
-  INSIGHTS_TEXT[lang] = (j.insights != null ? j.insights : INSIGHTS_TEXT[lang]) || '';
-  const text = INSIGHTS_TEXT[lang] || '';
+  INSIGHTS_TEXT = (j.insights != null ? j.insights : '') || '';
+  const text = INSIGHTS_TEXT || '';
   if (!String(text).trim()) {
     // No high-confidence insights today — hide the card instead of an empty box.
     card.hidden = true;
@@ -3011,24 +2993,18 @@ function renderInsights(text) {
   }
 }
 
-// Language switch: swap to the cached copy for the new language instantly, with
-// no loading indicator and no request. Only fetch if we somehow lack it.
+// Re-render the insight card from cached Hebrew text (no network).
 function applyInsightsLanguage() {
   if (!(APP && getToken())) return;
   if (INSIGHTS_STATE !== 'done') return;
-  const lang = (window.I18N && I18N.getLang) ? I18N.getLang() : 'en';
   const card = document.getElementById('ai-insight');
-  const text = INSIGHTS_TEXT[lang] || '';
+  const text = INSIGHTS_TEXT || '';
   if (!String(text).trim()) {
     if (card) card.hidden = true;
     return;
   }
   if (card) card.hidden = false;
-  if (INSIGHTS_TEXT[lang] != null && INSIGHTS_TEXT[lang] !== undefined) {
-    renderInsights(text);
-  } else {
-    loadInsights();
-  }
+  renderInsights(text);
 }
 
 function drawDashboardChart() {
@@ -4947,7 +4923,7 @@ function periodLabel(p) {
 }
 function monthShortName(m) {
   // Localized 3-letter month via the active language's locale.
-  const locale = (window.I18N && I18N.getLang && I18N.getLang() === 'he') ? 'he-IL' : 'en-US';
+  const locale = 'he-IL';
   const d = new Date(2000, m - 1, 1);
   return d.toLocaleDateString(locale, { month: 'short' });
 }
@@ -6614,11 +6590,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.I18N) {
     I18N.initLangBoot();
     I18N.applyI18n(document);
-    document.querySelectorAll('[data-lang-toggle]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        I18N.toggleLang({ onChange: () => refreshI18nDynamic() });
-      });
-    });
   }
   init();
   initChatUi();

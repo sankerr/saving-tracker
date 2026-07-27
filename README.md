@@ -21,7 +21,7 @@ Browser → Cloudflare Pages (frontend)
        → Resend (optional new-yield email delivery)
 ```
 
-Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, and cash, with dashboard projections/what-if, a savings goal, a Hebrew/English UI, and an optional AI chat assistant.
+Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, and cash, with dashboard projections/what-if, a savings goal, a Hebrew UI, and an optional AI chat assistant.
 
 ## Prerequisites
 
@@ -181,7 +181,7 @@ python3 saving_tracker.py
 - All other `/api/*` routes require `Authorization: Bearer <token>`
 - `GET /api/chat/status` — `{ "enabled": bool }` (whether AI chat is configured)
 - `POST /api/chat` — `{ "messages": [...] }` → `{ "reply" }` (AI assistant; `404` when chat is disabled)
-- `GET /api/insights` — `{ "insights", "generated_at", "cached" }` for the dashboard AI insight card (`ok:false, error:"insights_disabled"` without `GEMINI_API_KEY`; cached per day **and per language**, `?lang=en|he` picks the output language, `?refresh=1` forces regeneration)
+- `GET /api/insights` — `{ "insights", "generated_at", "cached" }` for the dashboard AI insight card (`ok:false, error:"insights_disabled"` without `GEMINI_API_KEY`; Hebrew only, cached per day; `?refresh=1` forces regeneration)
 - `GET /api/version` — `{ "version" }`
 - `GET /api/health` — no auth (Render health checks)
 - `POST /api/cron/sync` — daily sync trigger; requires `Authorization: Bearer <CRON_SECRET>` (returns `202`). Optional `?email=0` (also `false`/`no`/`off`) runs the sync **without** sending emails.

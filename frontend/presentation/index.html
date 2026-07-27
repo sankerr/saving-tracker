@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Saving Tracker — Deck</title>
+<title>מעקב חיסכון — מצגת</title>
 <style>
 /* ============================================================
-   Saving Tracker — standalone slide deck (EN / HE, RTL-aware)
+   Saving Tracker — standalone slide deck (Hebrew / RTL)
    No external dependencies: self-contained CSS + JS, system fonts.
    ============================================================ */
 :root {
@@ -174,13 +174,6 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
 .nav-btn:hover { border-color: var(--st-accent); }
 #prev { inset-inline-start: 20px; }
 #next { inset-inline-start: 68px; }
-#lang-toggle {
-  position: fixed; top: 14px; inset-inline-end: 18px; z-index: 10;
-  padding: 6px 14px; border-radius: 999px;
-  border: 1px solid var(--st-border); background: var(--st-surface); color: var(--st-accent);
-  font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--font-body);
-}
-#lang-toggle:hover { border-color: var(--st-accent); }
 .hint { position: fixed; bottom: 20px; inset-inline: 0; text-align: center; font-size: 13px; color: var(--st-muted); z-index: 5; pointer-events: none; }
 
 /* ── Mobile / small screens: drop the fixed-canvas scaling and reflow ── */
@@ -218,13 +211,11 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
   .nav-btn { bottom: 12px; width: 46px; height: 46px; font-size: 22px; }
   #prev { inset-inline-start: 12px; }
   #next { inset-inline-start: 66px; }
-  #lang-toggle { top: 10px; inset-inline-end: 12px; }
 }
 </style>
 </head>
 <body>
 <div id="progress"></div>
-<button id="lang-toggle" type="button">עב</button>
 <div id="stage">
   <div id="deck">
 
@@ -522,38 +513,27 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
   var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
   var progress = document.getElementById('progress');
   var counter = document.getElementById('counter');
-  var langBtn = document.getElementById('lang-toggle');
   var i18nNodes = Array.prototype.slice.call(document.querySelectorAll('[data-i18n]'));
-
-  // Capture English defaults straight from the markup.
-  var EN = {};
-  i18nNodes.forEach(function (el) { EN[el.getAttribute('data-i18n')] = el.innerHTML; });
 
   var idx = 0;
 
-  function getLang() {
-    var v = localStorage.getItem(LANG_KEY) || 'en';
-    return (v === 'he') ? 'he' : 'en';
-  }
-  function applyLang(lang) {
-    var dict = lang === 'he' ? STRINGS.he : EN;
-    document.documentElement.lang = lang;
-    document.documentElement.dir = lang === 'he' ? 'rtl' : 'ltr';
+  function applyLang() {
+    var dict = STRINGS.he || {};
+    document.documentElement.lang = 'he';
+    document.documentElement.dir = 'rtl';
     i18nNodes.forEach(function (el) {
       var key = el.getAttribute('data-i18n');
-      var val = (lang === 'he' && STRINGS.he[key] != null) ? STRINGS.he[key] : EN[key];
+      var val = dict[key];
       if (val != null) el.innerHTML = val;
     });
     shotNodes.forEach(function (img) {
       var name = img.getAttribute('data-shot');
-      if (name) img.src = 'assets/' + lang + '/' + name + '.png';
+      if (name) img.src = 'assets/he/' + name + '.png';
     });
-    langBtn.textContent = lang === 'he' ? 'EN' : 'עב';
-    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+    try { localStorage.setItem(LANG_KEY, 'he'); } catch (e) {}
   }
-  function toggleLang() { applyLang(getLang() === 'he' ? 'en' : 'he'); }
 
-  // Missing screenshots -> styled placeholder (offline-safe, retries on lang swap).
+  // Missing screenshots -> styled placeholder (offline-safe).
   var shotNodes = Array.prototype.slice.call(document.querySelectorAll('img.shot'));
   shotNodes.forEach(function (img) {
     var ph = document.createElement('div');
@@ -597,7 +577,6 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
 
   document.getElementById('next').addEventListener('click', next);
   document.getElementById('prev').addEventListener('click', prev);
-  langBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleLang(); });
   // "Back to login" is a plain anchor to the app root — it always navigates
   // this tab to the login page (robust even if the original tab was closed).
   var backBtn = document.getElementById('back-to-login');
@@ -605,7 +584,7 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
   stage.addEventListener('click', function (e) {
     // Tap-to-advance fights scrolling on touch screens; use the arrows there.
     if (MOBILE.matches) return;
-    if (e.target.closest('a, .nav-btn, #lang-toggle, .deck-cta')) return;
+    if (e.target.closest('a, .nav-btn, .deck-cta')) return;
     if (e.clientX > window.innerWidth / 2) next(); else prev();
   });
   document.addEventListener('keydown', function (e) {
@@ -628,7 +607,7 @@ html[dir="rtl"] .arrow.h { transform: scaleX(-1); }
     if (!isNaN(n)) go(n - 1);
   });
 
-  applyLang(getLang());
+  applyLang();
   var start = parseInt(location.hash.slice(1), 10);
   idx = isNaN(start) ? 0 : clamp(start - 1);
   fit(); render();

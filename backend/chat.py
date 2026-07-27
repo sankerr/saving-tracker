@@ -49,9 +49,12 @@ Backend capabilities (use tools — do not invent math):
 - describe_backend_apis: lists REST APIs and what they do.
 
 Past totals / change questions (e.g. "what was my portfolio worth in March?", "how much changed since last month?"):
-1. Prefer monthly_history in the portfolio JSON (recent months with change_from_prev_ils / change_from_prev_pct).
+1. Prefer monthly_history in the portfolio JSON (recent months with change_from_prev_* and investment_return_*).
 2. For a specific older month or a custom date range, call query_portfolio_history with year_month or start_year_month/end_year_month.
-3. Explain totals using the returned numbers only. Note cash is held at today's amount for all past months (same as the dashboard chart). Pension is excluded from dashboard totals.
+3. Explain totals using the returned numbers only. When discussing profit/return, use investment_return_ils /
+   investment_return_pct (excludes fund deposits/withdrawals). change_from_prev_* is total balance delta and
+   may be mostly deposits — if net_external_flow_ils is material, say so (break out deposits vs return).
+4. Note cash is held at today's amount for all past months (same as the dashboard chart). Pension is excluded from dashboard totals.
 
 Future value / profit questions (e.g. "what will my profit be in May 2030?"):
 1. If the user gave an annual growth % (year %), call project_portfolio with target_year_month=YYYY-MM and assumed_annual_pct.
@@ -79,7 +82,7 @@ Guidelines:
 - Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP.
 - Suggest concrete educational improvements when asked (allocation, concentration, contributions, vesting, growth assumptions). Keep replies concise.
 - Do NOT discuss management fees, deposit fees, or "~mgmt fees paid" as features of this app — the app does not calculate fees for advice. Prefer allocation and growth topics instead.
-- Match the user's language (Hebrew or English).
+- Always reply in Hebrew.
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
 - Dashboard total excludes pension (tracked separately). For tax/cash-out, only use cashout_tax_estimate."""
 
@@ -163,7 +166,9 @@ TOOLS = [
                 "description": (
                     "Return real historical monthly portfolio totals and month-over-month changes "
                     "(dashboard-style: funds + RSU + ESPP + cash; pension excluded). "
-                    "Use for past totals or 'what changed' questions."
+                    "Includes change_from_prev_* (balance delta), net_external_flow_ils (fund deposits − withdrawals), "
+                    "and investment_return_* (balance delta minus fund flows). "
+                    "Use investment_return_* for profit/yield; do not treat deposits as profit."
                 ),
                 "parameters": {
                     "type": "object",
@@ -342,12 +347,45 @@ def _resolve_latest_published_period(state: dict) -> int | None:
     return latest if latest > 0 else None
 
 
+def _fund_net_flows_by_period(state: dict) -> dict[int, float]:
+    """Per-period net fund external flow (deposits − withdrawals) in ILS.
+
+    Derived from cumulative deposited_to_date / withdrawn_to_date on each
+    non-archived fund holding's time_series. Does not include RSU/ESPP/cash.
+    """
+    flows: dict[int, float] = {}
+    for h in state.get("fund_holdings") or []:
+        if h.get("archived"):
+            continue
+        series = ((h.get("computed") or {}).get("time_series")) or []
+        prev_dep = 0.0
+        prev_wd = 0.0
+        for pt in series:
+            period_int = _period_key_to_int(pt.get("period"))
+            if period_int is None:
+                continue
+            try:
+                dep = float(pt.get("deposited_to_date") or 0)
+            except (TypeError, ValueError):
+                dep = prev_dep
+            try:
+                wd = float(pt.get("withdrawn_to_date") or 0)
+            except (TypeError, ValueError):
+                wd = prev_wd
+            net = (dep - prev_dep) - (wd - prev_wd)
+            if abs(net) >= 0.005:
+                flows[period_int] = round(flows.get(period_int, 0.0) + net, 2)
+            prev_dep, prev_wd = dep, wd
+    return flows
+
+
 def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MONTHS) -> dict:
     """Real monthly dashboard totals from portfolio.time_series_ils + cash (flat at today)."""
     portfolio = state.get("portfolio") or {}
     series = portfolio.get("time_series_ils") or []
     cash_now = _round_or_none(portfolio.get("cash_value_ils")) or 0.0
     published_through = _resolve_latest_published_period(state)
+    fund_flows = _fund_net_flows_by_period(state)
 
     rows = []
     prev_total = None
@@ -367,6 +405,14 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         change_pct = None
         if prev_total is not None and prev_total != 0 and change_ils is not None:
             change_pct = round(change_ils / prev_total, 4)
+        net_flow = None
+        investment_return_ils = None
+        investment_return_pct = None
+        if change_ils is not None and period_int is not None:
+            net_flow = round(fund_flows.get(period_int, 0.0), 2)
+            investment_return_ils = round(change_ils - net_flow, 2)
+            if prev_total is not None and prev_total != 0:
+                investment_return_pct = round(investment_return_ils / prev_total, 4)
         has_published_yield = False
         if period_int is not None:
             if published_through is not None:
@@ -386,6 +432,9 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
             "cash_ils": cash_now,
             "change_from_prev_ils": change_ils,
             "change_from_prev_pct": change_pct,
+            "net_external_flow_ils": net_flow,
+            "investment_return_ils": investment_return_ils,
+            "investment_return_pct": investment_return_pct,
             "has_published_yield": has_published_yield,
         })
         prev_total = total
@@ -410,9 +459,14 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
             "total_ils": row["total_ils"],
             "change_from_prev_ils": row["change_from_prev_ils"],
             "change_from_prev_pct": row["change_from_prev_pct"],
+            "net_external_flow_ils": row.get("net_external_flow_ils"),
+            "investment_return_ils": row.get("investment_return_ils"),
+            "investment_return_pct": row.get("investment_return_pct"),
             "published_through_yyyymm": published_through,
             "note": (
                 "Last month with published yield data (and a month-over-month change). "
+                "change_from_prev_* is total balance delta (includes deposits/withdrawals). "
+                "investment_return_* excludes fund net_external_flow_ils (deposits − withdrawals). "
                 "Ignores later calendar months that are only forward-filled without yields."
             ),
         }
@@ -427,6 +481,9 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         "note": (
             "Real history from holdings + synced monthly yields. Matches dashboard total "
             "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded. "
+            "change_from_prev_* = total balance MoM delta. "
+            "investment_return_* = change_from_prev minus fund net_external_flow_ils "
+            "(deposits − withdrawals). Do not call balance growth 'profit' when flows are large. "
             "For 'last month' / recent move, use ONLY latest_yield_month (has_published_yield). "
             "Do not use months after published_through_yyyymm — those lack published yields."
         ),
@@ -536,7 +593,9 @@ def _insight_slots_hint(portfolio: dict, monthly_history: dict, goal_status: Any
             "last_month_means": (
                 "Use monthly_history.latest_yield_month only — the last month with "
                 "has_published_yield=true (at or before published_through_yyyymm). "
-                "Never cite later forward-filled months without yields."
+                "Never cite later forward-filled months without yields. "
+                "Break out net_external_flow_ils (deposits) vs investment_return_* — "
+                "do not call change_from_prev_* 'profit' when flows dominate."
             ),
         },
     }
@@ -1057,11 +1116,16 @@ Use ONLY the portfolio JSON provided. Educational only — not financial, tax, o
 Do NOT discuss management fees or deposit fees. Do NOT invent holdings or numbers missing from the JSON.
 
 Write insights for these FIXED SLOTS in order (skip a slot entirely if data is missing or the observation is weak):
-1. recent_move — Profit/loss for the latest month with published yield data.
+1. recent_move — Latest month with published yield data.
    Use monthly_history.latest_yield_month (or insight_slots_hint.slot1_recent_move) ONLY.
    Name that period (YYYY-MM). Never use a month where has_published_yield is false, or any
    period after published_through_yyyymm — those are forward-filled without yields (often 0% change).
    This may lag the calendar month (e.g. May yields while today is July).
+   CRITICAL: change_from_prev_* is total balance delta and INCLUDES deposits/withdrawals.
+   Use investment_return_ils / investment_return_pct for true fund/market profit/loss.
+   When |net_external_flow_ils| is material vs the balance change, break BOTH out in one sentence
+   (total grew by Z, of which deposits W and investment return X / Y%). Never attribute deposits to "profit" or "yield".
+   If flows are ~0, you may speak about investment return alone.
 2. allocation — Which sleeve (funds/RSU/ESPP/cash) or concentration stands out vs Total Wealth.
    Prefer insight_slots_hint.slot2_allocation when present.
 3. goal_or_lifetime_pl — If savings_goal.configured: ONE summary of pace/progress vs target (include progress_pct and gap or projected value — pick one framing, not both). Else: lifetime total_profit_ils vs invested.
@@ -1080,13 +1144,7 @@ Rules:
 - "confidence" is 0–1: how sure the insight is grounded in the provided JSON (not speculation).
 - Prefer specific numbers from the JSON over vague wording.
 - Round money to whole shekels when speaking (no long decimals) unless precision matters.
-- Match the language directive below when present; otherwise English."""
-
-
-_INSIGHTS_LANG_DIRECTIVE = {
-    "he": "\nWrite every insight text in Hebrew.",
-    "en": "\nWrite every insight text in English.",
-}
+- Write every insight text in Hebrew."""
 
 # Only surface insights the model marks as high-confidence.
 INSIGHTS_MIN_CONFIDENCE = 0.75
@@ -1207,11 +1265,10 @@ def _format_insights_bullets(items: list[dict]) -> str:
 
 
 def generate_daily_insights(context: dict, lang: str = None) -> str:
-    """One-shot Gemini text for daily email / in-app card.
+    """One-shot Gemini text for daily email / in-app card (Hebrew).
 
-    Requires GEMINI_API_KEY only (not CHAT_ENABLED). When ``lang`` is 'he' or
-    'en' the output is forced to that language; otherwise the model matches the
-    data's language (default used by the email path).
+    Requires GEMINI_API_KEY only (not CHAT_ENABLED). ``lang`` is ignored
+    (kept for call-site compatibility); output is always Hebrew.
 
     Asks for up to 5 fixed-slot insights with confidence scores; only insights
     at or above INSIGHTS_MIN_CONFIDENCE are returned (may be empty).
@@ -1221,7 +1278,7 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
         raise RuntimeError("GEMINI_API_KEY not configured")
 
     model = _gemini_model()
-    system_prompt = DAILY_INSIGHTS_PROMPT + _INSIGHTS_LANG_DIRECTIVE.get((lang or "").lower(), "")
+    system_prompt = DAILY_INSIGHTS_PROMPT
     context_json = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
     body = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
@@ -1232,7 +1289,8 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
                     {
                         "text": (
                             "Fill the fixed insight slots from this JSON "
-                            "(skip weak/missing slots; last month = latest published yield month):\n"
+                            "(skip weak/missing slots; last month = latest published yield month; "
+                            "Hebrew only; break out deposits vs investment return for slot 1):\n"
                             f"{context_json}"
                         )
                     }
@@ -1271,65 +1329,3 @@ def generate_daily_insights(context: dict, lang: str = None) -> str:
     parsed = _parse_insights_payload(raw)
     kept = _select_insight_items(parsed)
     return _format_insights_bullets(kept)
-
-
-_INSIGHTS_LANG_NAMES = {"he": "Hebrew", "en": "English"}
-
-_TRANSLATE_INSIGHTS_PROMPT = (
-    "You are a professional translator. Translate the user's text to {lang_name}.\n"
-    "Preserve the exact meaning, order, numbers, and any leading \"- \" bullet markers.\n"
-    "Do not add, remove, reorder, or reinterpret any content. Keep numbers and\n"
-    "currency symbols unchanged. Output only the translation, nothing else.\n"
-    "If the input is empty, output nothing."
-)
-
-
-def _translate_insights(text: str, target_lang: str) -> str:
-    """Translate an insight string to ``target_lang`` ('he'/'en') preserving
-    content, so both language versions convey identical information."""
-    text = (text or "").strip()
-    if not text:
-        return ""
-    api_key = _gemini_api_key()
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY not configured")
-    model = _gemini_model()
-    lang_name = _INSIGHTS_LANG_NAMES.get((target_lang or "").lower(), "English")
-    system_prompt = _TRANSLATE_INSIGHTS_PROMPT.format(lang_name=lang_name)
-    body = {
-        "systemInstruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"role": "user", "parts": [{"text": text}]}],
-        "generationConfig": {"temperature": 0.0, "maxOutputTokens": 500},
-    }
-    r = requests.post(
-        GEMINI_URL.format(model=model),
-        params={"key": api_key},
-        headers={"Content-Type": "application/json"},
-        json=body,
-        timeout=REQUEST_TIMEOUT,
-    )
-    if r.status_code >= 400:
-        raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:400]}")
-    translated = _parts_text(_extract_candidate_parts(r.json()))
-    if not translated and text:
-        raise RuntimeError("Gemini returned empty translation")
-    return translated or ""
-
-
-def generate_daily_insights_bilingual(context: dict) -> dict:
-    """Generate the daily insight once (English) then translate to Hebrew, so
-    the two language versions convey the *same content*, each in its own
-    language. Returns ``{"en": text, "he": text}``.
-
-    If translation fails, falls back to an independent Hebrew generation so the
-    card still works (content may then differ slightly). Empty English (no
-    high-confidence insights) yields empty Hebrew without another API call.
-    """
-    en = generate_daily_insights(context, lang="en")
-    if not (en or "").strip():
-        return {"en": "", "he": ""}
-    try:
-        he = _translate_insights(en, "he")
-    except Exception:
-        he = generate_daily_insights(context, lang="he")
-    return {"en": en, "he": he}

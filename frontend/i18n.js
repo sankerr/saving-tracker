@@ -1,9 +1,9 @@
-/* Saving Tracker — English / Hebrew i18n */
+/* Saving Tracker — Hebrew UI (EN strings kept as fallback only) */
 (function (global) {
   'use strict';
 
   var LANG_KEY = 'st_lang';
-  var SUPPORTED = { en: true, he: true };
+  var SUPPORTED = { he: true };
 
   var MONTH_NAMES = {
     en: ['January', 'February', 'March', 'April', 'May', 'June',
@@ -1366,13 +1366,14 @@
   };
 
   function getLang() {
-    var v = localStorage.getItem(LANG_KEY) || 'en';
-    return SUPPORTED[v] ? v : 'en';
+    // App is Hebrew-only; keep EN dictionary as unused fallback for missing keys.
+    try { localStorage.setItem(LANG_KEY, 'he'); } catch (e) {}
+    return 'he';
   }
 
   function t(key, vars) {
     var lang = getLang();
-    var dict = STRINGS[lang] || STRINGS.en;
+    var dict = STRINGS.he || STRINGS.en;
     var s = dict[key];
     if (s == null) s = (STRINGS.en && STRINGS.en[key]) || key;
     if (String(s).indexOf('{proj}') !== -1 && (!vars || vars.proj == null)) {
@@ -1389,8 +1390,8 @@
 
   function applyDocumentLang(lang) {
     var root = document.documentElement;
-    root.lang = lang;
-    root.dir = lang === 'he' ? 'rtl' : 'ltr';
+    root.lang = 'he';
+    root.dir = 'rtl';
     document.title = t('doc.title');
   }
 
@@ -1415,34 +1416,23 @@
     root.querySelectorAll('[data-i18n-prompt]').forEach(function (el) {
       el.setAttribute('data-prompt', t(el.getAttribute('data-i18n-prompt')));
     });
-    updateLangToggleButtons();
-  }
-
-  function updateLangToggleButtons() {
-    var lang = getLang();
-    var label = lang === 'he' ? 'EN' : 'עב';
-    document.querySelectorAll('[data-lang-toggle]').forEach(function (btn) {
-      btn.textContent = label;
-      btn.setAttribute('title', t('chrome.langToggle'));
-      btn.setAttribute('aria-label', t('chrome.langToggle'));
-    });
   }
 
   function setLang(lang, opts) {
     opts = opts || {};
-    if (!SUPPORTED[lang]) lang = 'en';
-    localStorage.setItem(LANG_KEY, lang);
-    applyDocumentLang(lang);
+    try { localStorage.setItem(LANG_KEY, 'he'); } catch (e) {}
+    applyDocumentLang('he');
     applyI18n(document);
-    if (typeof opts.onChange === 'function') opts.onChange(lang);
+    if (typeof opts.onChange === 'function') opts.onChange('he');
   }
 
   function toggleLang(opts) {
-    setLang(getLang() === 'he' ? 'en' : 'he', opts);
+    // Language toggle removed — Hebrew only.
+    setLang('he', opts);
   }
 
   function initLangBoot() {
-    applyDocumentLang(getLang());
+    applyDocumentLang('he');
   }
 
   global.I18N = {
@@ -1453,7 +1443,6 @@
     setLang: setLang,
     toggleLang: toggleLang,
     applyI18n: applyI18n,
-    initLangBoot: initLangBoot,
-    updateLangToggleButtons: updateLangToggleButtons
+    initLangBoot: initLangBoot
   };
 })(typeof window !== 'undefined' ? window : this);
