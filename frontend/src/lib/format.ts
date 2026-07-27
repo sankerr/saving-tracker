@@ -12,10 +12,21 @@ const fmtIls2 = new Intl.NumberFormat('he-IL', {
   maximumFractionDigits: 2,
 });
 
+const fmtUsd0 = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
+
 /** Format ILS. `n` is a currency amount (not minor units). */
 export function fmtIls(n: number, digits = 0): string {
   if (!Number.isFinite(n)) return '—';
   return (digits === 0 ? fmtIls0 : fmtIls2).format(n);
+}
+
+export function fmtUsd(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return fmtUsd0.format(n);
 }
 
 /** Format a fraction as percent (0.123 → "12.30%"). */

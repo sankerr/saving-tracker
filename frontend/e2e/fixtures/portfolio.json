@@ -1,0 +1,71 @@
+{
+  "ok": true,
+  "now": "2026-07-27T00:00:00Z",
+  "horizon_months": 24,
+  "settings": {
+    "yield_is_net_of_fees": true,
+    "usdils_rate_override": null,
+    "goal": {
+      "target_amount_ils": 1000000,
+      "target_date": "2030-12-01"
+    }
+  },
+  "goal_status": {
+    "target_amount_ils": 1000000,
+    "target_date": "2030-12-01",
+    "on_pace": true,
+    "projected_amount_ils": 1100000,
+    "progress_pct": 0.42
+  },
+  "fund_holdings": [
+    {
+      "id": "f1",
+      "fund_id": 123,
+      "fund_name_snapshot": "קופת בדיקה",
+      "nickname": "גמל",
+      "computed": {
+        "current_value_ils": 100000,
+        "profit_ils": 10000,
+        "profit_pct": 0.1
+      }
+    }
+  ],
+  "pension_holdings": [],
+  "rsu_grants": [],
+  "espp_plans": [],
+  "cash_holdings": [
+    {
+      "id": "c1",
+      "nickname": "עו\"ש",
+      "currency": "ILS",
+      "amount": 5000,
+      "computed": { "value_ils": 5000 }
+    }
+  ],
+  "portfolio": {
+    "total_value_ils": 105000,
+    "total_profit_ils": 10000,
+    "total_invested_ils": 95000,
+    "funds_value_ils": 100000,
+    "rsu_value_ils": 0,
+    "rsu_value_usd": 0,
+    "espp_value_ils": 0,
+    "espp_value_usd": 0,
+    "cash_value_ils": 5000,
+    "time_series_ils": [
+      { "label": "2026-01", "total_ils": 90000 },
+      { "label": "2026-06", "total_ils": 105000 }
+    ],
+    "what_if": null,
+    "projection": null
+  },
+  "pension_summary": {
+    "total_value_ils": 0,
+    "count": 0,
+    "excluded_from_total": true
+  },
+  "cache_status": {
+    "current_usdils": 3.7,
+    "last_full_sync_at": "2026-07-27T00:00:00Z"
+  }
+}

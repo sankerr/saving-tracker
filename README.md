@@ -4,7 +4,7 @@ Personal portfolio tracker deployed on the public internet with a free stack:
 
 | Layer | Service | Role |
 |-------|---------|------|
-| Frontend | [Cloudflare Pages](https://pages.cloudflare.com) | Static HTML/JS CDN |
+| Frontend | [Cloudflare Pages](https://pages.cloudflare.com) | Vite + React SPA CDN |
 | Backend | [Render](https://render.com) | Docker Python API |
 | Database | [Neon](https://neon.tech) | PostgreSQL (JSONB storage) |
 
@@ -65,17 +65,29 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
 1. **Workers & Pages → Create → Connect to Git**
 2. Select this repo
 3. Build settings:
-   - **Build command:** *(leave empty)*
-   - **Build output directory:** `frontend`
+   - **Root directory:** `frontend`
+   - **Build command:** `npm ci && npm run build`
+   - **Build output directory:** `dist`
+   - **Environment variable:** `VITE_API_BASE` = your Render API URL (e.g. `https://saving-tracker-api.onrender.com`)
 4. Deploy
-5. Edit [`frontend/config.js`](frontend/config.js) and set your Render URL:
+5. Set `CORS_ORIGIN` on Render to your Pages URL (`https://xxx.pages.dev`)
 
-```javascript
-window.API_BASE = 'https://saving-tracker-api.onrender.com';
+Local frontend:
+
+```bash
+cd frontend
+cp .env.example .env   # set VITE_API_BASE
+npm ci
+npm run dev
 ```
 
-6. Commit and push — Pages redeploys automatically
-7. Set `CORS_ORIGIN` on Render to your Pages URL (`https://xxx.pages.dev`)
+Tests:
+
+```bash
+cd frontend
+npm test
+npm run test:e2e
+```
 
 ## 4. Migrate existing data (optional)
 
