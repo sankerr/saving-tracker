@@ -4,7 +4,7 @@ Personal portfolio tracker deployed on the public internet with a free stack:
 
 | Layer | Service | Role |
 |-------|---------|------|
-| Frontend | [Cloudflare Pages](https://pages.cloudflare.com) | Static HTML/JS CDN |
+| Frontend | [Cloudflare Pages](https://pages.cloudflare.com) | Vite + React SPA |
 | Backend | [Render](https://render.com) | Docker Python API |
 | Database | [Neon](https://neon.tech) | PostgreSQL (JSONB storage) |
 
@@ -46,7 +46,7 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
 |----------|---------|-------|
 | `DATABASE_URL` | `postgresql://...` | Neon pooled connection string |
 | `SESSION_SECRET` | random 32+ chars | JWT signing secret |
-| `CORS_ORIGIN` | `https://your-app.pages.dev` | Your Cloudflare Pages URL (no trailing slash) |
+| `CORS_ORIGIN` | `https://your-app.pages.dev` | Cloudflare Pages origin(s), no trailing slash. Comma-separate multiple origins if needed (e.g. Pages URL + `http://localhost:5173`) |
 | `ADMIN_USERNAME` | `you@example.com` | Valid email; only used on first boot when DB has no users |
 | `ADMIN_PASSWORD` | `...` | Strong password |
 | `CRON_SECRET` | random 32+ chars | Protects `POST /api/cron/sync` (GitHub Actions daily job) |
@@ -62,20 +62,45 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
 
 ## 3. Cloudflare Pages — deploy frontend
 
+React SPA built with Vite. Presentation slides live under `frontend/public/presentation/` and ship with the build at `/presentation/`.
+
 1. **Workers & Pages → Create → Connect to Git**
 2. Select this repo
 3. Build settings:
-   - **Build command:** *(leave empty)*
-   - **Build output directory:** `frontend`
-4. Deploy
-5. Edit [`frontend/config.js`](frontend/config.js) and set your Render URL:
+   - **Root directory:** `frontend`
+   - **Build command:** `npm install && npm run build`
+   - **Build output directory:** `dist`
+   - **Environment variable:** `VITE_API_BASE` = your Render API URL (e.g. `https://saving-tracker-api.onrender.com`) — baked in at build time; re-deploy after changing it
+4. Deploy and note the Pages URL (e.g. `https://saving-tracker.pages.dev`)
+5. Set `CORS_ORIGIN` on Render to that URL (see CORS note below)
 
-```javascript
-window.API_BASE = 'https://saving-tracker-api.onrender.com';
+Local:
+
+```bash
+cd frontend
+cp .env.example .env   # set VITE_API_BASE
+npm install
+npm run dev            # http://localhost:5173
 ```
 
-6. Commit and push — Pages redeploys automatically
-7. Set `CORS_ORIGIN` on Render to your Pages URL (`https://xxx.pages.dev`)
+Tests:
+
+```bash
+cd frontend
+npm install
+npm test
+npm run test:e2e
+```
+
+### CORS
+
+Render `CORS_ORIGIN` accepts a **comma-separated** list of origins (no trailing slashes), e.g. Pages URL plus local Vite:
+
+```text
+https://saving-tracker.pages.dev,http://localhost:5173
+```
+
+Browsers send an `Origin` header; the API echoes it back only when it matches an allowed entry.
 
 ## 4. Migrate existing data (optional)
 
@@ -142,11 +167,14 @@ Then serve the frontend and log in with the credentials above:
 
 ```bash
 cd frontend
-# Edit config.js: window.API_BASE = 'http://localhost:8000'
-python3 -m http.server 3000
+cp .env.example .env   # VITE_API_BASE=http://localhost:8000
+npm install
+npm run dev            # http://localhost:5173
 ```
 
-Open http://localhost:3000 and sign in.
+Set `CORS_ORIGIN` on the backend to `http://localhost:5173` (or include it in a comma-separated list).
+
+Open that URL and sign in.
 
 To reset local data, delete the DB file: `rm backend/local.db`.
 
@@ -161,7 +189,7 @@ pip install -r requirements.txt
 
 export DATABASE_URL='postgresql://...'
 export SESSION_SECRET='dev-secret-change-me'
-export CORS_ORIGIN='http://localhost:3000'
+export CORS_ORIGIN='http://localhost:5173'
 export ADMIN_USERNAME='you@example.com'
 export ADMIN_PASSWORD='dev'
 

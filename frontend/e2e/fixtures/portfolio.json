@@ -1,0 +1,181 @@
+{
+  "ok": true,
+  "now": "2026-07-27T00:00:00Z",
+  "horizon_months": 24,
+  "settings": {
+    "yield_is_net_of_fees": true,
+    "usdils_rate_override": null,
+    "goal": {
+      "target_amount_ils": 1000000,
+      "target_date": "2030-12-01"
+    }
+  },
+  "goal_status": {
+    "target_amount_ils": 1000000,
+    "target_date": "2030-12-01",
+    "on_pace": true,
+    "projected_amount_ils": 1100000,
+    "progress_pct": 0.42
+  },
+  "fund_holdings": [
+    {
+      "id": "f1",
+      "fund_id": 123,
+      "fund_name_snapshot": "קופת בדיקה",
+      "nickname": "גמל",
+      "anchor_period": 202501,
+      "anchor_balance_ils": 90000,
+      "last_synced": "2026-07-27T00:00:00Z",
+      "recurring_rules": [],
+      "computed": {
+        "current_value_ils": 100000,
+        "profit_ils": 10000,
+        "profit_pct": 0.1,
+        "total_deposited_ils": 90000,
+        "total_withdrawn_ils": 0,
+        "cumulative_mgmt_fee_ils": 200,
+        "three_m_return_pct": 0.02,
+        "six_m_return_pct": 0.05,
+        "twelve_m_return_pct": 0.1,
+        "twentyfour_m_return_pct": 0.18,
+        "time_series": [
+          { "period": 202501, "value_ils": 90000 },
+          { "period": 202506, "value_ils": 100000 }
+        ],
+        "expanded_events": [
+          {
+            "id": "e1",
+            "date": "2025-01-15",
+            "kind": "deposit",
+            "amount_ils": 5000,
+            "note": "הפקדה"
+          }
+        ]
+      }
+    }
+  ],
+  "pension_holdings": [
+    {
+      "id": "p1",
+      "fund_id": 456,
+      "fund_name_snapshot": "פנסיה בדיקה",
+      "nickname": "מקיפה",
+      "anchor_period": 202501,
+      "anchor_balance_ils": 200000,
+      "last_synced": "2026-07-27T00:00:00Z",
+      "recurring_rules": [],
+      "computed": {
+        "current_value_ils": 220000,
+        "profit_ils": 20000,
+        "profit_pct": 0.1,
+        "total_deposited_ils": 200000,
+        "expanded_events": []
+      }
+    }
+  ],
+  "rsu_grants": [
+    {
+      "id": "r1",
+      "ticker": "AAPL",
+      "nickname": "מענק AAPL",
+      "grant_date": "2024-01-15",
+      "total_shares": 100,
+      "vesting_start": "2024-01-15",
+      "vesting_months": 48,
+      "cliff_months": 12,
+      "vesting_cadence": "monthly",
+      "sales": [],
+      "stock_history": [
+        { "date": "2026-01-01", "close": 180 },
+        { "date": "2026-06-01", "close": 200 }
+      ],
+      "last_synced": "2026-07-27T00:00:00Z",
+      "computed": {
+        "current_value_ils": 74000,
+        "current_value_usd": 20000,
+        "profit_ils": 5000,
+        "profit_pct": 0.07,
+        "current_price_usd": 200,
+        "current_usdils": 3.7,
+        "cost_basis_per_share_usd": 150,
+        "shares_held_now": 100,
+        "vested_shares_now": 50,
+        "shares_sold_total": 0,
+        "realized_gain_usd": 0,
+        "realized_gain_ils": 0,
+        "time_series": [
+          { "date": "2026-01", "value_ils": 60000 },
+          { "date": "2026-06", "value_ils": 74000 }
+        ]
+      }
+    }
+  ],
+  "espp_plans": [
+    {
+      "id": "e1",
+      "ticker": "MSFT",
+      "nickname": "ESPP MSFT",
+      "discount_pct": 15,
+      "has_lookback": true,
+      "offering_months": 6,
+      "purchases": [],
+      "sales": [],
+      "stock_history": [
+        { "date": "2026-01-01", "close": 400 },
+        { "date": "2026-06-01", "close": 420 }
+      ],
+      "last_synced": "2026-07-27T00:00:00Z",
+      "computed": {
+        "current_value_ils": 15540,
+        "current_value_usd": 4200,
+        "profit_ils": 1000,
+        "profit_pct": 0.07,
+        "current_price_usd": 420,
+        "current_usdils": 3.7,
+        "shares_held_now": 10,
+        "shares_sold_total": 0,
+        "time_series": [
+          { "date": "2026-01", "value_ils": 14000 },
+          { "date": "2026-06", "value_ils": 15540 }
+        ]
+      }
+    }
+  ],
+  "cash_holdings": [
+    {
+      "id": "c1",
+      "nickname": "עו\"ש",
+      "currency": "ILS",
+      "amount": 5000,
+      "computed": { "value_ils": 5000 }
+    }
+  ],
+  "portfolio": {
+    "total_value_ils": 194540,
+    "total_profit_ils": 16000,
+    "total_invested_ils": 178540,
+    "funds_value_ils": 100000,
+    "rsu_value_ils": 74000,
+    "rsu_value_usd": 20000,
+    "espp_value_ils": 15540,
+    "espp_value_usd": 4200,
+    "cash_value_ils": 5000,
+    "time_series_ils": [
+      { "label": "2026-01", "total_ils": 90000 },
+      { "label": "2026-06", "total_ils": 194540 }
+    ],
+    "what_if": null,
+    "projection": null
+  },
+  "pension_summary": {
+    "total_value_ils": 220000,
+    "count": 1,
+    "excluded_from_total": true
+  },
+  "cache_status": {
+    "current_usdils": 3.7,
+    "usdils_override": false,
+    "package_show_age_seconds": 120,
+    "last_full_sync_at": "2026-07-27T00:00:00Z"
+  }
+}

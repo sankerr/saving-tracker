@@ -1,0 +1,11 @@
+node_modules
+dist
+legacy-dist
+package-lock.json
+test-results
+playwright-report
+blob-report
+playwright/.cache
+.env
+.env.local
+*.tsbuildinfo
