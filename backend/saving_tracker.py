@@ -14,7 +14,9 @@ Cloud deployment — portfolio data in PostgreSQL (Neon), simple JWT auth.
 Env:
     DATABASE_URL       PostgreSQL connection string (required)
     SESSION_SECRET     JWT signing secret (required)
-    CORS_ORIGIN        Frontend origin, e.g. https://your-app.pages.dev
+    CORS_ORIGIN        Frontend origin(s), comma-separated if needed
+                       e.g. https://app.pages.dev or
+                       https://react.pages.dev,https://legacy.pages.dev
     ADMIN_USERNAME     Seed user on first boot (optional if user exists)
     ADMIN_PASSWORD     Seed password on first boot
     CHAT_ENABLED       Set true to enable portfolio AI chat (requires GEMINI_API_KEY)
@@ -59,7 +61,13 @@ import notify
 
 
 # ── Config ───────────────────────────────────────────────────────────────────
-CORS_ORIGIN = os.environ.get("CORS_ORIGIN", "").rstrip("/")
+# Comma-separated list supported (e.g. React Pages + legacy Pages).
+CORS_ORIGINS = [
+    o.strip().rstrip("/")
+    for o in os.environ.get("CORS_ORIGIN", "").split(",")
+    if o.strip()
+]
+CORS_ORIGIN = CORS_ORIGINS[0] if CORS_ORIGINS else ""  # first origin for logs / docs
 CRON_SECRET = os.environ.get("CRON_SECRET", "")
 ACTIVE_USER_ID: int | None = None
 
@@ -4007,13 +4015,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def _cors_headers(self) -> dict:
-        if not CORS_ORIGIN:
+        if not CORS_ORIGINS:
             return {}
+        request_origin = (self.headers.get("Origin") or "").rstrip("/")
+        allow_origin = request_origin if request_origin in CORS_ORIGINS else CORS_ORIGINS[0]
         return {
-            "Access-Control-Allow-Origin": CORS_ORIGIN,
+            "Access-Control-Allow-Origin": allow_origin,
             "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
             "Access-Control-Max-Age": "86400",
+            "Vary": "Origin",
         }
 
     def _bearer_token(self) -> str | None:
@@ -4618,7 +4629,7 @@ def main():
     print("=" * 60)
     print(f"  Server:     http://0.0.0.0:{port}/")
     print(f"  User ID:    {ACTIVE_USER_ID}")
-    print(f"  CORS:       {CORS_ORIGIN or '(not set)'}")
+    print(f"  CORS:       {', '.join(CORS_ORIGINS) if CORS_ORIGINS else '(not set)'}")
     print(f"  PID:        {os.getpid()}")
     print(f"  Press Ctrl+C to stop")
     print("=" * 60)

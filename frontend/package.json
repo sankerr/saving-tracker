@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:legacy": "rm -rf legacy-dist && mkdir -p legacy-dist && cp legacy/index.html legacy/config.js legacy/i18n.js legacy/pension-retirement-sim.js legacy-dist/",
     "preview": "vite preview",
+    "preview:legacy": "python3 -m http.server 3000 --directory legacy",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

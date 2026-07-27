@@ -4,7 +4,7 @@ Personal portfolio tracker deployed on the public internet with a free stack:
 
 | Layer | Service | Role |
 |-------|---------|------|
-| Frontend | [Cloudflare Pages](https://pages.cloudflare.com) | Vite + React SPA CDN |
+| Frontend | [Cloudflare Pages](https://pages.cloudflare.com) | Vite + React SPA (primary); optional second Pages project for legacy static HTML |
 | Backend | [Render](https://render.com) | Docker Python API |
 | Database | [Neon](https://neon.tech) | PostgreSQL (JSONB storage) |
 
@@ -46,7 +46,7 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
 |----------|---------|-------|
 | `DATABASE_URL` | `postgresql://...` | Neon pooled connection string |
 | `SESSION_SECRET` | random 32+ chars | JWT signing secret |
-| `CORS_ORIGIN` | `https://your-app.pages.dev` | Your Cloudflare Pages URL (no trailing slash) |
+| `CORS_ORIGIN` | `https://your-app.pages.dev` | Cloudflare Pages origin(s), no trailing slash. Comma-separate if you run both UIs (e.g. `https://react.pages.dev,https://legacy.pages.dev`) |
 | `ADMIN_USERNAME` | `you@example.com` | Valid email; only used on first boot when DB has no users |
 | `ADMIN_PASSWORD` | `...` | Strong password |
 | `CRON_SECRET` | random 32+ chars | Protects `POST /api/cron/sync` (GitHub Actions daily job) |
@@ -60,7 +60,18 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
 
 **Free tier note:** Backend sleeps after 15 minutes of inactivity. First request takes ~30–50 seconds.
 
-## 3. Cloudflare Pages — deploy frontend
+## 3. Cloudflare Pages — deploy frontend(s)
+
+There are **two frontends** during the React rewrite. Prefer **two Cloudflare Pages projects** (one per UI) so builds and URLs stay independent. Both talk to the same Render API.
+
+| UI | Source | Output | API config |
+|----|--------|--------|------------|
+| **React (primary)** | `frontend/` (Vite) | `frontend/dist` | Build-time `VITE_API_BASE` |
+| **Legacy (vanilla)** | `frontend/legacy/` | static files as-is (or `legacy-dist`) | Edit `config.js` → `window.API_BASE` |
+
+Presentation slides live under `frontend/public/presentation/` and ship with the React build at `/presentation/`. The source copy in `frontend/presentation/` is not a separate deploy target.
+
+### 3a. React SPA (recommended)
 
 1. **Workers & Pages → Create → Connect to Git**
 2. Select this repo
@@ -68,17 +79,17 @@ Tracks provident/education funds (gemelnet), pension (pensia-net), RSU, ESPP, an
    - **Root directory:** `frontend`
    - **Build command:** `npm ci && npm run build`
    - **Build output directory:** `dist`
-   - **Environment variable:** `VITE_API_BASE` = your Render API URL (e.g. `https://saving-tracker-api.onrender.com`)
-4. Deploy
-5. Set `CORS_ORIGIN` on Render to your Pages URL (`https://xxx.pages.dev`)
+   - **Environment variable:** `VITE_API_BASE` = your Render API URL (e.g. `https://saving-tracker-api.onrender.com`) — baked in at build time; re-deploy after changing it
+4. Deploy and note the Pages URL (e.g. `https://saving-tracker.pages.dev`)
+5. Set `CORS_ORIGIN` on Render to that URL (see CORS note below)
 
-Local frontend:
+Local React:
 
 ```bash
 cd frontend
 cp .env.example .env   # set VITE_API_BASE
 npm ci
-npm run dev
+npm run dev            # http://localhost:5173
 ```
 
 Tests:
@@ -88,6 +99,61 @@ cd frontend
 npm test
 npm run test:e2e
 ```
+
+### 3b. Legacy static HTML (optional)
+
+Keep the vanilla UI available without touching the React build. Create a **second** Pages project (or replace an existing one temporarily).
+
+**Option A — deploy `frontend/legacy` as static (simplest)**
+
+1. **Workers & Pages → Create → Connect to Git** (second project)
+2. Select this repo
+3. Build settings:
+   - **Root directory:** `frontend/legacy`
+   - **Build command:** *(leave empty)* or `exit 0`
+   - **Build output directory:** `/`
+4. Before deploy (or in a commit), set the API URL in [`frontend/legacy/config.js`](frontend/legacy/config.js):
+
+```js
+window.API_BASE = 'https://saving-tracker-api.onrender.com';
+```
+
+5. Deploy and note the legacy Pages URL
+6. Add that origin to Render `CORS_ORIGIN` (comma-separated with the React URL if both are live)
+
+**Option B — copy into `legacy-dist` via npm (same root as React)**
+
+Useful if you want an explicit artifact folder next to Vite’s `dist`:
+
+```bash
+cd frontend
+# edit legacy/config.js first (window.API_BASE)
+npm run build:legacy   # copies legacy/* → legacy-dist/
+```
+
+Pages settings for Option B:
+
+- **Root directory:** `frontend`
+- **Build command:** `npm run build:legacy`
+- **Build output directory:** `legacy-dist`
+
+Local legacy:
+
+```bash
+cd frontend
+# Edit legacy/config.js: window.API_BASE = 'http://localhost:8000'
+npm run preview:legacy   # http://localhost:3000
+```
+
+### CORS when both UIs are live
+
+Render `CORS_ORIGIN` accepts a **comma-separated** list (no trailing slashes):
+
+```text
+https://saving-tracker.pages.dev,https://saving-tracker-legacy.pages.dev
+```
+
+Also allow local origins when developing against a remote API, e.g. `http://localhost:5173,http://localhost:3000`. Browsers send an `Origin` header; the API echoes it back only when it matches an allowed entry.
 
 ## 4. Migrate existing data (optional)
 
@@ -110,11 +176,13 @@ If the user already exists (created by Render on first boot), the script updates
 
 ## 5. Verify
 
-1. Open your Cloudflare Pages URL
+1. Open your Cloudflare Pages URL (React or legacy)
 2. Sign in with your username/password
 3. Confirm portfolio loads
 4. Run **Sync** — may be slow on first request if backend was asleep
 5. Add a test holding, refresh, confirm it persists
+
+If both UIs are deployed, confirm each origin is listed in Render `CORS_ORIGIN`.
 
 ## Local development
 
@@ -150,15 +218,28 @@ The init user is created automatically:
 are required. To choose your own init user instead, set `ADMIN_USERNAME` (must be
 a valid email) and `ADMIN_PASSWORD` before the first run.
 
-Then serve the frontend and log in with the credentials above:
+Then serve a frontend and log in with the credentials above.
+
+**React (default):**
 
 ```bash
 cd frontend
-# Edit config.js: window.API_BASE = 'http://localhost:8000'
-python3 -m http.server 3000
+cp .env.example .env   # VITE_API_BASE=http://localhost:8000
+npm ci
+npm run dev            # http://localhost:5173
 ```
 
-Open http://localhost:3000 and sign in.
+**Legacy:**
+
+```bash
+cd frontend
+# Edit legacy/config.js: window.API_BASE = 'http://localhost:8000'
+npm run preview:legacy # http://localhost:3000
+```
+
+Set `CORS_ORIGIN` on the backend to match the UI you open (`http://localhost:5173` and/or `http://localhost:3000`).
+
+Open the matching URL and sign in.
 
 To reset local data, delete the DB file: `rm backend/local.db`.
 
