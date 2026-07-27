@@ -1,6 +1,7 @@
 node_modules
 dist
 legacy-dist
+package-lock.json
 test-results
 playwright-report
 blob-report

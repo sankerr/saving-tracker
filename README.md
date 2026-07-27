@@ -68,7 +68,7 @@ React SPA built with Vite. Presentation slides live under `frontend/public/prese
 2. Select this repo
 3. Build settings:
    - **Root directory:** `frontend`
-   - **Build command:** `npm ci && npm run build`
+   - **Build command:** `npm install && npm run build`
    - **Build output directory:** `dist`
    - **Environment variable:** `VITE_API_BASE` = your Render API URL (e.g. `https://saving-tracker-api.onrender.com`) — baked in at build time; re-deploy after changing it
 4. Deploy and note the Pages URL (e.g. `https://saving-tracker.pages.dev`)
@@ -79,7 +79,7 @@ Local:
 ```bash
 cd frontend
 cp .env.example .env   # set VITE_API_BASE
-npm ci
+npm install
 npm run dev            # http://localhost:5173
 ```
 
@@ -87,6 +87,7 @@ Tests:
 
 ```bash
 cd frontend
+npm install
 npm test
 npm run test:e2e
 ```
@@ -167,7 +168,7 @@ Then serve the frontend and log in with the credentials above:
 ```bash
 cd frontend
 cp .env.example .env   # VITE_API_BASE=http://localhost:8000
-npm ci
+npm install
 npm run dev            # http://localhost:5173
 ```
 
