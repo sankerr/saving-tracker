@@ -11,7 +11,8 @@
 ## Global Constraints
 
 - Preserve existing REST API contracts (no backend changes).
-- Keep localStorage keys: `st_token`, `st_theme`, `st_lang`, `st_disclaimer_ack`, `saving_what_if_pct`.
+- **Hebrew-only UI:** `lang=he` `dir=rtl` always; no language toggle; no English copy; API `lang` params always `he`.
+- Keep localStorage keys: `st_token`, `st_theme`, `st_disclaimer_ack`, `saving_what_if_pct` (drop `st_lang`).
 - Keep section anchor ids: `dashboard-card`, `funds-card`, `pension-card`, `retirement-simulator-card`, `rsu-card`, `espp-card`, `cash-card`, `settings-card`.
 - E2E-first: Playwright journeys mock the API; Vitest only for pure modules.
 - `frontend/presentation/` remains available (copy into Vite `public/presentation`).
@@ -52,11 +53,9 @@ frontend/
     auth/
       AuthPage.tsx
       token.ts
-    i18n/
-      index.ts
-      en.ts
+    copy/
       he.ts
-      I18nProvider.tsx
+      index.ts
     theme/
       ThemeProvider.tsx
     portfolio/
@@ -311,7 +310,9 @@ import { test, expect } from '@playwright/test';
 
 test('home renders app title', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Saving Tracker' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'he');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.getByRole('heading', { name: 'מעקב חסכונות' })).toBeVisible();
 });
 ```
 
@@ -377,20 +378,20 @@ git commit -m "test: add Vitest formatters and Playwright smoke harness"
 
 ---
 
-### Task 4: i18n + theme providers
+### Task 4: Hebrew copy module + theme provider
 
 **Files:**
-- Create: `frontend/src/i18n/en.ts`, `he.ts`, `index.ts`, `I18nProvider.tsx`, `frontend/src/theme/ThemeProvider.tsx`
-- Port strings from `frontend/legacy/i18n.js` into `en.ts` / `he.ts` (can be a mechanical extract).
+- Create: `frontend/src/copy/he.ts`, `frontend/src/copy/index.ts`, `frontend/src/theme/ThemeProvider.tsx`
+- Port Hebrew strings from `frontend/legacy/i18n.js` `STRINGS.he` into `he.ts`. Drop English and language toggle.
 
 **Interfaces:**
-- `useT(): (key: string, vars?: Record<string, string | number>) => string`
-- `useLang(): { lang: 'en' | 'he'; setLang(lang: 'en' | 'he'): void }`
+- `t(key: string, vars?: Record<string, string | number>): string` — looks up Hebrew strings only
 - Theme: `system | light | dark` in `st_theme`; sets `document.documentElement.dataset.theme` and `colorScheme`
+- Document always `lang=he` `dir=rtl`
 
-- [ ] **Step 1: Vitest for `t()` interpolation and lang persistence.**
-- [ ] **Step 2: Implement providers; wrap app in `main.tsx`.**
-- [ ] **Step 3: Commit** `feat: port i18n and theme providers`
+- [ ] **Step 1: Vitest for `t()` interpolation (Hebrew strings).**
+- [ ] **Step 2: Implement copy module + ThemeProvider; wrap app in `main.tsx`.**
+- [ ] **Step 3: Commit** `feat: add Hebrew copy module and theme provider`
 
 ---
 
@@ -453,9 +454,9 @@ Port list/detail/add-panel CRUD. Each mutation calls existing REST paths then `r
 ### Task 9: Retirement simulator + Settings + Chat
 
 **Files:**
-- Create: `frontend/src/sections/retirement/*` (port `legacy/pension-retirement-sim.js`), `frontend/src/sections/settings/*`, `frontend/src/chat/ChatDrawer.tsx`, `frontend/e2e/settings-i18n.spec.ts`, `frontend/e2e/chat-insights.spec.ts`
+- Create: `frontend/src/sections/retirement/*` (port `legacy/pension-retirement-sim.js`), `frontend/src/sections/settings/*`, `frontend/src/chat/ChatDrawer.tsx`, `frontend/e2e/settings.spec.ts`, `frontend/e2e/chat-insights.spec.ts`
 
-- [ ] **Step 1: E2E — theme toggle, lang en↔he (dir=rtl), settings save mocked; chat open/send mocked `/api/chat`.**
+- [ ] **Step 1: E2E — theme toggle, settings save mocked; chat open/send mocked `/api/chat`; assert `lang=he` `dir=rtl`.**
 - [ ] **Step 2: Implement until E2E passes; Vitest for retirement pure math extracted from sim.**
 - [ ] **Step 3: Commit** `feat: port retirement, settings, and AI chat`
 

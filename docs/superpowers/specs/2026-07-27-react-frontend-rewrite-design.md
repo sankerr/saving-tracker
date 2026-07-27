@@ -6,20 +6,21 @@
 
 ## Overview
 
-Replace the monolithic vanilla `frontend/index.html` (~7k lines of CSS/markup/JS) with a **Vite + React + TypeScript** SPA that preserves today’s product and UX: a vertical-scroll personal portfolio tracker with sticky chrome, section pill-nav, bilingual RTL/LTR, theme, holdings CRUD, goal, AI chat, and insights.
+Replace the monolithic vanilla `frontend/index.html` (~7k lines of CSS/markup/JS) with a **Vite + React + TypeScript** SPA that preserves today’s product and UX: a vertical-scroll personal portfolio tracker with sticky chrome, section pill-nav, **Hebrew-only RTL UI**, theme, holdings CRUD, goal, AI chat, and insights.
 
 Drivers: editing pain in the mega-file, and a maintainable base for more of the same UI work (widgets, holdings flows, charts, chat polish) — not a multi-app platform.
 
 ## Goals / Non-goals
 
 **Goals**
-- Feature parity with the current SPA (auth, dashboard, funds, pension, retirement sim, RSU, ESPP, cash, settings, goal, chat, insights, i18n, theme, sync/loading).
+- Feature parity with the current SPA (auth, dashboard, funds, pension, retirement sim, RSU, ESPP, cash, settings, goal, chat, insights, theme, sync/loading), with all UI copy in Hebrew.
 - Clear module/component boundaries so day-to-day edits touch small files.
 - Cloudflare Pages deploy with a Vite build (`API_BASE` via env).
 - **E2E-first test strategy** (Playwright journeys + Vitest for pure logic only).
 
 **Non-goals**
 - Backend changes, new API shapes, or schema migrations.
+- English UI, language toggle, or LTR layout support.
 - Visual redesign or new product features beyond parity.
 - Hard line-coverage % gate, visual regression, or full component-test suite for every widget.
 - Converting section nav into a multi-route tabbed SPA (keep scroll + scrollspy).
@@ -43,10 +44,11 @@ Browser
 - React Router only for auth vs app shell (not per-section routes)
 - Portfolio data via React context + refetch after mutations (mirrors today’s `fetch /api/data` → `renderAll`)
 - Chart.js via `react-chartjs-2`
-- i18n: typed dictionaries ported from `i18n.js` + `useT()`; `st_lang` + `document.documentElement.dir/lang`
+- **Locale: Hebrew only.** `html lang="he" dir="rtl"` always. Copy lives in a single `src/copy/he.ts` (or inline in components where local); no language toggle, no `st_lang`, no English dictionary.
 - Theme: `st_theme` (`system` | `light` | `dark`) applied to `data-theme` before paint where practical
 - Auth token: `localStorage` key `st_token` (same as today)
 - Config: `import.meta.env.VITE_API_BASE` (replaces hand-edited `config.js`)
+- API `lang` query params (insights/chat) always send `he`
 
 **Deploy**
 - Vite root: `frontend/`
@@ -64,7 +66,7 @@ Browser
 |------|----------------|
 | `api/` | `apiUrl`, `api()`, auth helpers, typed fetch wrappers for existing endpoints |
 | `auth/` | Login/register forms, token gate, logout, change-password |
-| `i18n/` | Dictionaries, `t()`, language toggle, RTL |
+| `copy/` | Hebrew UI strings module (optional `t()` helper for interpolation only) |
 | `theme/` | Preference + apply theme |
 | `portfolio/` | `PortfolioProvider`, load/sync, derived selectors used by sections |
 | `shell/` | Top chrome, status pill, disclaimer, section pill-nav (scrollspy), toasts, loading indicator |
@@ -86,7 +88,7 @@ Preserve existing section card ids (or equivalent anchors) so pill-nav targets s
 2. Authenticated → `GET /api/data?...` (same query params as today) → store portfolio payload in context → render sections.
 3. Mutations (CRUD, settings, goal, sync) → call existing REST endpoints → refetch `/api/data` (or patch context only where today’s code already does optimistic local updates; prefer refetch for parity simplicity unless UX requires otherwise).
 4. Chat / insights → separate endpoints; failures do not wipe portfolio state.
-5. Client prefs in `localStorage`: `st_token`, `st_theme`, `st_lang`, `st_disclaimer_ack`, `saving_what_if_pct`.
+5. Client prefs in `localStorage`: `st_token`, `st_theme`, `st_disclaimer_ack`, `saving_what_if_pct` (no `st_lang`).
 
 ## Error handling
 
@@ -100,11 +102,12 @@ Preserve existing section card ids (or equivalent anchors) so pill-nav targets s
 
 **Playwright** (`frontend/e2e/`)
 - Against Vite preview build; PR CI blocking once suite is established.
-- Must-cover journeys: auth (login/register/logout/change password); cold load/sync + dashboard totals; section nav + scrollspy (LTR + RTL smoke); CRUD for funds/pension/RSU/ESPP/cash; goal set/edit/clear; settings theme/lang/export-import; AI chat open/send (mocked); insights load/refresh (mocked).
+- Must-cover journeys: auth (login/register/logout/change password); cold load/sync + dashboard totals; section nav + scrollspy (RTL); CRUD for funds/pension/RSU/ESPP/cash; goal set/edit/clear; settings theme/export-import; AI chat open/send (mocked); insights load/refresh (mocked).
 - Mock APIs via Playwright network interception for v1 CI.
+- Assert `document.documentElement` has `lang=he` and `dir=rtl`.
 
 **Vitest** (`frontend/src/**/*.test.ts`)
-- Pure modules only: formatters, retirement sim math, i18n helpers, API mappers/parsers.
+- Pure modules only: formatters (Hebrew/`he-IL` locale), retirement sim math, API mappers/parsers.
 - No requirement to unit-test every React component.
 
 **Not in v1:** coverage % gate, Percy/visual regression, Testing Library suite for every widget.
@@ -117,7 +120,7 @@ Preserve existing section card ids (or equivalent anchors) so pill-nav targets s
 - [ ] Retirement simulator
 - [ ] Settings (yield net of fees, FX override, import/export, cache)
 - [ ] Sync + cold-start loading UX
-- [ ] en/he + RTL, theme system/light/dark
+- [ ] Hebrew-only RTL (`lang=he` `dir=rtl`), theme system/light/dark
 - [ ] Section pill-nav + scrollspy
 - [ ] AI chat drawer
 - [ ] Disclaimer ack
@@ -136,3 +139,4 @@ Preserve existing section card ids (or equivalent anchors) so pill-nav targets s
 | Tests | E2E-first Playwright; Vitest for pure logic only |
 | Config | `VITE_API_BASE` env |
 | Presentation site | Out of scope |
+| UI language | Hebrew only (no English / no lang toggle) |
