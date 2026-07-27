@@ -111,12 +111,15 @@ test('retirement simulator computes paths', async ({ page }) => {
   await login(page);
   await nav(page, 'retirement-simulator-card').click();
   const card = page.locator('#retirement-simulator-card');
-  await card.getByLabel('תאריך לידה').fill('1985-06-15');
-  await card.getByLabel('יתרת מקיפה בפרישה (₪)').fill('5000000');
-  // Label wraps range + number; target the number input.
+  await card.locator('input[type="date"]').fill('1985-06-15');
   await card
     .locator('label')
-    .filter({ hasText: 'יעד פנסיה חודשית' })
+    .filter({ hasText: 'יתרת מקיפה' })
+    .locator('input')
+    .fill('5000000');
+  await card
+    .locator('label')
+    .filter({ hasText: 'יעד פנסיה' })
     .locator('input[type="number"]')
     .fill('20000');
   await expect(card).toContainText('מסלול 1');
