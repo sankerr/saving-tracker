@@ -42,17 +42,16 @@ You receive a compact JSON summary of the user's holdings (קופות גמל / �
 Backend capabilities (use tools — do not invent math):
 - project_portfolio: runs the same server projection as the app dashboard (compose_state / what-if).
   Growth % applies to funds (and pension when included). Cash and ESPP are held flat; RSU follows vesting at today's price/FX.
-- query_portfolio_history: returns real past monthly dashboard totals and MoM changes from synced holdings/yields.
-  For totals use total_ils / change_from_prev_*; for gain/profit/yield use yield_pnl_* (deposits excluded).
+- query_portfolio_history: returns real past monthly dashboard totals and month-over-month changes from synced holdings/yields.
+  Use for "what was my total in June?", "how much did I gain last month?", or comparing two past months.
 - evaluate_savings_goal: returns the user's savings-goal status (same as the dashboard goal strip).
   Pace uses historical fund averages projected to the goal month; Total Wealth only (pension excluded). No growth-% override.
 - describe_backend_apis: lists REST APIs and what they do.
 
 Past totals / change questions (e.g. "what was my portfolio worth in March?", "how much changed since last month?"):
-1. Prefer monthly_history in the portfolio JSON (recent months). For portfolio *value* use total_ils / change_from_prev_*.
-2. For *profit / yield / gain* (not including deposits), use latest_yield_month.yield_pnl_ils / yield_pnl_pct — never change_from_prev_* (those include deposits and recurring rules).
-3. For a specific older month or a custom date range, call query_portfolio_history with year_month or start_year_month/end_year_month.
-4. Explain totals using the returned numbers only. Note cash is held at today's amount for all past months (same as the dashboard chart). Pension is excluded from dashboard totals.
+1. Prefer monthly_history in the portfolio JSON (recent months with change_from_prev_ils / change_from_prev_pct).
+2. For a specific older month or a custom date range, call query_portfolio_history with year_month or start_year_month/end_year_month.
+3. Explain totals using the returned numbers only. Note cash is held at today's amount for all past months (same as the dashboard chart). Pension is excluded from dashboard totals.
 
 Future value / profit questions (e.g. "what will my profit be in May 2030?"):
 1. If the user gave an annual growth % (year %), call project_portfolio with target_year_month=YYYY-MM and assumed_annual_pct.
@@ -164,8 +163,6 @@ TOOLS = [
                 "description": (
                     "Return real historical monthly portfolio totals and month-over-month changes "
                     "(dashboard-style: funds + RSU + ESPP + cash; pension excluded). "
-                    "For profit/yield/gain use yield_pnl_ils / yield_pnl_pct (deposits excluded); "
-                    "change_from_prev_* includes deposits and recurring rules. "
                     "Use for past totals or 'what changed' questions."
                 ),
                 "parameters": {
@@ -345,74 +342,6 @@ def _resolve_latest_published_period(state: dict) -> int | None:
     return latest if latest > 0 else None
 
 
-def _funds_yield_pnl_for_period(state: dict, period_int: int) -> dict | None:
-    """Yield-only P/L for dashboard funds in ``period_int`` (YYYYMM).
-
-    Excludes manual deposits / withdrawals and recurring-rule contributions:
-    yield_pnl = end_value − start_value − net_deposits.
-    """
-    if not period_int:
-        return None
-    total_pnl = 0.0
-    total_start = 0.0
-    total_end = 0.0
-    total_net_deposits = 0.0
-    counted = 0
-    for h in state.get("fund_holdings") or []:
-        if h.get("archived") or not h.get("included_in_dashboard", True):
-            continue
-        ts = ((h.get("computed") or {}).get("time_series") or [])
-        by_p: dict[int, dict] = {}
-        for pt in ts:
-            try:
-                p = int(pt["period"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            by_p[p] = pt
-        cur = by_p.get(period_int)
-        if not cur:
-            continue
-        # Skip pending / no-yield months for this holding.
-        if cur.get("is_pending") or cur.get("is_anchor"):
-            continue
-        if cur.get("yield_pct") is None:
-            continue
-        prev = None
-        for p in sorted(by_p.keys()):
-            if p < period_int:
-                prev = by_p[p]
-        if not prev:
-            continue
-        try:
-            start_v = float(prev.get("value_ils") or 0)
-            end_v = float(cur.get("value_ils") or 0)
-            dep = float(cur.get("deposited_to_date") or 0) - float(prev.get("deposited_to_date") or 0)
-            wit = float(cur.get("withdrawn_to_date") or 0) - float(prev.get("withdrawn_to_date") or 0)
-        except (TypeError, ValueError):
-            continue
-        net = dep - wit
-        pnl = end_v - start_v - net
-        total_pnl += pnl
-        total_start += start_v
-        total_end += end_v
-        total_net_deposits += net
-        counted += 1
-    if counted == 0:
-        return None
-    return {
-        "yield_pnl_ils": round(total_pnl, 2),
-        "yield_pnl_pct": round(total_pnl / total_start, 4) if total_start else None,
-        "funds_start_value_ils": round(total_start, 2),
-        "funds_end_value_ils": round(total_end, 2),
-        "net_deposits_ils": round(total_net_deposits, 2),
-        "holdings_counted": counted,
-        "basis": (
-            "Funds only (dashboard-included). "
-            "yield_pnl = Δvalue − net deposits/withdrawals (manual + recurring rules excluded from P/L)."
-        ),
-    }
-
-
 def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MONTHS) -> dict:
     """Real monthly dashboard totals from portfolio.time_series_ils + cash (flat at today)."""
     portfolio = state.get("portfolio") or {}
@@ -447,12 +376,7 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
                 today = date.today()
                 current_ym = today.year * 100 + today.month
                 has_published_yield = period_int < current_ym
-        yield_pnl = (
-            _funds_yield_pnl_for_period(state, period_int)
-            if has_published_yield and period_int
-            else None
-        )
-        row = {
+        rows.append({
             "period": period,
             "period_yyyymm": period_int,
             "total_ils": total,
@@ -460,19 +384,10 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
             "rsu_ils": rsu,
             "espp_ils": espp,
             "cash_ils": cash_now,
-            # Includes deposits — do not use for profit/yield questions.
             "change_from_prev_ils": change_ils,
             "change_from_prev_pct": change_pct,
             "has_published_yield": has_published_yield,
-        }
-        if yield_pnl:
-            row["yield_pnl_ils"] = yield_pnl["yield_pnl_ils"]
-            row["yield_pnl_pct"] = yield_pnl["yield_pnl_pct"]
-            row["net_deposits_ils"] = yield_pnl["net_deposits_ils"]
-            row["funds_start_value_ils"] = yield_pnl["funds_start_value_ils"]
-            row["funds_yield_end_value_ils"] = yield_pnl["funds_end_value_ils"]
-            row["holdings_counted"] = yield_pnl["holdings_counted"]
-        rows.append(row)
+        })
         prev_total = total
 
     truncated = 0
@@ -488,28 +403,17 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
     for row in reversed(rows):
         if published_through is not None and not row.get("has_published_yield"):
             continue
-        if row.get("yield_pnl_ils") is None:
+        if row.get("change_from_prev_ils") is None:
             continue
         latest_yield_month = {
             "period": row["period"],
-            "funds_start_value_ils": row.get("funds_start_value_ils"),
-            "funds_end_value_ils": row.get("funds_yield_end_value_ils"),
-            "yield_pnl_ils": row["yield_pnl_ils"],
-            "yield_pnl_pct": row.get("yield_pnl_pct"),
-            "net_deposits_ils": row.get("net_deposits_ils"),
-            "holdings_counted": row.get("holdings_counted"),
-            # Kept for context only — do NOT use for recent_move (includes deposits).
-            "total_wealth_change_ils": row.get("change_from_prev_ils"),
-            "total_wealth_change_pct": row.get("change_from_prev_pct"),
+            "total_ils": row["total_ils"],
+            "change_from_prev_ils": row["change_from_prev_ils"],
+            "change_from_prev_pct": row["change_from_prev_pct"],
             "published_through_yyyymm": published_through,
-            "basis": (
-                "Funds only (dashboard-included). "
-                "yield_pnl = Δvalue − net deposits/withdrawals (manual + recurring rules excluded)."
-            ),
             "note": (
-                "Last month with published fund yields. "
-                "Use yield_pnl_ils / yield_pnl_pct for recent_move — deposits and recurring "
-                "contributions are excluded. Ignore total_wealth_change_* for P/L."
+                "Last month with published yield data (and a month-over-month change). "
+                "Ignores later calendar months that are only forward-filled without yields."
             ),
         }
         break
@@ -523,9 +427,8 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         "note": (
             "Real history from holdings + synced monthly yields. Matches dashboard total "
             "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded. "
-            "For 'last month' / recent move, use ONLY latest_yield_month.yield_pnl_* "
-            "(published fund yield P/L; deposits/rules excluded). "
-            "Do not use months after published_through_yyyymm or total_wealth_change_*."
+            "For 'last month' / recent move, use ONLY latest_yield_month (has_published_yield). "
+            "Do not use months after published_through_yyyymm — those lack published yields."
         ),
     }
 
@@ -631,8 +534,9 @@ def _insight_slots_hint(portfolio: dict, monthly_history: dict, goal_status: Any
         },
         "notes": {
             "last_month_means": (
-                "Use latest_yield_month.yield_pnl_ils / yield_pnl_pct only — fund yield P/L "
-                "after removing deposits/withdrawals. Never use total_wealth_change_*."
+                "Use monthly_history.latest_yield_month only — the last month with "
+                "has_published_yield=true (at or before published_through_yyyymm). "
+                "Never cite later forward-filled months without yields."
             ),
         },
     }
@@ -1153,10 +1057,10 @@ Use ONLY the portfolio JSON provided. Educational only — not financial, tax, o
 Do NOT discuss management fees or deposit fees. Do NOT invent holdings or numbers missing from the JSON.
 
 Write insights for these FIXED SLOTS in order (skip a slot entirely if data is missing or the observation is weak):
-1. recent_move — Fund yield profit/loss for the latest month with published yields.
-   Use monthly_history.latest_yield_month.yield_pnl_ils and yield_pnl_pct ONLY.
-   Name that period (YYYY-MM). Say it is yield P/L (deposits / recurring contributions excluded).
-   Never use total_wealth_change_*, portfolio totals MoM, or months with has_published_yield=false.
+1. recent_move — Profit/loss for the latest month with published yield data.
+   Use monthly_history.latest_yield_month (or insight_slots_hint.slot1_recent_move) ONLY.
+   Name that period (YYYY-MM). Never use a month where has_published_yield is false, or any
+   period after published_through_yyyymm — those are forward-filled without yields (often 0% change).
    This may lag the calendar month (e.g. May yields while today is July).
 2. allocation — Which sleeve (funds/RSU/ESPP/cash) or concentration stands out vs Total Wealth.
    Prefer insight_slots_hint.slot2_allocation when present.
