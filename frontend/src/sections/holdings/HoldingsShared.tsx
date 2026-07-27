@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { t } from '../../copy';
 import { fmtIls, fmtPctSigned, fmtUsd } from '../../lib/format';
+import HelpButton from '../../shell/HelpButton';
 import './holdings.css';
 
 export function HoldingsCard({
@@ -10,6 +11,7 @@ export function HoldingsCard({
   children,
   onAdd,
   addLabel,
+  helpSection,
 }: {
   id: string;
   titleKey: string;
@@ -17,6 +19,14 @@ export function HoldingsCard({
   children: ReactNode;
   onAdd?: () => void;
   addLabel?: string;
+  helpSection?:
+    | 'funds'
+    | 'pension'
+    | 'rsu'
+    | 'espp'
+    | 'cash'
+    | 'settings'
+    | 'retirement-sim';
 }) {
   return (
     <section className="card" id={id}>
@@ -26,6 +36,7 @@ export function HoldingsCard({
           <span className="h2-count" data-testid={`${id}-count`}>
             {count}
           </span>
+          {helpSection ? <HelpButton section={helpSection} /> : null}
         </h2>
         {onAdd ? (
           <button type="button" className="btn" onClick={onAdd}>
@@ -45,7 +56,6 @@ export function HoldingRow({
   profitIls,
   profitPct,
   extraValue,
-  onDelete,
   children,
 }: {
   title: string;
@@ -54,7 +64,6 @@ export function HoldingRow({
   profitIls?: number;
   profitPct?: number;
   extraValue?: string;
-  onDelete?: () => void;
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -94,16 +103,7 @@ export function HoldingRow({
           ) : null}
         </div>
       </button>
-      {open ? (
-        <div className="holding-row__detail">
-          {children}
-          {onDelete ? (
-            <button type="button" className="btn btn-danger" onClick={onDelete}>
-              {t('common.delete') || t('common.remove') || 'מחק'}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+      {open ? children : null}
     </div>
   );
 }

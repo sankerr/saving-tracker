@@ -48,6 +48,7 @@ export default function CashSection() {
       count={holdings.length}
       onAdd={() => setAdding((v) => !v)}
       addLabel={t('cash.add')}
+      helpSection="cash"
     >
       {adding ? (
         <div className="add-panel">
@@ -93,8 +94,42 @@ export default function CashSection() {
             title={c.nickname || t('label.cash')}
             subtitle={`${c.currency || 'ILS'} ${c.amount ?? ''}`}
             valueIls={c.computed?.value_ils}
-            onDelete={() => void remove(c.id)}
-          />
+          >
+            <div className="holding-row__detail">
+              <p className="muted" dir="auto">
+                {c.note || '—'}
+              </p>
+              <div className="add-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    const nick = window.prompt(t('common.nickname'), c.nickname || '');
+                    if (nick === null) return;
+                    const amt = window.prompt(t('cash.amount'), String(c.amount ?? ''));
+                    if (amt === null) return;
+                    const j = await api('PATCH', `/api/cash/${c.id}`, {
+                      nickname: nick,
+                      amount: Number(amt),
+                      currency: c.currency || 'ILS',
+                      note: c.note || '',
+                    });
+                    if (j.ok === false) toast(j.error || t('common.failed'), 'error');
+                    else await reload({ spinner: false });
+                  }}
+                >
+                  {t('cash.editLabel') || t('common.save')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={() => void remove(c.id)}
+                >
+                  {t('action.delete')}
+                </button>
+              </div>
+            </div>
+          </HoldingRow>
         ))
       )}
     </HoldingsCard>

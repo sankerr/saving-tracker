@@ -14,6 +14,7 @@ import { api } from '../../api/client';
 import { t } from '../../copy';
 import { fmtIls, fmtPctSigned, fmtUsd } from '../../lib/format';
 import { usePortfolio } from '../../portfolio/PortfolioProvider';
+import HelpButton from '../../shell/HelpButton';
 import { useToast } from '../../shell/ToastProvider';
 import './dashboard.css';
 
@@ -36,7 +37,7 @@ function fmtGoalMonth(dateStr: string): string {
 }
 
 export default function DashboardSection() {
-  const { data, status, whatIfPct, setWhatIfPct, reload } = usePortfolio();
+  const { data, status, whatIfPct, setWhatIfPct, horizon, setHorizon, reload } = usePortfolio();
   const { toast } = useToast();
   const [whatIfInput, setWhatIfInput] = useState(
     whatIfPct != null ? String(whatIfPct) : '',
@@ -117,7 +118,7 @@ export default function DashboardSection() {
       toast(t('goal.errAmount'), 'error');
       return;
     }
-    const j = await api('PUT', '/api/settings', {
+    const j = await api('POST', '/api/settings', {
       goal: { target_amount_ils: amount, target_date: dateRaw },
     });
     if (j.ok === false) toast(j.error || t('common.failed'), 'error');
@@ -128,7 +129,7 @@ export default function DashboardSection() {
   }
 
   async function clearGoal() {
-    const j = await api('PUT', '/api/settings', { goal: null });
+    const j = await api('POST', '/api/settings', { goal: null });
     if (j.ok === false) toast(j.error || t('common.failed'), 'error');
     else await reload({ spinner: false });
   }
@@ -144,7 +145,9 @@ export default function DashboardSection() {
 
   return (
     <section className="card" id="dashboard-card">
-      <h2>{t('section.dashboard')}</h2>
+      <h2>
+        {t('section.dashboard')} <HelpButton section="dashboard" />
+      </h2>
 
       {status === 'pending' && !p ? (
         <p className="muted">{t('status.loading')}</p>
@@ -249,6 +252,21 @@ export default function DashboardSection() {
               })}
             </p>
           ) : null}
+
+          <div className="what-if-row">
+            <span>{t('dashboard.horizon')}</span>
+            {[6, 12, 24, 60, 120].map((h) => (
+              <button
+                key={h}
+                type="button"
+                className="btn"
+                aria-pressed={horizon === h}
+                onClick={() => setHorizon(h)}
+              >
+                {h}m
+              </button>
+            ))}
+          </div>
 
           <div className="what-if-row">
             <label>

@@ -9,6 +9,7 @@ import {
   HoldingRow,
   HoldingsCard,
 } from '../holdings/HoldingsShared';
+import RsuDetail from './RsuDetail';
 
 export default function RsuSection() {
   const { data, reload } = usePortfolio();
@@ -21,28 +22,42 @@ export default function RsuSection() {
   const [ticker, setTicker] = useState('');
   const [shares, setShares] = useState('');
   const [grantDate, setGrantDate] = useState('');
+  const [vestStart, setVestStart] = useState('');
+  const [vestMonths, setVestMonths] = useState('48');
+  const [cliff, setCliff] = useState('12');
+  const [cadence, setCadence] = useState('monthly');
   const [nickname, setNickname] = useState('');
+  const [grantPriceOverride, setGrantPriceOverride] = useState('');
 
   async function save() {
+    const tk = ticker.trim().toUpperCase();
+    if (!tk) {
+      toast(t('toast.pickTicker'), 'error');
+      return;
+    }
+    if (!grantDate || !shares) {
+      toast(t('toast.dateSharesRequired'), 'error');
+      return;
+    }
     const j = await api('POST', '/api/rsu-grants', {
-      ticker: ticker.trim().toUpperCase(),
-      shares: Number(shares),
-      grant_date: grantDate,
+      ticker: tk,
       nickname,
+      grant_date: grantDate,
+      total_shares: Number(shares),
+      vesting_start: vestStart || grantDate,
+      vesting_months: Number(vestMonths),
+      cliff_months: Number(cliff),
+      vesting_cadence: cadence,
+      grant_price_override_usd: grantPriceOverride.trim()
+        ? Number(grantPriceOverride)
+        : null,
     });
     if (j.ok === false) toast(j.error || t('common.failed'), 'error');
     else {
-      toast(t('toast.rsuAdded') || t('common.updated'), 'info');
+      toast(t('toast.grantAdded'), 'info');
       setAdding(false);
       await reload({ spinner: false });
     }
-  }
-
-  async function remove(id: string) {
-    if (!window.confirm(t('common.confirm'))) return;
-    const j = await api('DELETE', `/api/rsu-grants/${id}`);
-    if (j.ok === false) toast(j.error || t('common.failed'), 'error');
-    else await reload({ spinner: false });
   }
 
   return (
@@ -51,7 +66,8 @@ export default function RsuSection() {
       titleKey="section.rsu"
       count={grants.length}
       onAdd={() => setAdding((v) => !v)}
-      addLabel={t('rsu.add') || t('common.add')}
+      addLabel={t('rsu.add')}
+      helpSection="rsu"
     >
       {adding ? (
         <div className="add-panel">
@@ -60,12 +76,38 @@ export default function RsuSection() {
             <input value={ticker} onChange={(e) => setTicker(e.target.value)} />
           </label>
           <label>
-            {t('rsu.shares') || 'Shares'}
+            {t('table.shares')}
             <input value={shares} onChange={(e) => setShares(e.target.value)} />
           </label>
           <label>
             {t('common.date')}
             <input type="date" value={grantDate} onChange={(e) => setGrantDate(e.target.value)} />
+          </label>
+          <label>
+            {t('rsu.vestingStart') || t('common.date')}
+            <input type="date" value={vestStart} onChange={(e) => setVestStart(e.target.value)} />
+          </label>
+          <label>
+            {t('rsu.vestingMonths') || 'Months'}
+            <input value={vestMonths} onChange={(e) => setVestMonths(e.target.value)} />
+          </label>
+          <label>
+            {t('rsu.cliffMonths') || 'Cliff'}
+            <input value={cliff} onChange={(e) => setCliff(e.target.value)} />
+          </label>
+          <label>
+            {t('rsu.vestingCadence')}
+            <select value={cadence} onChange={(e) => setCadence(e.target.value)}>
+              <option value="monthly">monthly</option>
+              <option value="quarterly">quarterly</option>
+            </select>
+          </label>
+          <label>
+            {t('action.setGrantPrice')}
+            <input
+              value={grantPriceOverride}
+              onChange={(e) => setGrantPriceOverride(e.target.value)}
+            />
           </label>
           <label>
             {t('common.nickname')}
@@ -93,10 +135,15 @@ export default function RsuSection() {
             profitIls={g.computed?.profit_ils}
             profitPct={g.computed?.profit_pct}
             extraValue={
-              g.computed?.value_usd != null ? fmtUsd(g.computed.value_usd) : undefined
+              g.computed?.current_value_usd != null
+                ? fmtUsd(g.computed.current_value_usd)
+                : g.computed?.value_usd != null
+                  ? fmtUsd(g.computed.value_usd)
+                  : undefined
             }
-            onDelete={() => void remove(g.id)}
-          />
+          >
+            <RsuDetail grant={g} onChanged={() => reload({ spinner: false })} />
+          </HoldingRow>
         ))
       )}
     </HoldingsCard>

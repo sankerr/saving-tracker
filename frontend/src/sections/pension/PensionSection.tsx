@@ -3,11 +3,13 @@ import { api } from '../../api/client';
 import { t } from '../../copy';
 import { usePortfolio } from '../../portfolio/PortfolioProvider';
 import { useToast } from '../../shell/ToastProvider';
+import FundLikeDetail from '../holdings/FundLikeDetail';
 import {
   EmptyHoldings,
   HoldingRow,
   HoldingsCard,
 } from '../holdings/HoldingsShared';
+import { fmtIls } from '../../lib/format';
 
 type SearchHit = {
   fund_id: number;
@@ -22,6 +24,7 @@ export default function PensionSection() {
     () => (data?.pension_holdings || []).filter((h) => !h.archived),
     [data?.pension_holdings],
   );
+  const summary = data?.pension_summary;
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -66,18 +69,13 @@ export default function PensionSection() {
     });
     if (j.ok === false) toast(j.error || t('common.failed'), 'error');
     else {
-      toast(t('toast.pensionAdded') || t('common.updated'), 'info');
+      toast(t('toast.pensionAdded'), 'info');
       setAdding(false);
       await reload({ spinner: false });
     }
   }
 
-  async function remove(id: string) {
-    if (!window.confirm(t('common.confirm'))) return;
-    const j = await api('DELETE', `/api/pension-holdings/${id}`);
-    if (j.ok === false) toast(j.error || t('common.failed'), 'error');
-    else await reload({ spinner: false });
-  }
+  const pwf = summary?.what_if;
 
   return (
     <HoldingsCard
@@ -85,8 +83,32 @@ export default function PensionSection() {
       titleKey="section.pension"
       count={holdings.length}
       onAdd={() => setAdding((v) => !v)}
-      addLabel={t('pension.add') || t('common.add')}
+      addLabel={t('pension.add')}
+      helpSection="pension"
     >
+      {holdings.length && summary?.total_value_ils != null ? (
+        <p className="summary-line">
+          {t('section.pension')}: <strong>{fmtIls(summary.total_value_ils)}</strong>
+        </p>
+      ) : null}
+      {holdings.length && pwf?.end_value_ils != null ? (
+        <p
+          className="summary-line"
+          dangerouslySetInnerHTML={{
+            __html: t('pension.whatIfSummary', {
+              pct: pwf.annual_pct ?? '',
+              months: pwf.horizon_months ?? '',
+              end: fmtIls(pwf.end_value_ils),
+              sign: (pwf.end_value_ils || 0) - (pwf.current_value_ils || 0) >= 0 ? '+' : '',
+              delta: fmtIls((pwf.end_value_ils || 0) - (pwf.current_value_ils || 0)),
+              includes: pwf.includes_recurring
+                ? t('pension.includesRecurring')
+                : t('pension.noRecurring'),
+            }),
+          }}
+        />
+      ) : null}
+
       {adding ? (
         <div className="add-panel">
           <label>
@@ -149,8 +171,13 @@ export default function PensionSection() {
             valueIls={h.computed?.current_value_ils}
             profitIls={h.computed?.profit_ils}
             profitPct={h.computed?.profit_pct}
-            onDelete={() => void remove(h.id)}
-          />
+          >
+            <FundLikeDetail
+              holding={h}
+              kind="pension"
+              onChanged={() => reload({ spinner: false })}
+            />
+          </HoldingRow>
         ))
       )}
     </HoldingsCard>

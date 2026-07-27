@@ -132,8 +132,26 @@ export default function AppShell() {
         </button>
         {disclaimerOpen ? (
           <div className="disclaimer-details">
-            <p dangerouslySetInnerHTML={{ __html: t('disclaimer.item.beta') }} />
-            <p dangerouslySetInnerHTML={{ __html: t('disclaimer.item.notAdvice') }} />
+            <p>{t('hero.subtitle')}</p>
+            <p>
+              <strong>{t('disclaimer.title')}</strong>
+            </p>
+            <ul>
+              {(
+                [
+                  'disclaimer.item.beta',
+                  'disclaimer.item.personalUse',
+                  'disclaimer.item.notAdvice',
+                  'disclaimer.item.noTax',
+                  'disclaimer.item.dataStale',
+                  'disclaimer.item.projections',
+                  'disclaimer.item.ownRisk',
+                  'disclaimer.item.responsibility',
+                ] as const
+              ).map((key) => (
+                <li key={key} dangerouslySetInnerHTML={{ __html: t(key) }} />
+              ))}
+            </ul>
             <button type="button" className="btn" onClick={ackDisclaimer}>
               {t('common.gotIt')}
             </button>

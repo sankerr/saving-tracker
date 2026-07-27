@@ -1,5 +1,25 @@
 /** Types for GET /api/data (fields the UI reads). */
 
+export type HoldingEvent = {
+  id?: string;
+  date?: string;
+  kind?: string;
+  amount_ils?: number;
+  note?: string;
+  synthetic?: boolean;
+  pending?: boolean;
+};
+
+export type RecurringRule = {
+  id: string;
+  start_date: string;
+  end_date?: string | null;
+  employee?: number;
+  employer?: number;
+  day_of_month?: number;
+  note?: string;
+};
+
 export type HoldingComputed = {
   current_value_ils?: number;
   profit_ils?: number;
@@ -9,9 +29,48 @@ export type HoldingComputed = {
   ytd_return_pct?: number;
   ytd_year?: number;
   total_deposited_ils?: number;
+  total_withdrawn_ils?: number;
+  cumulative_mgmt_fee_ils?: number;
+  total_employee_ils?: number;
+  total_employer_ils?: number;
+  three_m_return_pct?: number | null;
+  six_m_return_pct?: number | null;
+  twelve_m_return_pct?: number | null;
+  twentyfour_m_return_pct?: number | null;
+  annualized_3y_return_pct?: number | null;
+  annualized_5y_return_pct?: number | null;
   value_ils?: number;
   value_usd?: number;
+  current_value_usd?: number;
+  current_price_usd?: number;
+  current_usdils?: number;
+  cost_basis_per_share_usd?: number;
+  cost_basis_total_usd?: number;
+  cost_basis_total_ils?: number;
+  grant_close_usd?: number;
+  grant_usdils?: number;
+  full_vest_date?: string;
+  shares_held_now?: number;
+  vested_shares_now?: number;
+  shares_sold_total?: number;
+  shares_remaining?: number;
+  potential_full_vest_usd?: number;
+  potential_full_vest_ils?: number;
+  realized_gain_usd?: number;
+  realized_gain_ils?: number;
+  unrealized_gain_usd?: number;
+  unrealized_gain_ils?: number;
+  uses_override_price?: boolean;
+  profit_usd?: number;
+  total_contributed_usd?: number;
+  total_contributed_ils?: number;
+  shares_acquired_total?: number;
+  discount_captured_usd_total?: number;
+  lookback_bonus_usd_total?: number;
+  no_data?: boolean;
   time_series?: Array<{ period?: number; date?: string; value_ils?: number }>;
+  expanded_events?: HoldingEvent[];
+  fund_metrics?: Record<string, number | string | null | undefined>;
 };
 
 export type FundHolding = {
@@ -25,11 +84,20 @@ export type FundHolding = {
   data_source?: string;
   anchor_period?: number;
   anchor_balance_ils?: number;
+  recurring_rules?: RecurringRule[];
   computed?: HoldingComputed;
   last_synced?: string;
 };
 
 export type PensionHolding = FundHolding;
+
+export type RsuSale = {
+  id: string;
+  date: string;
+  shares_sold: number;
+  sale_price_usd: number;
+  note?: string;
+};
 
 export type RsuGrant = {
   id: string;
@@ -37,8 +105,35 @@ export type RsuGrant = {
   nickname?: string;
   archived?: boolean;
   grant_date?: string;
-  computed?: HoldingComputed & { shares_remaining?: number };
+  vesting_cadence?: string;
+  total_shares?: number;
+  vesting_start?: string;
+  vesting_months?: number;
+  cliff_months?: number;
+  sales?: RsuSale[];
+  stock_history?: Array<{ date: string; close: number }>;
+  computed?: HoldingComputed;
   last_synced?: string;
+};
+
+export type EsppPurchase = {
+  id: string;
+  date: string;
+  contribution_usd: number;
+  shares: number;
+  period_start?: string;
+  period_end?: string;
+  buy_price_usd?: number;
+  period_end_price_usd?: number;
+  note?: string;
+};
+
+export type EsppSale = {
+  id: string;
+  date: string;
+  shares_sold: number;
+  sale_price_usd: number;
+  note?: string;
 };
 
 export type EsppPlan = {
@@ -46,6 +141,12 @@ export type EsppPlan = {
   ticker: string;
   nickname?: string;
   archived?: boolean;
+  discount_pct?: number;
+  has_lookback?: boolean;
+  offering_months?: number;
+  purchases?: EsppPurchase[];
+  sales?: EsppSale[];
+  stock_history?: Array<{ date: string; close: number }>;
   computed?: HoldingComputed;
   last_synced?: string;
 };
@@ -121,11 +222,19 @@ export type AppData = {
     total_value_ils?: number;
     count?: number;
     excluded_from_total?: boolean;
+    what_if?: {
+      annual_pct?: number;
+      horizon_months?: number;
+      current_value_ils?: number;
+      end_value_ils?: number;
+      includes_recurring?: boolean;
+    } | null;
   };
   cache_status?: {
     current_usdils?: number;
     usdils_override?: number | null;
     last_full_sync_at?: string;
     latest_published_period?: number;
+    package_show_age_seconds?: number | null;
   };
 };

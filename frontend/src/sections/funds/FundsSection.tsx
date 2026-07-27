@@ -8,6 +8,7 @@ import {
   HoldingRow,
   HoldingsCard,
 } from '../holdings/HoldingsShared';
+import FundLikeDetail from '../holdings/FundLikeDetail';
 
 type SearchHit = {
   fund_id: number;
@@ -80,16 +81,6 @@ export default function FundsSection() {
     }
   }
 
-  async function remove(id: string) {
-    if (!window.confirm(t('common.confirm'))) return;
-    const j = await api('DELETE', `/api/fund-holdings/${id}`);
-    if (j.ok === false) toast(j.error || t('common.failed'), 'error');
-    else {
-      toast(t('common.deleted'), 'info');
-      await reload({ spinner: false });
-    }
-  }
-
   return (
     <HoldingsCard
       id="funds-card"
@@ -97,6 +88,7 @@ export default function FundsSection() {
       count={holdings.length}
       onAdd={() => setAdding((v) => !v)}
       addLabel={t('funds.add')}
+      helpSection="funds"
     >
       {adding ? (
         <div className="add-panel">
@@ -161,8 +153,13 @@ export default function FundsSection() {
             valueIls={h.computed?.current_value_ils}
             profitIls={h.computed?.profit_ils}
             profitPct={h.computed?.profit_pct}
-            onDelete={() => void remove(h.id)}
-          />
+          >
+            <FundLikeDetail
+              holding={h}
+              kind="fund"
+              onChanged={() => reload({ spinner: false })}
+            />
+          </HoldingRow>
         ))
       )}
     </HoldingsCard>

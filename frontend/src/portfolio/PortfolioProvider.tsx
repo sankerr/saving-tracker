@@ -19,6 +19,8 @@ type PortfolioContextValue = {
   data: AppData | null;
   status: StatusKind;
   statusMessage: string;
+  horizon: number;
+  setHorizon: (months: number) => void;
   whatIfPct: number | null;
   setWhatIfPct: (pct: number | null) => void;
   reload: (opts?: { spinner?: boolean }) => Promise<void>;
@@ -27,11 +29,10 @@ type PortfolioContextValue = {
 };
 
 const PortfolioContext = createContext<PortfolioContextValue | null>(null);
-const HORIZON = 24;
 const WHAT_IF_KEY = 'saving_what_if_pct';
 
-function dataQuery(whatIfPct: number | null): string {
-  let q = `horizon=${HORIZON}`;
+function dataQuery(horizon: number, whatIfPct: number | null): string {
+  let q = `horizon=${horizon}`;
   if (whatIfPct !== null && !Number.isNaN(whatIfPct)) {
     q += `&assumed_annual_pct=${whatIfPct}`;
   }
@@ -48,6 +49,7 @@ export function PortfolioProvider({
   const [data, setData] = useState<AppData | null>(null);
   const [status, setStatus] = useState<StatusKind>('idle');
   const [statusMessage, setStatusMessage] = useState('');
+  const [horizon, setHorizon] = useState(24);
   const [whatIfPct, setWhatIfPctState] = useState<number | null>(() => {
     const v = localStorage.getItem(WHAT_IF_KEY);
     return v === null || v === '' ? null : Number(v);
@@ -76,7 +78,7 @@ export function PortfolioProvider({
         setStatus('pending');
         setStatusMessage(t('status.loading'));
       }
-      const j = await api<AppData>('GET', `/api/data?${dataQuery(whatIfPct)}`, undefined, {
+      const j = await api<AppData>('GET', `/api/data?${dataQuery(horizon, whatIfPct)}`, undefined, {
         retries: 2,
         onUnauthorized: logout,
         onRetry: () => {
@@ -99,14 +101,14 @@ export function PortfolioProvider({
           : t('status.synced'),
       );
     },
-    [logout, whatIfPct],
+    [logout, whatIfPct, horizon],
   );
 
   const sync = useCallback(async () => {
     const myEpoch = epoch.current;
     setStatus('pending');
     setStatusMessage(t('status.syncing'));
-    const j = await api('POST', `/api/sync?${dataQuery(whatIfPct)}`, undefined, {
+    const j = await api('POST', `/api/sync?${dataQuery(horizon, whatIfPct)}`, undefined, {
       retries: 2,
       onUnauthorized: logout,
       onRetry: () => setStatusMessage(t('status.wakingServer')),
@@ -118,7 +120,7 @@ export function PortfolioProvider({
       return;
     }
     await reload({ spinner: false });
-  }, [logout, reload, whatIfPct]);
+  }, [logout, reload, whatIfPct, horizon]);
 
   useEffect(() => {
     void reload();
@@ -129,13 +131,15 @@ export function PortfolioProvider({
       data,
       status,
       statusMessage,
+      horizon,
+      setHorizon,
       whatIfPct,
       setWhatIfPct,
       reload,
       sync,
       logout,
     }),
-    [data, status, statusMessage, whatIfPct, setWhatIfPct, reload, sync, logout],
+    [data, status, statusMessage, horizon, whatIfPct, setWhatIfPct, reload, sync, logout],
   );
 
   return (

@@ -114,18 +114,18 @@ Preserve existing section card ids (or equivalent anchors) so pill-nav targets s
 
 ## Parity checklist (cutover gate)
 
-- [ ] Login / register / logout / change password
-- [ ] Dashboard totals, allocation, charts, what-if, goal, insight card
-- [ ] Funds / pension / RSU / ESPP / cash CRUD + search/detail
-- [ ] Retirement simulator
-- [ ] Settings (yield net of fees, FX override, import/export, cache)
-- [ ] Sync + cold-start loading UX
-- [ ] Hebrew-only RTL (`lang=he` `dir=rtl`), theme system/light/dark
-- [ ] Section pill-nav + scrollspy
-- [ ] AI chat drawer
-- [ ] Disclaimer ack
-- [ ] Playwright journeys green in CI; Vitest pure-logic suite green
-- [ ] Cloudflare Pages build docs updated
+- [x] Login / register / logout / change password
+- [x] Dashboard totals, allocation, charts, what-if, goal, insight card
+- [x] Funds / pension / RSU / ESPP / cash CRUD + search/detail
+- [x] Retirement simulator
+- [x] Settings (yield net of fees, FX override, import/export, cache)
+- [x] Sync + cold-start loading UX
+- [x] Hebrew-only RTL (`lang=he` `dir=rtl`), theme system/light/dark
+- [x] Section pill-nav + scrollspy
+- [x] AI chat drawer
+- [x] Disclaimer ack
+- [x] Playwright journeys green in CI; Vitest pure-logic suite green
+- [x] Cloudflare Pages build docs updated
 
 ## Decisions log
 
@@ -140,3 +140,10 @@ Preserve existing section card ids (or equivalent anchors) so pill-nav targets s
 | Config | `VITE_API_BASE` env |
 | Presentation site | Out of scope |
 | UI language | Hebrew only (no English / no lang toggle) |
+
+
+## Remaining known thin areas (acceptable vs legacy polish)
+
+- Dashboard chart range drag-select / month-range inputs (horizon chips + what-if present)
+- Chat markdown rendering is plain text (API replies still shown)
+- Some fund metrics / sparklines / analyst-target polish from legacy are simplified in React charts
