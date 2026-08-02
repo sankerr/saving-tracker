@@ -98,6 +98,18 @@ def _holding_rows(state: dict, limit: int = 8) -> list[dict]:
                 "profit": c.get("profit_ils"),
             }
         )
+    for h in state.get("stock_holdings") or []:
+        if h.get("archived"):
+            continue
+        c = h.get("computed") or {}
+        rows.append(
+            {
+                "kind": "מניות",
+                "name": h.get("nickname") or h.get("ticker") or "מניות",
+                "value": c.get("current_value_ils"),
+                "profit": c.get("profit_ils"),
+            }
+        )
     for csh in state.get("cash_holdings") or []:
         if csh.get("archived"):
             continue
@@ -144,6 +156,7 @@ def _build_dashboard_html(
     funds = portfolio.get("funds_value_ils")
     rsu = portfolio.get("rsu_value_ils")
     espp = portfolio.get("espp_value_ils")
+    stocks = portfolio.get("stocks_value_ils")
     cash = portfolio.get("cash_value_ils")
     pension_total = pension.get("total_value_ils")
 
@@ -199,6 +212,9 @@ def _build_dashboard_html(
         </tr>
         <tr>
           <td style="padding:4px 0;">ESPP</td><td style="text-align:left;">{_esc(_fmt_ils(espp))}</td>
+        </tr>
+        <tr>
+          <td style="padding:4px 0;">מניות</td><td style="text-align:left;">{_esc(_fmt_ils(stocks))}</td>
         </tr>
         <tr>
           <td style="padding:4px 0;">מזומן</td><td style="text-align:left;">{_esc(_fmt_ils(cash))}</td>

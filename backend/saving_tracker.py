@@ -129,6 +129,7 @@ def default_data() -> dict:
         "rsu_grants": [],
         "cash_holdings": [],
         "espp_plans": [],
+        "stock_holdings": [],
     }
 
 
@@ -680,12 +681,18 @@ def yahoo_chart(ticker: str, *, period1: int, period2: int, interval="1d") -> di
     return {"rows": rows, "currency": currency}
 
 
-def yahoo_search_ticker(q: str, limit: int = 10) -> list:
-    """Symbol-search via Yahoo's autocomplete endpoint."""
+def yahoo_search_ticker(q: str, limit: int = 10, extra_exchanges: tuple = ()) -> list:
+    """Symbol-search via Yahoo's autocomplete endpoint.
+
+    ``extra_exchanges`` lets callers (e.g. the Stocks search endpoint) rank
+    additional exchange codes as "known" alongside the default US exchanges —
+    e.g. ``("TLV",)`` for Tel Aviv Stock Exchange (.TA tickers) — without
+    changing ranking behavior for existing RSU/ESPP callers.
+    """
     q = (q or "").strip()
     if not q:
         return []
-    cache_key = f"yahoo_search:{q}:{limit}"
+    cache_key = f"yahoo_search:{q}:{limit}:{','.join(extra_exchanges)}"
     now = time.time()
     cached = _search_cache.get(cache_key)
     if cached and now - cached[0] < 120:
@@ -708,11 +715,14 @@ def yahoo_search_ticker(q: str, limit: int = 10) -> list:
             "exchange": qd.get("exchange") or "",
             "type": qd.get("quoteType") or "",
         })
-    # Prefer EQUITY on common US exchanges
+    # Prefer EQUITY on common US exchanges (plus any caller-supplied exchanges).
     def rank(item):
         is_equity = item["type"] == "EQUITY"
-        is_us = item["exchange"] in ("NMS", "NYQ", "NGM", "ASE", "PCX", "NCM")
-        return (-int(is_equity), -int(is_us))
+        is_known = (
+            item["exchange"] in ("NMS", "NYQ", "NGM", "ASE", "PCX", "NCM")
+            or item["exchange"] in extra_exchanges
+        )
+        return (-int(is_equity), -int(is_known))
     out.sort(key=rank)
     out = out[:limit]
     _search_cache[cache_key] = (now, out)
@@ -902,7 +912,8 @@ def run_sync(*, force=False) -> dict:
             pension_ids = sorted({h["fund_id"] for h in DATA.get("pension_holdings", []) or [] if not h.get("archived")})
             grants_active = [g for g in DATA["rsu_grants"] if not g.get("archived")]
             espp_active = [p for p in DATA.get("espp_plans", []) or [] if not p.get("archived")]
-            # Tickers & earliest-known dates from BOTH RSU grants and ESPP plans.
+            stocks_active = [h for h in DATA.get("stock_holdings", []) or [] if not h.get("archived")]
+            # Tickers & earliest-known dates from RSU grants, ESPP plans, AND stock holdings.
             grants_by_ticker = {}
             for g in grants_active:
                 grants_by_ticker.setdefault(g["ticker"].upper(), []).append(g["grant_date"])
@@ -915,6 +926,16 @@ def run_sync(*, force=False) -> dict:
                 else:
                     # No purchases yet — at least fetch the last ~year so the plan
                     # has a price to show.
+                    grants_by_ticker.setdefault(tk, []).append(
+                        (date.today() - timedelta(days=400)).isoformat()
+                    )
+            for holding in stocks_active:
+                tk = holding["ticker"].upper()
+                purchases = holding.get("purchases", []) or []
+                earliest_p = min((p["date"] for p in purchases), default=None)
+                if earliest_p:
+                    grants_by_ticker.setdefault(tk, []).append(earliest_p)
+                else:
                     grants_by_ticker.setdefault(tk, []).append(
                         (date.today() - timedelta(days=400)).isoformat()
                     )
@@ -2299,6 +2320,259 @@ def project_espp(plan: dict, computed: dict, horizon_months: int) -> dict:
     }
 
 
+# ── Stock holdings (brokerage buys/sells — Israel + USA) ─────────────────────
+def normalize_native_to_ils(price: float, currency: str, usdils_fx) -> float | None:
+    """Convert a Yahoo-quoted price to ILS.
+
+    Yahoo tags Tel Aviv Stock Exchange (.TA) quotes with currency ``ILA``
+    (agorot, 1/100 ILS), not ``ILS`` — verified live against the chart API
+    (TEVA.TA → currency=ILA, exchangeName=TLV). ``ILS`` is passed through
+    as-is; anything else (USD and other foreign currencies) is converted via
+    the given USDILS rate.
+    """
+    if price is None:
+        return None
+    currency = (currency or "USD").upper()
+    if currency == "ILS":
+        return price
+    if currency == "ILA":
+        return price / 100.0
+    if usdils_fx is None:
+        return None
+    return price * usdils_fx
+
+
+def _yahoo_close_to_native(price, yahoo_currency: str):
+    """Raw Yahoo close -> real-world native price (÷100 for TASE's ILA/agorot
+    quotes, unchanged for ILS/USD/other). Distinct from
+    ``normalize_native_to_ils``, which converts the same raw value all the way
+    to ILS (multiplying USD by the FX rate) rather than stopping at the
+    holding's own native currency."""
+    if price is None:
+        return None
+    return price / 100.0 if (yahoo_currency or "").upper() == "ILA" else price
+
+
+def value_stock(holding: dict) -> dict:
+    """Compute current stock-holding state: FIFO cost basis, native + ILS values.
+
+    Unlike RSU/ESPP (always USD), a stock's native currency depends on its
+    market — ILS for TASE (.TA) tickers, USD for US tickers. Purchase/sale
+    prices are entered and stored in that native (real-world) currency; the
+    *current* market price comes from Yahoo, which quotes TASE tickers in
+    ILA (agorot, 1/100 ILS) rather than ILS — ``yahoo_currency`` is that raw
+    Yahoo tag (only used to normalize prices pulled from ``stock_daily``),
+    while ``native_currency`` is the real-world ILS/USD label surfaced to the
+    user and matched against purchase/sale/override prices.
+    """
+    ticker = holding["ticker"].upper()
+    stock = MARKET.get("stock_daily", {}).get(ticker, {})
+    fx = MARKET.get("fx", {}).get("USDILS", {})
+    stock_rows = stock.get("rows", []) or []
+    fx_rows = fx.get("rows", []) or []
+    yahoo_currency = (stock.get("currency") or "USD").upper()
+    native_currency = "ILS" if yahoo_currency in ("ILS", "ILA") else "USD"
+    stock_by_date = {r["date"]: r["close"] for r in stock_rows}
+    fx_by_date = {r["date"]: r["close"] for r in fx_rows}
+
+    purchases = sorted(holding.get("purchases", []) or [], key=lambda p: p["date"])
+    sales = sorted(holding.get("sales", []) or [], key=lambda s: s["date"])
+    override = DATA["settings"].get("usdils_rate_override")
+
+    shares_acquired = sum(float(p.get("shares") or 0) for p in purchases)
+    shares_sold = sum(float(s.get("shares_sold") or 0) for s in sales)
+    shares_held = max(0.0, shares_acquired - shares_sold)
+    total_invested_native = sum(
+        float(p.get("shares") or 0) * float(p.get("price") or 0) for p in purchases
+    )
+
+    # FIFO walk: build remaining lots after subtracting cumulative sold shares.
+    remaining_to_drop = shares_sold
+    remaining_lots = []  # list of (shares_left, purchase_price_native)
+    for p in purchases:
+        sh = float(p.get("shares") or 0)
+        pp = float(p.get("price") or 0)
+        if remaining_to_drop >= sh:
+            remaining_to_drop -= sh
+            continue
+        if remaining_to_drop > 0:
+            sh -= remaining_to_drop
+            remaining_to_drop = 0
+        if sh > 0:
+            remaining_lots.append((sh, pp))
+    cost_basis_held_native = sum(s * pp for s, pp in remaining_lots)
+    cost_basis_per_share_native = (cost_basis_held_native / shares_held) if shares_held > 0 else 0.0
+
+    manual_override = holding.get("manual_price_override")
+    raw_close = stock_rows[-1]["close"] if stock_rows else None
+    has_override = manual_override not in (None, "")
+    current_price_native = (
+        float(manual_override) if has_override
+        else _yahoo_close_to_native(raw_close, yahoo_currency)
+    )
+    fx_now = fx_rows[-1]["close"] if fx_rows else None
+    current_fx = override if override else fx_now
+    if has_override:
+        # Override is entered in native_currency (never agorot) — pass
+        # through for ILS, multiply by FX for USD.
+        current_price_ils = (
+            current_price_native if native_currency == "ILS"
+            else (current_price_native * current_fx if current_fx is not None else None)
+        )
+    else:
+        current_price_ils = normalize_native_to_ils(raw_close, yahoo_currency, current_fx)
+
+    if current_price_ils is None or not purchases:
+        return {
+            "native_currency": native_currency,
+            "shares_acquired_total": round(shares_acquired, 4),
+            "shares_sold_total": round(shares_sold, 4),
+            "shares_held_now": round(shares_held, 4),
+            "current_price_native": current_price_native,
+            "current_usdils": current_fx,
+            "native_per_ils_rate": None,
+            "current_value_native": 0,
+            "current_value_ils": 0,
+            "total_invested_native": round(total_invested_native, 2),
+            "total_invested_ils": 0,
+            "cost_basis_per_share_native": round(cost_basis_per_share_native, 4),
+            "cost_basis_total_native": round(cost_basis_held_native, 2),
+            "cost_basis_total_ils": 0,
+            "realized_proceeds_native": 0,
+            "realized_proceeds_ils": 0,
+            "realized_gain_native": 0,
+            "realized_gain_ils": 0,
+            "unrealized_gain_native": 0,
+            "unrealized_gain_ils": 0,
+            "profit_native": 0,
+            "profit_ils": 0,
+            "time_series": [],
+            "no_data": True,
+        }
+
+    current_value_native = shares_held * current_price_native
+    current_value_ils = shares_held * current_price_ils
+    cost_basis_ils_rate = current_price_ils / current_price_native if current_price_native else 1.0
+    cost_basis_total_ils = cost_basis_held_native * cost_basis_ils_rate
+    total_invested_ils = total_invested_native * cost_basis_ils_rate
+
+    # Realized gains via FIFO lot consumption per sale, in native currency
+    # (a stock's native currency never changes, so no per-sale FX lookup is
+    # needed the way ESPP needs one for its USD→ILS conversion).
+    lot_pool = [[float(p.get("shares") or 0), float(p.get("price") or 0)] for p in purchases]
+    realized_proceeds_native = 0.0
+    realized_cost_native = 0.0
+    for s in sales:
+        s_shares = float(s.get("shares_sold") or 0)
+        s_price = float(s.get("price") or 0)
+        rem = s_shares
+        cost_for_sale = 0.0
+        for lot in lot_pool:
+            if rem <= 0:
+                break
+            if lot[0] <= 0:
+                continue
+            take = min(rem, lot[0])
+            cost_for_sale += take * lot[1]
+            lot[0] -= take
+            rem -= take
+        realized_proceeds_native += s_shares * s_price
+        realized_cost_native += cost_for_sale
+    realized_gain_native = realized_proceeds_native - realized_cost_native
+    realized_gain_ils = realized_gain_native * cost_basis_ils_rate
+    realized_proceeds_ils = realized_proceeds_native * cost_basis_ils_rate
+
+    if shares_held > 0:
+        unrealized_gain_native = (current_price_native - cost_basis_per_share_native) * shares_held
+    else:
+        unrealized_gain_native = 0.0
+    unrealized_gain_ils = (
+        current_value_ils - (cost_basis_per_share_native * shares_held * cost_basis_ils_rate)
+    ) if shares_held > 0 else 0.0
+
+    # Daily time series from first purchase → today.
+    series = []
+    first_d = date.fromisoformat(purchases[0]["date"])
+    end_d = date.today()
+    last_close = None
+    last_fx = None
+    for r in reversed(stock_rows):
+        if r["date"] <= purchases[0]["date"]:
+            last_close = r["close"]
+            break
+    for r in reversed(fx_rows):
+        if r["date"] <= purchases[0]["date"]:
+            last_fx = r["close"]
+            break
+    d = first_d
+    while d <= end_d:
+        d_iso = d.isoformat()
+        c = stock_by_date.get(d_iso)
+        if c is not None:
+            last_close = c
+        fxv = fx_by_date.get(d_iso)
+        if fxv is not None:
+            last_fx = fxv
+        effective_fx = override if override else last_fx
+        close_native = _yahoo_close_to_native(last_close, yahoo_currency)
+        close_ils = normalize_native_to_ils(last_close, yahoo_currency, effective_fx)
+        sh_acq = sum(float(p.get("shares") or 0) for p in purchases if p["date"] <= d_iso)
+        sh_sld = sum(float(s.get("shares_sold") or 0) for s in sales if s["date"] <= d_iso)
+        held_at_d = max(0.0, sh_acq - sh_sld)
+        if close_native is not None and close_ils is not None:
+            v_native = held_at_d * close_native
+            v_ils = held_at_d * close_ils
+            series.append({
+                "date": d_iso,
+                "shares_acquired": round(sh_acq, 4),
+                "shares_sold": round(sh_sld, 4),
+                "shares_held": round(held_at_d, 4),
+                "close_native": round(close_native, 4),
+                "close_ils": round(close_ils, 4),
+                "value_native": round(v_native, 2),
+                "value_ils": round(v_ils, 2),
+            })
+        d += timedelta(days=1)
+
+    return {
+        "native_currency": native_currency,
+        "shares_acquired_total": round(shares_acquired, 4),
+        "shares_sold_total": round(shares_sold, 4),
+        "shares_held_now": round(shares_held, 4),
+        "current_price_native": current_price_native,
+        "current_usdils": current_fx,
+        "native_per_ils_rate": round(1.0 / cost_basis_ils_rate, 8) if cost_basis_ils_rate else None,
+        "current_value_native": round(current_value_native, 2),
+        "current_value_ils": round(current_value_ils, 2),
+        "total_invested_native": round(total_invested_native, 2),
+        "total_invested_ils": round(total_invested_ils, 2),
+        "cost_basis_per_share_native": round(cost_basis_per_share_native, 4),
+        "cost_basis_total_native": round(cost_basis_held_native, 2),
+        "cost_basis_total_ils": round(cost_basis_total_ils, 2),
+        "realized_proceeds_native": round(realized_proceeds_native, 2),
+        "realized_proceeds_ils": round(realized_proceeds_ils, 2),
+        "realized_gain_native": round(realized_gain_native, 2),
+        "realized_gain_ils": round(realized_gain_ils, 2),
+        "unrealized_gain_native": round(unrealized_gain_native, 2),
+        "unrealized_gain_ils": round(unrealized_gain_ils, 2),
+        "profit_native": round(realized_gain_native + unrealized_gain_native, 2),
+        "profit_ils": round(realized_gain_ils + unrealized_gain_ils, 2),
+        "time_series": series,
+        "no_data": False,
+    }
+
+
+def project_stock(holding: dict, computed: dict, horizon_months: int) -> dict:
+    """Forward projection — hold stock value flat at current_value_ils (Option A)."""
+    if computed.get("no_data") or computed.get("current_price_native") is None:
+        return None
+    cur = float(computed.get("current_value_ils") or 0.0)
+    return {
+        "paths": {"mean": [round(cur, 2)] * horizon_months},
+        "horizon_months": horizon_months,
+    }
+
+
 # ── Savings goal ─────────────────────────────────────────────────────────────
 _HISHTALMUT_MARKERS = (
     "השתלמות",
@@ -2337,6 +2611,7 @@ def compute_cashout_tax_estimate(
     espp_out: list,
     cash_out: list,
     pension_out: list,
+    stocks_out: list = None,
 ) -> dict:
     """Rough educational estimate of tax if liquidating accessible holdings today.
 
@@ -2431,6 +2706,28 @@ def compute_cashout_tax_estimate(
             "note": "25% on unrealized gain (held shares)",
         })
 
+    for holding in stocks_out or []:
+        if holding.get("archived"):
+            continue
+        c = holding.get("computed") or {}
+        value = _positive(c.get("current_value_ils"))
+        accessible_value += value
+        # Pure capital gains — realized + unrealized profit, no vesting/income-tax
+        # special-casing (unlike RSU, these are plain brokerage buys/sells).
+        base = max(0.0, float(c.get("profit_ils") or 0))
+        tax = round(base * rate, 2)
+        taxable_profit += base
+        estimated_tax += tax
+        lines.append({
+            "kind": "stock",
+            "label": holding.get("nickname") or holding.get("ticker") or "Stock",
+            "value_ils": round(value, 2),
+            "taxable_profit_ils": round(base, 2),
+            "estimated_tax_ils": tax,
+            "rate": rate,
+            "note": "25% on capital gain (realized + unrealized)",
+        })
+
     for csh in cash_out or []:
         if csh.get("archived"):
             continue
@@ -2469,6 +2766,7 @@ def compute_cashout_tax_estimate(
             "קרן השתלמות treated as fully tax-free (no maturity check)",
             "Other funds / savings policies: 25% on lifetime profit",
             "RSU/ESPP: 25% on unrealized gain of held shares",
+            "Stocks: 25% on capital gain (realized + unrealized), FIFO cost basis",
             "Cash: 0% (assumed after-tax)",
             "Pension excluded from cash-out (locked until retirement)",
             "Ignores CPI adjustment, §102 tracks, withholding, brackets, and penalties",
@@ -2489,7 +2787,7 @@ def _months_until(target_date: str) -> int:
 
 
 def compute_goal_status(goal: dict, funds_out: list, grants_out: list,
-                        espp_out: list, portfolio: dict) -> dict:
+                        espp_out: list, portfolio: dict, stocks_out: list = None) -> dict:
     """Evaluate a single savings goal against the headline Total Wealth.
 
     Projects Total Wealth forward to the goal's target month using the same
@@ -2531,9 +2829,16 @@ def compute_goal_status(goal: dict, funds_out: list, grants_out: list,
             pg = dict(plan)
             pg["projection"] = project_espp(plan, plan["computed"], horizon_g)
             espp_g.append(pg)
+        stocks_g = []
+        for holding in stocks_out or []:
+            if holding.get("archived"):
+                continue
+            hg = dict(holding)
+            hg["projection"] = project_stock(holding, holding["computed"], horizon_g)
+            stocks_g.append(hg)
         proj = compose_portfolio_projection(
             funds_g, grants_g, horizon_g, espp_g,
-            portfolio.get("cash_value_ils") or 0.0,
+            portfolio.get("cash_value_ils") or 0.0, stocks_g,
         )
         mean = (proj or {}).get("paths", {}).get("mean") or []
         projected = mean[-1] if mean else current
@@ -2638,6 +2943,30 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             out["last_synced"] = ticker_cache.get("last_synced")
             espp_plans_out.append(out)
 
+        # Stock holdings — brokerage buys/sells, Israel (TASE) + USA tickers.
+        stock_holdings_out = []
+        for holding in DATA.get("stock_holdings", []) or []:
+            computed = value_stock(holding)
+            archived = holding.get("archived")
+            projection = project_stock(holding, computed, horizon_months) if not archived else None
+            tk = holding["ticker"].upper()
+            ticker_cache = MARKET["stock_daily"].get(tk, {})
+            stock_rows = ticker_cache.get("rows", []) or []
+            purchases_sorted = sorted(holding.get("purchases", []) or [], key=lambda p: p["date"])
+            earliest_purchase = purchases_sorted[0]["date"] if purchases_sorted else None
+            cutoff = min(cutoff_6m, earliest_purchase) if earliest_purchase else cutoff_6m
+            stock_history = [
+                {"date": r["date"], "close": r["close"]}
+                for r in stock_rows if r.get("date", "") >= cutoff
+            ]
+            out = dict(holding)
+            out["computed"] = computed
+            out["projection"] = projection
+            out["stock_history"] = stock_history
+            out["analyst_target"] = analyst_targets_cache.get(tk)
+            out["last_synced"] = ticker_cache.get("last_synced")
+            stock_holdings_out.append(out)
+
         # Cash holdings — flat ILS-equivalent values; no historical/projection math.
         cash_holdings_out = []
         fx_now = (MARKET.get("fx", {}).get("USDILS", {}).get("rows") or [{}])[-1].get("close") if MARKET.get("fx", {}).get("USDILS") else None
@@ -2660,7 +2989,8 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
 
         # Portfolio aggregation (monthly resolution).
         portfolio = compose_portfolio(fund_holdings_out, rsu_grants_out, horizon_months,
-                                      assumed_annual_pct, cash_holdings_out, espp_plans_out)
+                                      assumed_annual_pct, cash_holdings_out, espp_plans_out,
+                                      stock_holdings_out)
 
         # cache freshness
         fx_entry = MARKET["fx"].get("USDILS", {})
@@ -2710,13 +3040,13 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
         goal = DATA["settings"].get("goal")
         goal_status = (
             compute_goal_status(goal, fund_holdings_out, rsu_grants_out,
-                                espp_plans_out, portfolio)
+                                espp_plans_out, portfolio, stock_holdings_out)
             if goal else None
         )
 
         cashout_tax_estimate = compute_cashout_tax_estimate(
             fund_holdings_out, rsu_grants_out, espp_plans_out,
-            cash_holdings_out, pension_holdings_out,
+            cash_holdings_out, pension_holdings_out, stock_holdings_out,
         )
 
         return {
@@ -2730,6 +3060,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             "pension_holdings": pension_holdings_out,
             "rsu_grants": rsu_grants_out,
             "espp_plans": espp_plans_out,
+            "stock_holdings": stock_holdings_out,
             "cash_holdings": cash_holdings_out,
             "portfolio": portfolio,
             "pension_summary": {
@@ -2798,20 +3129,22 @@ def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_m
     }
 
 
-def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_annual_pct=None, cash: list = None, espp: list = None) -> dict:
+def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_annual_pct=None, cash: list = None, espp: list = None, stocks: list = None) -> dict:
     espp = espp or []
+    stocks = stocks or []
     # Funds toggled off from the dashboard are excluded from the headline total,
     # the historical stack, the projection cone, and the what-if line. They stay
     # visible in the Funds section. Missing flag means included (default on).
     funds = [h for h in (funds or []) if h.get("included_in_dashboard", True)]
     # Build a unified monthly axis from earliest holding/grant/plan to today.
-    if not funds and not grants and not espp:
+    if not funds and not grants and not espp and not stocks:
         return {
             "total_value_ils": 0,
             "funds_value_ils": 0,
             "rsu_value_ils": 0,
             "espp_value_ils": 0,
             "espp_value_usd": 0,
+            "stocks_value_ils": 0,
             "cash_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
@@ -2836,6 +3169,13 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         if purchases:
             first_p = min(p["date"] for p in purchases)
             starts.append(date_period(date.fromisoformat(first_p)))
+    for holding in stocks:
+        if holding.get("archived"):
+            continue
+        purchases = holding.get("purchases", []) or []
+        if purchases:
+            first_p = min(p["date"] for p in purchases)
+            starts.append(date_period(date.fromisoformat(first_p)))
     if not starts:
         return {
             "total_value_ils": 0,
@@ -2843,6 +3183,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "rsu_value_ils": 0,
             "espp_value_ils": 0,
             "espp_value_usd": 0,
+            "stocks_value_ils": 0,
             "cash_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
@@ -2890,6 +3231,20 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             last_per_month[ym] = s
         espp_month_end.append((plan, last_per_month))
 
+    # Per-period stock-holding month-end ILS value (parallel to ESPP's pattern).
+    stocks_month_end = []
+    for holding in stocks:
+        if holding.get("archived"):
+            continue
+        ts = (holding.get("computed") or {}).get("time_series") or []
+        if not ts:
+            continue
+        last_per_month = {}
+        for s in ts:
+            ym = s["date"][:7]
+            last_per_month[ym] = s
+        stocks_month_end.append((holding, last_per_month))
+
     series = []
     for period in period_iter(start_p, end_p):
         ym = period_to_yyyymm(period)
@@ -2898,6 +3253,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         rsu_val_usd = 0.0
         espp_val_ils = 0.0
         espp_val_usd = 0.0
+        stocks_val_ils = 0.0
         for h, by_period in fund_series_by_holding:
             v = by_period.get(period)
             if v is None:
@@ -2931,7 +3287,17 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             if v:
                 espp_val_ils += v.get("value_ils") or 0
                 espp_val_usd += v.get("value_usd") or 0
-        total = funds_val + rsu_val_ils + espp_val_ils
+        for holding, last_per_month in stocks_month_end:
+            v = last_per_month.get(ym)
+            if v is None:
+                latest_ym = None
+                for k in last_per_month.keys():
+                    if k <= ym and (latest_ym is None or k > latest_ym):
+                        latest_ym = k
+                v = last_per_month.get(latest_ym)
+            if v:
+                stocks_val_ils += v.get("value_ils") or 0
+        total = funds_val + rsu_val_ils + espp_val_ils + stocks_val_ils
         series.append({
             "period": ym,
             "funds_ils": round(funds_val, 2),
@@ -2939,6 +3305,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "rsu_usd": round(rsu_val_usd, 2),
             "espp_ils": round(espp_val_ils, 2),
             "espp_usd": round(espp_val_usd, 2),
+            "stocks_ils": round(stocks_val_ils, 2),
             "total_ils": round(total, 2),
         })
 
@@ -2947,8 +3314,9 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     rsu_now_usd = sum(g["computed"]["current_value_usd"] for g in grants if not g.get("archived"))
     espp_now_ils = sum(p["computed"]["current_value_ils"] for p in espp if not p.get("archived"))
     espp_now_usd = sum(p["computed"]["current_value_usd"] for p in espp if not p.get("archived"))
+    stocks_now_ils = sum(h["computed"]["current_value_ils"] for h in stocks if not h.get("archived"))
     cash_now = sum((c.get("computed") or {}).get("value_ils", 0) for c in (cash or []) if not c.get("archived"))
-    total_now = funds_now + rsu_now_ils + espp_now_ils + cash_now
+    total_now = funds_now + rsu_now_ils + espp_now_ils + stocks_now_ils + cash_now
 
     funds_invested = sum(
         float(h["anchor_balance_ils"]) + h["computed"]["total_deposited_ils"] - h["computed"]["total_withdrawn_ils"]
@@ -2957,12 +3325,13 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     funds_profit = sum(h["computed"]["profit_ils"] for h in funds if not h.get("archived"))
     rsu_profit_ils = sum(g["computed"]["profit_ils"] for g in grants if not g.get("archived"))
     espp_profit_ils = sum(p["computed"]["profit_ils"] for p in espp if not p.get("archived"))
+    stocks_profit_ils = sum(h["computed"]["profit_ils"] for h in stocks if not h.get("archived"))
 
     employee_total = sum(h["computed"].get("total_employee_ils", 0) for h in funds if not h.get("archived"))
     employer_total = sum(h["computed"].get("total_employer_ils", 0) for h in funds if not h.get("archived"))
 
     # Portfolio projection — sum per-holding cones at each horizon step.
-    proj = compose_portfolio_projection(funds, grants, horizon_months, espp, cash_now)
+    proj = compose_portfolio_projection(funds, grants, horizon_months, espp, cash_now, stocks)
 
     # Aggregate recurring contributions across all active fund holdings, per
     # future month, so the what-if line picks them up too.
@@ -2974,13 +3343,17 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         for i, c in enumerate(contribs):
             monthly_recurring[i] += c
 
-    # What-if: growth rate applies to funds only. Cash + ESPP added flat at every
-    # future point (cash sits in bank; ESPP held flat at current value per Option A).
-    # RSU contribution is deterministic (vesting × current price × FX), folded in
-    # per month so the line reflects the same vesting curve the cone uses.
+    # What-if: growth rate applies to funds only. Cash + ESPP+Stocks added flat at
+    # every future point (cash sits in bank; ESPP/Stocks held flat at current
+    # value per Option A). RSU contribution is deterministic (vesting × current
+    # price × FX), folded in per month so the line reflects the same vesting
+    # curve the cone uses.
     rsu_per_month = (proj or {}).get("paths", {}).get("rsu_mean") or [0.0] * horizon_months
     espp_per_month = (proj or {}).get("paths", {}).get("espp_mean") or [espp_now_ils] * horizon_months
-    deterministic_per_month = [r + cash_now + e for r, e in zip(rsu_per_month, espp_per_month)]
+    stocks_per_month = (proj or {}).get("paths", {}).get("stocks_mean") or [stocks_now_ils] * horizon_months
+    deterministic_per_month = [
+        r + cash_now + e + s for r, e, s in zip(rsu_per_month, espp_per_month, stocks_per_month)
+    ]
     what_if = compose_portfolio_what_if(
         funds_now,
         assumed_annual_pct,
@@ -3000,12 +3373,14 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         "rsu_value_usd": round(rsu_now_usd, 2),
         "espp_value_ils": round(espp_now_ils, 2),
         "espp_value_usd": round(espp_now_usd, 2),
+        "stocks_value_ils": round(stocks_now_ils, 2),
         "cash_value_ils": round(cash_now, 2),
         "total_invested_ils": round(funds_invested, 2),
         "funds_profit_ils": round(funds_profit, 2),
         "rsu_profit_ils": round(rsu_profit_ils, 2),
         "espp_profit_ils": round(espp_profit_ils, 2),
-        "total_profit_ils": round(funds_profit + rsu_profit_ils + espp_profit_ils, 2),
+        "stocks_profit_ils": round(stocks_profit_ils, 2),
+        "total_profit_ils": round(funds_profit + rsu_profit_ils + espp_profit_ils + stocks_profit_ils, 2),
         "total_employee_ils": round(employee_total, 2),
         "total_employer_ils": round(employer_total, 2),
         "time_series_ils": series,
@@ -3015,12 +3390,15 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
 
 
 def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
-                                 espp: list = None, cash_now_ils: float = 0.0) -> dict:
+                                 espp: list = None, cash_now_ils: float = 0.0,
+                                 stocks: list = None) -> dict:
     espp = espp or []
+    stocks = stocks or []
     mean_path = [0.0] * horizon_months
     funds_mean = [0.0] * horizon_months
     rsu_mean = [0.0] * horizon_months
     espp_mean = [0.0] * horizon_months
+    stocks_mean = [0.0] * horizon_months
     cash_mean = [round(cash_now_ils, 2)] * horizon_months
     any_data = False
     funds_weight_total = 0.0
@@ -3064,7 +3442,17 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
         for i in range(horizon_months):
             mean_path[i] += p["paths"]["mean"][i]
             espp_mean[i] += p["paths"]["mean"][i]
-    # Cash always contributes if non-zero (even with no funds/RSU/ESPP).
+    for holding in stocks:
+        if holding.get("archived"):
+            continue
+        p = holding.get("projection")
+        if not p:
+            continue
+        any_data = True
+        for i in range(horizon_months):
+            mean_path[i] += p["paths"]["mean"][i]
+            stocks_mean[i] += p["paths"]["mean"][i]
+    # Cash always contributes if non-zero (even with no funds/RSU/ESPP/stocks).
     if cash_now_ils > 0:
         any_data = True
         for i in range(horizon_months):
@@ -3077,6 +3465,7 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
             "funds_mean": [round(v, 2) for v in funds_mean],
             "rsu_mean": [round(v, 2) for v in rsu_mean],
             "espp_mean": [round(v, 2) for v in espp_mean],
+            "stocks_mean": [round(v, 2) for v in stocks_mean],
             "cash_mean": cash_mean,
         },
         "horizon_months": horizon_months,
@@ -3820,6 +4209,203 @@ def delete_espp_sale(plan_id: str, sale_id: str) -> dict:
     return {"ok": True}
 
 
+# ── Stock holdings (brokerage buys/sells — Israel + USA) ─────────────────────
+def _native_currency_for_ticker(ticker: str) -> str:
+    """Real-world quote currency a user should enter prices in: ILS for TASE
+    (.TA) tickers, USD otherwise. Prefers the live Yahoo currency (normalizing
+    ILA agorot → ILS) over the ticker-suffix heuristic once it's cached."""
+    ticker = (ticker or "").upper()
+    cached = MARKET.get("stock_daily", {}).get(ticker, {})
+    ccy = (cached.get("currency") or "").upper()
+    if ccy in ("ILS", "ILA"):
+        return "ILS"
+    if ccy:
+        return "USD"
+    return "ILS" if ticker.endswith(".TA") else "USD"
+
+
+def add_stock_holding(payload: dict) -> dict:
+    try:
+        ticker = payload["ticker"].upper().strip()
+        if not ticker:
+            return {"ok": False, "error": "ticker required"}
+        holding = {
+            "id": str(uuid.uuid4()),
+            "created_at": now_iso(),
+            "ticker": ticker,
+            "nickname": (payload.get("nickname") or "").strip() or ticker,
+            "purchases": [],
+            "sales": [],
+            "manual_price_override": None,
+            "archived": False,
+        }
+    except (KeyError, ValueError, TypeError) as ex:
+        return {"ok": False, "error": f"Invalid holding: {ex}"}
+    # Best-effort price + analyst sync (~last 13m; first purchase will extend
+    # the window when logged).
+    try:
+        since = (date.today() - timedelta(days=400)).isoformat()
+        yahoo_fetch_stock(ticker, since)
+        if not MARKET["fx"].get("USDILS"):
+            yahoo_fetch_fx_usdils(since)
+    except Exception as ex:
+        return {"ok": False, "error": f"Could not fetch prices for {ticker}: {ex}"}
+    yahoo_fetch_analyst_target(ticker)
+    with _data_lock:
+        DATA.setdefault("stock_holdings", []).append(holding)
+        save_data()
+    return {"ok": True, "holding_id": holding["id"], "native_currency": _native_currency_for_ticker(ticker)}
+
+
+def update_stock_holding(holding_id: str, patch: dict) -> dict:
+    with _data_lock:
+        holding = next((h for h in DATA.get("stock_holdings", []) or [] if h["id"] == holding_id), None)
+        if not holding:
+            return {"ok": False, "error": "Holding not found"}
+        if "nickname" in patch:
+            holding["nickname"] = (patch["nickname"] or "").strip() or holding["ticker"]
+        if "manual_price_override" in patch:
+            v = patch["manual_price_override"]
+            if v in (None, ""):
+                holding["manual_price_override"] = None
+            else:
+                try:
+                    fv = float(v)
+                    if fv <= 0:
+                        return {"ok": False, "error": "manual_price_override must be > 0"}
+                    holding["manual_price_override"] = fv
+                except (TypeError, ValueError):
+                    return {"ok": False, "error": "Invalid manual_price_override"}
+        if "archived" in patch:
+            holding["archived"] = bool(patch["archived"])
+        save_data()
+    return {"ok": True}
+
+
+def delete_stock_holding(holding_id: str) -> dict:
+    with _data_lock:
+        holdings = DATA.get("stock_holdings", []) or []
+        for i, h in enumerate(holdings):
+            if h["id"] == holding_id:
+                holdings.pop(i)
+                DATA["stock_holdings"] = holdings
+                save_data()
+                return {"ok": True}
+    return {"ok": False, "error": "Holding not found"}
+
+
+def add_stock_purchase(holding_id: str, payload: dict) -> dict:
+    try:
+        purchase_date = payload["date"]
+        date.fromisoformat(purchase_date)
+        shares = float(payload["shares"])
+        if shares <= 0:
+            return {"ok": False, "error": "shares must be > 0"}
+        price = float(payload["price"])
+        if price <= 0:
+            return {"ok": False, "error": "price must be > 0"}
+        note = (payload.get("note") or "").strip()
+    except (KeyError, ValueError, TypeError) as ex:
+        return {"ok": False, "error": f"Invalid purchase: {ex}"}
+
+    with _data_lock:
+        holding = next((h for h in DATA.get("stock_holdings", []) or [] if h["id"] == holding_id), None)
+        if not holding:
+            return {"ok": False, "error": "Holding not found"}
+        purchase = {
+            "id": str(uuid.uuid4()),
+            "date": purchase_date,
+            "shares": shares,
+            "price": price,
+            "price_currency": _native_currency_for_ticker(holding["ticker"]),
+            "note": note,
+        }
+        holding.setdefault("purchases", []).append(purchase)
+        holding["purchases"].sort(key=lambda p: p["date"])
+        save_data()
+
+    # Best-effort: extend stock history back to the purchase date if needed.
+    try:
+        yahoo_fetch_stock(holding["ticker"], purchase_date)
+    except Exception:
+        pass
+    return {"ok": True, "purchase_id": purchase["id"]}
+
+
+def delete_stock_purchase(holding_id: str, purchase_id: str) -> dict:
+    with _data_lock:
+        holding = next((h for h in DATA.get("stock_holdings", []) or [] if h["id"] == holding_id), None)
+        if not holding:
+            return {"ok": False, "error": "Holding not found"}
+        before = len(holding.get("purchases", []))
+        holding["purchases"] = [p for p in holding.get("purchases", []) if p["id"] != purchase_id]
+        if len(holding["purchases"]) == before:
+            return {"ok": False, "error": "Purchase not found"}
+        save_data()
+    return {"ok": True}
+
+
+def add_stock_sale(holding_id: str, payload: dict) -> dict:
+    try:
+        sale_date = payload["date"]
+        date.fromisoformat(sale_date)
+        shares = float(payload["shares_sold"])
+        if shares <= 0:
+            return {"ok": False, "error": "shares_sold must be > 0"}
+        price = float(payload["price"])
+        if price <= 0:
+            return {"ok": False, "error": "price must be > 0"}
+    except (KeyError, ValueError, TypeError) as ex:
+        return {"ok": False, "error": f"Invalid sale: {ex}"}
+
+    with _data_lock:
+        holding = next((h for h in DATA.get("stock_holdings", []) or [] if h["id"] == holding_id), None)
+        if not holding:
+            return {"ok": False, "error": "Holding not found"}
+        # Validate against held shares on sale date (FIFO-agnostic — just a
+        # running total, matching the ESPP sale-validation pattern).
+        purchased_to_date = sum(
+            float(p.get("shares") or 0) for p in holding.get("purchases", []) or []
+            if p["date"] <= sale_date
+        )
+        sold_to_date = sum(
+            float(s.get("shares_sold") or 0) for s in holding.get("sales", []) or []
+            if s["date"] <= sale_date
+        )
+        available = purchased_to_date - sold_to_date
+        if shares > available + 1e-6:  # tiny float slack
+            return {
+                "ok": False,
+                "error": f"Cannot sell {shares} on {sale_date}: only {round(available, 4)} available "
+                         f"(purchased {round(purchased_to_date, 4)}, already sold {round(sold_to_date, 4)}).",
+            }
+        sale = {
+            "id": str(uuid.uuid4()),
+            "date": sale_date,
+            "shares_sold": shares,
+            "price": price,
+            "price_currency": _native_currency_for_ticker(holding["ticker"]),
+            "note": (payload.get("note") or "").strip(),
+        }
+        holding.setdefault("sales", []).append(sale)
+        holding["sales"].sort(key=lambda s: s["date"])
+        save_data()
+    return {"ok": True, "sale_id": sale["id"]}
+
+
+def delete_stock_sale(holding_id: str, sale_id: str) -> dict:
+    with _data_lock:
+        holding = next((h for h in DATA.get("stock_holdings", []) or [] if h["id"] == holding_id), None)
+        if not holding:
+            return {"ok": False, "error": "Holding not found"}
+        before = len(holding.get("sales", []))
+        holding["sales"] = [s for s in holding.get("sales", []) if s["id"] != sale_id]
+        if len(holding["sales"]) == before:
+            return {"ok": False, "error": "Sale not found"}
+        save_data()
+    return {"ok": True}
+
+
 # ── Cash / non-invested holdings ─────────────────────────────────────────────
 _VALID_CASH_CCY = ("ILS", "USD")
 
@@ -4162,6 +4748,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             limit = int((qs.get("limit") or ["10"])[0])
             try:
                 hits = yahoo_search_ticker(q, limit=limit)
+                self._json(200, {"ok": True, "results": hits})
+            except Exception as ex:
+                self._json(200, {"ok": False, "error": str(ex)})
+            return
+
+        if path == "/api/stocks/tickers/search":
+            q = (qs.get("q") or [""])[0]
+            limit = int((qs.get("limit") or ["10"])[0])
+            try:
+                hits = yahoo_search_ticker(q, limit=limit, extra_exchanges=("TLV",))
                 self._json(200, {"ok": True, "results": hits})
             except Exception as ex:
                 self._json(200, {"ok": False, "error": str(ex)})
@@ -4540,6 +5136,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method == "DELETE" and path.startswith("/api/espp-plans/"):
                 pid = path.rsplit("/", 1)[-1]
                 self._json(200, delete_espp_plan(pid))
+                return
+
+            # Stock holdings
+            if method == "POST" and path == "/api/stock-holdings":
+                self._json(200, add_stock_holding(body))
+                return
+            if method == "PATCH" and path.startswith("/api/stock-holdings/") and "/" not in path[len("/api/stock-holdings/"):]:
+                hid = path.rsplit("/", 1)[-1]
+                self._json(200, update_stock_holding(hid, body))
+                return
+            if method == "POST" and path.startswith("/api/stock-holdings/") and path.endswith("/purchases"):
+                hid = path.split("/")[3]
+                self._json(200, add_stock_purchase(hid, body))
+                return
+            if method == "DELETE" and path.startswith("/api/stock-holdings/") and "/purchases/" in path:
+                parts = path.strip("/").split("/")
+                if len(parts) == 5 and parts[3] == "purchases":
+                    self._json(200, delete_stock_purchase(parts[2], parts[4]))
+                    return
+            if method == "POST" and path.startswith("/api/stock-holdings/") and path.endswith("/sales"):
+                hid = path.split("/")[3]
+                self._json(200, add_stock_sale(hid, body))
+                return
+            if method == "DELETE" and path.startswith("/api/stock-holdings/") and "/sales/" in path:
+                parts = path.strip("/").split("/")
+                if len(parts) == 5 and parts[3] == "sales":
+                    self._json(200, delete_stock_sale(parts[2], parts[4]))
+                    return
+            if method == "DELETE" and path.startswith("/api/stock-holdings/"):
+                hid = path.rsplit("/", 1)[-1]
+                self._json(200, delete_stock_holding(hid))
                 return
 
             if method == "POST" and path == "/api/settings":
