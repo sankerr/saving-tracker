@@ -40,7 +40,6 @@
   --color-funds: #6E5FE0;
   --color-rsu: #2FB8B8;
   --color-espp: #D9803F;
-  --color-stocks: #3D7FE0;
   --color-cash: #9C9BB4;
   --radius-sm: 6px;
   --radius-md: 12px;
@@ -59,7 +58,7 @@
   --color-danger: #F87171;
   /* Brand/chart hues stay at their original dark-mode values (base :root now
      carries the light-tuned variants). */
-  --color-accent: #4DCDCD; --color-rsu: #4DCDCD; --color-espp: #E0975F; --color-stocks: #5B9BFF; --color-cash: #B0AFC2;
+  --color-accent: #4DCDCD; --color-rsu: #4DCDCD; --color-espp: #E0975F; --color-cash: #B0AFC2;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.2);
   --shadow-md: 0 1px 2px rgb(0 0 0 / 0.2), 0 2px 8px rgb(0 0 0 / 0.25);
   --shadow-lg: 0 1px 2px rgb(0 0 0 / 0.2), 0 4px 16px rgb(0 0 0 / 0.3), 0 12px 32px rgb(0 0 0 / 0.25);
@@ -633,7 +632,6 @@ html[dir="rtl"] .collapse-section[open] > .collapse-summary::before { transform:
 .badge--rsu { background: rgb(77 205 205 / 0.12); color: var(--color-accent); }
 .badge--funds { background: rgb(110 95 224 / 0.10); color: var(--color-primary); }
 .badge--espp { background: rgb(224 151 95 / 0.14); color: var(--color-espp); }
-.badge--stocks { background: rgb(61 127 224 / 0.12); color: var(--color-stocks); }
 .badge--lookback { background: rgb(31 138 76 / 0.12); color: var(--color-success); }
 .form-checkbox { display: inline-flex; align-items: center; gap: 0.45rem; cursor: pointer; }
 .form-checkbox input[type="checkbox"] { width: 14px; height: 14px; cursor: pointer; }
@@ -2069,32 +2067,6 @@ html[dir="rtl"] .chat-panel {
     </div>
   </section>
 
-  <section class="card" id="stocks-card">
-    <div class="card__header">
-      <h2><span data-i18n="section.stocks">Stocks</span> <span class="h2-count" id="stocks-count">0</span> <button class="help-btn" data-help="stocks" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.stocks.title" title="What is this section?" aria-label="About Stocks">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-stock-btn" data-i18n="stocks.add">+ Add stock</button>
-    </div>
-    <div id="stocks-list" class="holdings-list"></div>
-    <div id="add-stock-panel" class="add-panel" hidden>
-      <div class="field-grid">
-        <div class="field" style="grid-column: 1 / -1">
-          <label for="stock-ticker-search" data-i18n="stocks.tickerSearch">Ticker (Israel/TASE or USA — search by symbol or company name)</label>
-          <input type="text" id="stock-ticker-search" data-i18n-placeholder="stocks.tickerSearchPlaceholder" placeholder="apple, AAPL, TEVA.TA, ICL.TA…" autocomplete="off">
-          <div id="stock-ticker-results"></div>
-          <div id="stock-ticker-selected" hidden style="margin-top:0.4rem"></div>
-        </div>
-        <div class="field">
-          <label for="stock-nickname" data-i18n="common.nickname">Nickname</label>
-          <input type="text" id="stock-nickname" data-i18n-placeholder="stocks.nicknamePlaceholder" placeholder="Interactive Brokers">
-        </div>
-      </div>
-      <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-stock-cancel" data-i18n="common.cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-stock-save" data-i18n="common.save">Save</button>
-      </div>
-    </div>
-  </section>
-
   <section class="card" id="cash-card">
     <div class="card__header">
       <h2><span data-i18n="section.cash">Cash &amp; non-invested</span> <span class="h2-count" id="cash-count">0</span> <button class="help-btn" data-help="cash" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.cash.title" title="What is this section?" aria-label="About Cash">?</button></h2>
@@ -2254,10 +2226,6 @@ const fmtILSPrec = new Intl.NumberFormat('he-IL', {style: 'currency', currency: 
 const fmtUSD = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 0});
 const fmtUSDPrec = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 2});
 const fmtNum = new Intl.NumberFormat('en-US');
-// Stock holdings can be native ILS (TASE) or native USD (US tickers) — pick
-// the right formatter pair per holding instead of hardcoding USD like RSU/ESPP.
-function fmtNative(currency) { return currency === 'ILS' ? fmtILS : fmtUSD; }
-function fmtNativePrec(currency) { return currency === 'ILS' ? fmtILSPrec : fmtUSDPrec; }
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('he-IL') : '—';
 
 // Fixed purple — readable on both light and dark backgrounds (not theme-dependent).
@@ -2401,7 +2369,7 @@ function clearPortfolioUi() {
   if (dataMonth) { dataMonth.textContent = ''; dataMonth.hidden = true; }
   document.getElementById('range-summary').hidden = true;
   document.getElementById('range-reset').hidden = true;
-  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'stocks-list', 'cash-list'].forEach((id) => {
+  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
   });
@@ -2609,7 +2577,7 @@ function setDashboardSkeleton(on) {
   });
   const wrap = document.querySelector('#dashboard-card .chart-wrap');
   if (wrap) wrap.classList.toggle('chart-wrap--skel', on);
-  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'stocks-list', 'cash-list'].forEach((id) => {
+  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (on) {
@@ -2759,7 +2727,6 @@ function renderAll() {
   renderPension();
   renderRSU();
   renderESPP();
-  renderStocks();
   renderCash();
   renderSettings();
   syncNavBadges();
@@ -2782,9 +2749,6 @@ function renderDashboard() {
                 `${t('label.rsu')} <strong>${fmtUSD.format(rsuUSD)}</strong> ≈ <strong>${fmtILS.format(p.rsu_value_ils || 0)}</strong>`;
   if ((p.espp_value_ils || 0) > 0 || esppUSD > 0) {
     subline += ` · ${t('label.espp')} <strong>${fmtUSD.format(esppUSD)}</strong> ≈ <strong>${fmtILS.format(p.espp_value_ils || 0)}</strong>`;
-  }
-  if ((p.stocks_value_ils || 0) > 0) {
-    subline += ` · ${t('label.stocks')} <strong>${fmtILS.format(p.stocks_value_ils || 0)}</strong>`;
   }
   if ((p.cash_value_ils || 0) > 0) {
     subline += ` · ${t('label.cash')} <strong>${fmtILS.format(p.cash_value_ils)}</strong>`;
@@ -2915,7 +2879,6 @@ function renderAllocation() {
     { label: t('section.funds'), val: +p.funds_value_ils || 0, color: '#6E5FE0' },
     { label: t('section.rsu'),   val: +p.rsu_value_ils   || 0, color: '#00B8B8' },
     { label: t('section.espp'),  val: +p.espp_value_ils  || 0, color: '#B565D8' },
-    { label: t('section.stocks'), val: +p.stocks_value_ils || 0, color: '#3D7FE0' },
     { label: t('section.cash'),  val: +p.cash_value_ils  || 0, color: '#1F8A4C' },
   ].filter((c) => c.val > 0);
   const total = cats.reduce((s, c) => s + c.val, 0);
@@ -3063,14 +3026,12 @@ function drawDashboardChart() {
   const histFunds = [];
   const histRsu = [];
   const histEspp = [];
-  const histStocks = [];
   for (const s of histSeries) {
     if (s.period < currentMonthLabel) {
       histLabels.push(s.period);
       histFunds.push(s.funds_ils || 0);
       histRsu.push(s.rsu_ils || 0);
       histEspp.push(s.espp_ils || 0);
-      histStocks.push(s.stocks_ils || 0);
     }
   }
 
@@ -3088,12 +3049,10 @@ function drawDashboardChart() {
   const todayFunds = p.funds_value_ils || 0;
   const todayRsu = p.rsu_value_ils || 0;
   const todayEspp = p.espp_value_ils || 0;
-  const todayStocks = p.stocks_value_ils || 0;
   const todayCash = p.cash_value_ils || 0;
   const projFundsMean = (proj && proj.paths && proj.paths.funds_mean) ? proj.paths.funds_mean : [];
   const projRsuMean = (proj && proj.paths && proj.paths.rsu_mean) ? proj.paths.rsu_mean : [];
   const projEsppMean = (proj && proj.paths && proj.paths.espp_mean) ? proj.paths.espp_mean : [];
-  const projStocksMean = (proj && proj.paths && proj.paths.stocks_mean) ? proj.paths.stocks_mean : [];
   const projCashMean = (proj && proj.paths && proj.paths.cash_mean) ? proj.paths.cash_mean : [];
   const wf = p.what_if;
   // When what-if is active, drive the Funds stack from per-holding what-if paths
@@ -3115,17 +3074,15 @@ function drawDashboardChart() {
   }
   const rsuFuture = projRsuMean.length ? projRsuMean : Array(horizonMonths).fill(0);
   const esppFuture = projEsppMean.length ? projEsppMean : Array(horizonMonths).fill(todayEspp);
-  const stocksFuture = projStocksMean.length ? projStocksMean : Array(horizonMonths).fill(todayStocks);
   const cashFuture = projCashMean.length ? projCashMean : Array(horizonMonths).fill(todayCash);
 
   const labels = [...histLabels, ...futureLabels];
   const fundsData = [...histFunds, todayFunds, ...fundsFuture];
   const rsuData = [...histRsu, todayRsu, ...rsuFuture];
   const esppData = [...histEspp, todayEspp, ...esppFuture];
-  const stocksData = [...histStocks, todayStocks, ...stocksFuture];
   // Cash is flat across every spot — sits at the bottom of the stack.
   const cashData = [...histLabels.map(_ => todayCash), todayCash, ...cashFuture];
-  const totalData = fundsData.map((v, i) => v + (rsuData[i] || 0) + (esppData[i] || 0) + (stocksData[i] || 0) + (cashData[i] || 0));
+  const totalData = fundsData.map((v, i) => v + (rsuData[i] || 0) + (esppData[i] || 0) + (cashData[i] || 0));
 
   // What-if line — only future portion, anchored at today's chart total.
   let whatIfData = [];
@@ -3140,7 +3097,7 @@ function drawDashboardChart() {
     whatIfLabel = t('chart.ifFundsGrow', { pct: wf.annual_pct });
   }
 
-  // Historical projection total — sum of per-holding projection means (funds + RSU + ESPP + Stocks + cash).
+  // Historical projection total — sum of per-holding projection means (funds + RSU + ESPP + cash).
   let projMeanData = [];
   let projMeanLabel = null;
   if (proj && proj.paths && proj.paths.mean && proj.paths.mean.length) {
@@ -3201,7 +3158,6 @@ function drawDashboardChart() {
         { label: wf && wf.annual_pct != null ? t('chart.fundsAtRate', { pct: wf.annual_pct }) : t('label.funds'), data: fundsData, borderColor: 'rgba(110,95,224,1)', backgroundColor: 'rgba(110,95,224,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
         { label: t('label.rsu'), data: rsuData, borderColor: 'rgba(77,205,205,1)', backgroundColor: 'rgba(77,205,205,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
         { label: t('label.espp'), data: esppData, borderColor: 'rgba(224,151,95,1)', backgroundColor: 'rgba(224,151,95,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
-        { label: t('label.stocks'), data: stocksData, borderColor: 'rgba(61,127,224,1)', backgroundColor: 'rgba(61,127,224,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
         ...(whatIfData.length ? [{
           label: whatIfLabel,
           data: whatIfData,
@@ -3256,7 +3212,7 @@ function updateRangeSummary() {
   const box = document.getElementById('range-summary');
   if (!DASH_CHART) { box.hidden = true; return; }
   const labels = DASH_CHART.data.labels;
-  // Total = sum of all stacked component datasets (Cash + Funds + RSU + ESPP + Stocks).
+  // Total = sum of all stacked component datasets (Cash + Funds + RSU + ESPP).
   // Match on the stack id (not translated labels) so it works in any language.
   const stacks = DASH_CHART.data.datasets.filter(d => d.stack === 'a');
   const total = labels.map((_, i) => stacks.reduce((sum, d) => sum + (d.data[i] || 0), 0));
@@ -4330,13 +4286,6 @@ function drawDetailChart(canvasId, item, kind) {
   if (kind === 'fund') {
     labels = ts.map(p => periodLabel(p.period));
     dataActual = ts.map(p => p.value_ils);
-  } else if (kind === 'stocks') {
-    // Stocks — monthly downsample of native-currency value (₪ for TASE, $ for US).
-    const byMonth = {};
-    for (const p of ts) byMonth[p.date.slice(0,7)] = p;
-    const months = Object.keys(byMonth).sort();
-    labels = months;
-    dataActual = months.map(m => byMonth[m].value_native);
   } else {
     // RSU / ESPP — monthly downsample of USD value
     const byMonth = {};
@@ -4372,9 +4321,7 @@ function drawDetailChart(canvasId, item, kind) {
   if (proj) {
     const projVals = kind === 'fund'
       ? proj.paths.mean.slice()
-      : kind === 'stocks'
-        ? proj.paths.mean.map(v => v * (item.computed.native_per_ils_rate || 1))
-        : proj.paths.mean.map(v => v / (item.computed.current_usdils || 1));
+      : proj.paths.mean.map(v => v / (item.computed.current_usdils || 1));
     if (labels.length) {
       // Anchor the projection's first point at the last historical value so the
       // dashed projection line joins the actual line instead of starting one
@@ -4388,9 +4335,8 @@ function drawDetailChart(canvasId, item, kind) {
     projMeanArr = [];
   }
   const dataPadded = [...dataActual, ...Array(projLabels.length).fill(null)];
-  const stocksCcy = kind === 'stocks' ? (item.computed.native_currency || 'USD') : null;
-  const fmt = kind === 'fund' ? fmtILS : (kind === 'stocks' ? fmtNative(stocksCcy) : fmtUSD);
-  const fmtP = kind === 'fund' ? fmtILSPrec : (kind === 'stocks' ? fmtNativePrec(stocksCcy) : fmtUSDPrec);
+  const fmt = kind === 'fund' ? fmtILS : fmtUSD;
+  const fmtP = kind === 'fund' ? fmtILSPrec : fmtUSDPrec;
 
   // Future-vesting line for RSU (USD on the USD axis); align to allLabels
   let futureVestArr = [];
@@ -4456,7 +4402,7 @@ function drawDetailChart(canvasId, item, kind) {
     data: {
       labels: allLabels,
       datasets: [
-        { label: t('chart.value'), data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : (kind === 'stocks' ? 'rgba(61,127,224,1)' : 'rgba(77,205,205,1)')), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : (kind === 'stocks' ? 'rgba(61,127,224,0.18)' : 'rgba(77,205,205,0.18)')), fill: 'origin', tension: 0.25, pointRadius: 0 },
+        { label: t('chart.value'), data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : 'rgba(77,205,205,1)'), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : 'rgba(77,205,205,0.18)'), fill: 'origin', tension: 0.25, pointRadius: 0 },
         { label: projMeanLabel, data: projMeanArr, borderColor: PROJECTION_MEAN_COLOR, backgroundColor: PROJECTION_MEAN_FILL, borderDash: [6,4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0 },
         ...(futureVestArr.length ? [{
           label: t('chart.vestingAtToday'),
@@ -4520,314 +4466,6 @@ function drawSparkline(elId, values) {
   const color = lastSign === 'pos' ? 'rgb(31,138,76)' : 'rgb(192,57,43)';
   el.setAttribute('viewBox', `0 0 ${W} ${H}`);
   el.innerHTML = `<polyline fill="none" stroke="${color}" stroke-width="1.5" points="${points}"/>`;
-}
-
-// ── Stocks ──
-function renderStocks() {
-  const list = document.getElementById('stocks-list');
-  const holdings = (APP.stock_holdings || [])
-    .filter(h => !h.archived)
-    .slice()
-    .sort((a, b) => (b.computed?.current_value_ils || 0) - (a.computed?.current_value_ils || 0));
-  document.getElementById('stocks-count').textContent = holdings.length;
-  if (!holdings.length) {
-    list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.stocks.title'))}</strong>${escapeHtml(t('empty.stocks.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-stock-btn">${escapeHtml(t('stocks.add'))}</button></div></div>`;
-    return;
-  }
-  list.innerHTML = holdings.map(h => renderStockRow(h)).join('');
-  holdings.forEach(h => {
-    drawSparkline(`spark-stock-${h.id}`, (h.computed.time_series || []).map(s => s.value_ils));
-    if (EXPANDED.has(`stock:${h.id}`)) {
-      drawDetailChart(`detail-stock-${h.id}`, h, 'stocks');
-      drawStockHistoryChart(`detail-stock-hist-${h.id}`, h);
-    }
-  });
-}
-
-function renderStockRow(holding) {
-  const c = holding.computed || {};
-  const ccy = c.native_currency || 'USD';
-  const fmtN = fmtNative(ccy);
-  const expanded = EXPANDED.has(`stock:${holding.id}`);
-  const archivedBadge = holding.archived ? `<span class="badge badge--archived">${t('badge.archived')}</span>` : '';
-  const noDataBadge = c.no_data ? `<span class="badge badge--pending">${t('badge.noPriceData')}</span>` : '';
-  const overrideBadge = holding.manual_price_override != null ? `<span class="badge">${t('stocks.manualOverrideBadge')}</span>` : '';
-  const purchaseCount = (holding.purchases || []).length;
-  const saleCount = (holding.sales || []).length;
-  const profit = c.profit_native || 0;
-  const profitClass = profit >= 0 ? 'success' : 'danger';
-  const profitSign = profit >= 0 ? '+' : '';
-  return `
-  <div class="holding-row" data-id="${holding.id}" data-archived="${!!holding.archived}" data-expanded="${expanded}">
-    <div class="holding-row__head" data-toggle="stock:${holding.id}">
-      <div>
-        <p class="holding-row__title">${escapeHtml(holding.nickname || holding.ticker)} <span class="badge badge--stocks">${escapeHtml(holding.ticker)}</span> ${noDataBadge} ${overrideBadge} ${archivedBadge}</p>
-        <p class="holding-row__sub" dir="auto">
-          <span>${t('espp.sharesHeldSub', { n: fmtNum.format(c.shares_held_now || 0) })}</span>
-          <span class="holding-row__sub-sep">·</span>
-          <span>${(purchaseCount === 1 ? t('espp.purchaseCount', { n: purchaseCount }) : t('espp.purchaseCountPlural', { n: purchaseCount }))} · ${(saleCount === 1 ? t('espp.saleCount', { n: saleCount }) : t('espp.saleCountPlural', { n: saleCount }))}</span>
-        </p>
-      </div>
-      <svg class="holding-row__sparkline" id="spark-stock-${holding.id}"></svg>
-      <div style="text-align:right">
-        <div class="holding-row__value">${fmtN.format(c.current_value_native || 0)}</div>
-        <div class="holding-row__value-sub">≈ ${fmtILS.format(c.current_value_ils || 0)}</div>
-        <div class="holding-row__value-sub" style="color: var(--color-${profitClass})">${profitSign}${fmtN.format(profit)} / ${profitSign}${fmtILS.format(c.profit_ils || 0)}</div>
-        <span class="holding-row__chev">▾</span>
-      </div>
-    </div>
-    ${expanded ? renderStockDetail(holding) : ''}
-  </div>`;
-}
-
-function renderStockDetail(holding) {
-  const c = holding.computed || {};
-  const ccy = c.native_currency || 'USD';
-  const fmtN = fmtNative(ccy);
-  const fmtNPrec = fmtNativePrec(ccy);
-  const ccySymbol = ccy === 'ILS' ? '₪' : '$';
-  const purchases = (holding.purchases || []).slice().sort((a, b) => a.date.localeCompare(b.date));
-  const sales = (holding.sales || []).slice().sort((a, b) => a.date.localeCompare(b.date));
-  const cbPerShare = c.cost_basis_per_share_native;
-  const hint = c.current_price_native != null
-    ? t('stocks.lastCloseHint', { symbol: ccySymbol, price: fmtNPrec.format(c.current_price_native) })
-    : '';
-  return `
-  <div class="holding-row__detail">
-    <dl class="detail-grid">
-      <div><dt>${t('espp.currentPrice')}</dt><dd>${c.current_price_native ? fmtNPrec.format(c.current_price_native) : '—'} <small>${escapeHtml(holding.ticker)}</small></dd></div>
-      <div><dt>${t('stocks.nativeCurrency')}</dt><dd>${escapeHtml(ccy)}</dd></div>
-      <div><dt>${t('stocks.totalInvested')}</dt><dd>${fmtN.format(c.total_invested_native || 0)} <small>≈ ${fmtILS.format(c.total_invested_ils || 0)}</small></dd></div>
-      <div><dt>${t('espp.sharesAcquired')}</dt><dd>${fmtNum.format(c.shares_acquired_total || 0)}</dd></div>
-      <div><dt>${t('espp.heldSold')}</dt><dd>${fmtNum.format(c.shares_held_now || 0)} / ${fmtNum.format(c.shares_sold_total || 0)}</dd></div>
-      <div><dt>${t('espp.costBasisHeld')}</dt><dd>${fmtNPrec.format(c.cost_basis_total_native || 0)} <small>${cbPerShare ? fmtNPrec.format(cbPerShare) + '/sh' : ''}</small></dd></div>
-      <div><dt>${t('espp.realizedGain')}</dt><dd>${fmtN.format(c.realized_gain_native || 0)} / ${fmtILS.format(c.realized_gain_ils || 0)}</dd></div>
-      <div><dt>${t('espp.unrealizedGain')}</dt><dd>${fmtN.format(c.unrealized_gain_native || 0)} / ${fmtILS.format(c.unrealized_gain_ils || 0)}</dd></div>
-      <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(holding.last_synced)}</dd></div>
-    </dl>
-    <p class="chart-caption">${t('stocks.detailCaption')}</p>
-    <div class="chart-wrap chart-wrap--small"><canvas id="detail-stock-${holding.id}"></canvas></div>
-
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${escapeHtml(t('rsu.forecastHeading', { ticker: holding.ticker }))} <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">${t('stocks.forecastSub')}</span></h3>
-    <p class="chart-caption" id="stock-hist-summary-${holding.id}" style="margin-bottom:0.4rem"></p>
-    <div class="chart-wrap chart-wrap--small"><canvas id="detail-stock-hist-${holding.id}"></canvas></div>
-
-    <div class="field" style="max-width:16rem;margin:1rem 0">
-      <label for="stock-override-${holding.id}">${t('stocks.manualOverride')} (${ccySymbol})</label>
-      <input type="number" id="stock-override-${holding.id}" min="0" step="0.0001" value="${holding.manual_price_override != null ? holding.manual_price_override : ''}" placeholder="${t('stocks.manualOverridePlaceholder')}">
-      <p class="chart-caption" style="margin:0.35rem 0 0">${hint}</p>
-      <div class="actions-row" style="margin-top:0.5rem">
-        <button class="btn btn--ghost btn--small" data-set-stock-override="${holding.id}">${t('common.save')}</button>
-        ${holding.manual_price_override != null ? `<button class="btn btn--ghost btn--small" data-clear-stock-override="${holding.id}">${t('stocks.clearOverride')}</button>` : ''}
-      </div>
-    </div>
-
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('espp.purchases')} <span class="h2-count">${purchases.length}</span></h3>
-    ${purchases.length ? `<div style="overflow-x:auto"><table class="event-table">
-      <thead><tr><th>${t('table.date')}</th><th>${t('table.shares')}</th><th>${t('table.buyPrice')}</th><th>${t('table.note')}</th><th></th></tr></thead>
-      <tbody>${purchases.map(p => `<tr>
-        <td>${p.date}</td>
-        <td>${fmtNum.format(p.shares)}</td>
-        <td>${fmtNativePrec(p.price_currency || ccy).format(p.price)}</td>
-        <td dir="auto">${escapeHtml(p.note || '')}</td>
-        <td><button class="btn btn--danger btn--small" data-del-stock-purchase="${holding.id}:${p.id}" title="${escapeHtml(t('espp.deletePurchaseTitle'))}">×</button></td>
-      </tr>`).join('')}</tbody>
-    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('espp.noPurchases')}</p>`}
-    <div class="event-form">
-      <div class="field"><label>${t('table.date')}</label><input type="date" id="sp-date-${holding.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>${t('stocks.shares')}</label><input type="number" id="sp-shares-${holding.id}" min="0.0001" step="0.0001" placeholder="10"></div>
-      <div class="field"><label>${t('stocks.buyPrice')} (${ccySymbol})</label><input type="number" id="sp-price-${holding.id}" min="0.0001" step="0.0001" placeholder="${c.current_price_native ? c.current_price_native.toFixed(2) : ''}"></div>
-      <div class="field"><label>${t('common.note')}</label><input type="text" id="sp-note-${holding.id}"></div>
-      <button class="btn btn--primary btn--small" data-add-stock-purchase="${holding.id}">${t('stocks.logPurchase')}</button>
-      <span></span>
-    </div>
-    <p class="chart-caption" style="margin:0.35rem 0 0.75rem">${hint}</p>
-
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('rsu.sales')} <span class="h2-count">${sales.length}</span></h3>
-    ${sales.length ? `<div style="overflow-x:auto"><table class="event-table">
-      <thead><tr><th>${t('table.date')}</th><th>${t('table.shares')}</th><th>${t('table.salePrice')}</th><th>${t('table.proceeds')}</th><th>${t('table.note')}</th><th></th></tr></thead>
-      <tbody>${sales.map(s => `<tr>
-        <td>${s.date}</td>
-        <td>${fmtNum.format(s.shares_sold)}</td>
-        <td>${fmtNativePrec(s.price_currency || ccy).format(s.price)}</td>
-        <td><strong>${fmtNative(s.price_currency || ccy).format(s.shares_sold * s.price)}</strong></td>
-        <td dir="auto">${escapeHtml(s.note || '')}</td>
-        <td><button class="btn btn--danger btn--small" data-del-stock-sale="${holding.id}:${s.id}">×</button></td>
-      </tr>`).join('')}</tbody>
-    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('rsu.noSales')}</p>`}
-    <div class="event-form">
-      <div class="field"><label>${t('table.date')}</label><input type="date" id="ss-date-${holding.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>${t('rsu.sharesToSell')}</label><input type="number" id="ss-shares-${holding.id}" min="0.0001" step="0.0001" placeholder="max ${(c.shares_held_now || 0).toFixed(4)}"></div>
-      <div class="field"><label>${t('stocks.sellPrice')} (${ccySymbol})</label><input type="number" id="ss-price-${holding.id}" min="0.0001" step="0.0001" placeholder="${c.current_price_native ? c.current_price_native.toFixed(2) : ''}"></div>
-      <div class="field"><label>${t('common.note')}</label><input type="text" id="ss-note-${holding.id}"></div>
-      <button class="btn btn--primary btn--small" data-add-stock-sale="${holding.id}">${t('rsu.sell')}</button>
-      <span></span>
-    </div>
-
-    <div class="actions-row" style="margin-top:1rem">
-      <button class="btn btn--ghost btn--small" data-edit-stock="${holding.id}">${t('action.editPlan')}</button>
-      <button class="btn btn--ghost btn--small" data-archive-stock="${holding.id}">${holding.archived ? t('action.unarchive') : t('action.archive')}</button>
-      <button class="btn btn--danger btn--small" data-delete-stock="${holding.id}">${t('action.deletePlan')}</button>
-    </div>
-  </div>`;
-}
-
-function drawStockHistoryChart(canvasId, holding) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx) return;
-  if (DETAIL_CHARTS[canvasId]) DETAIL_CHARTS[canvasId].destroy();
-  const c = holding.computed || {};
-  const ccy = c.native_currency || 'USD';
-  const fmtNPrec = fmtNativePrec(ccy);
-  const dailyRows = holding.stock_history || [];
-  const summaryEl = document.getElementById(`stock-hist-summary-${holding.id}`);
-
-  if (!dailyRows.length) {
-    ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
-    if (summaryEl) {
-      summaryEl.innerHTML = `<span style="color:var(--color-muted)">${escapeHtml(t('chart.noHistory', { ticker: holding.ticker }))}</span>`;
-    }
-    return;
-  }
-
-  // Yahoo's raw close is in the market's quoting unit (agorot for .TA
-  // tickers) — normalize to the holding's native currency (₪/$) for display,
-  // matching backend normalize_native_to_ils's ÷100 for ILA.
-  const isAgorot = ccy === 'ILS' && holding.ticker.toUpperCase().endsWith('.TA');
-  const toNative = (v) => isAgorot ? v / 100.0 : v;
-
-  const histLabels = dailyRows.map(r => r.date);
-  const histData = dailyRows.map(r => toNative(r.close));
-  const currentClose = histData[histData.length - 1];
-
-  const FORECAST_COLUMNS = 42;
-  const todayIso = histLabels[histLabels.length - 1];
-  const todayDate = new Date(todayIso + 'T00:00:00Z');
-  const horizonEnd = new Date(todayDate);
-  horizonEnd.setUTCMonth(horizonEnd.getUTCMonth() + 12);
-  const horizonMs = horizonEnd.getTime() - todayDate.getTime();
-  const futureLabels = [];
-  for (let i = 1; i <= FORECAST_COLUMNS; i++) {
-    const d = new Date(todayDate.getTime() + (horizonMs * i / FORECAST_COLUMNS));
-    futureLabels.push(d.toISOString().slice(0, 10));
-  }
-  const allLabels = [...histLabels, ...futureLabels];
-  const histPadded = [...histData, ...new Array(FORECAST_COLUMNS).fill(null)];
-
-  const datasets = [
-    { label: t('chart.close', { ticker: holding.ticker }), data: histPadded,
-      borderColor: 'rgba(61,127,224,1)',
-      backgroundColor: 'rgba(61,127,224,0.10)', fill: 'origin',
-      tension: 0.1, pointRadius: 0, pointHoverRadius: 4,
-      pointHoverBackgroundColor: 'rgba(61,127,224,1)', borderWidth: 1.5 },
-  ];
-
-  const purchases = (holding.purchases || []).slice().sort((a, b) => a.date.localeCompare(b.date));
-  const markerData = new Array(allLabels.length).fill(null);
-  let anyMarker = false;
-  purchases.forEach((p) => {
-    let i = histLabels.indexOf(p.date);
-    if (i < 0) i = histLabels.findIndex(d => d >= p.date);
-    if (i >= 0) {
-      markerData[i] = histData[i];
-      anyMarker = true;
-    }
-  });
-  if (anyMarker) {
-    datasets.push({
-      label: t('chart.purchaseDates', { n: purchases.length }),
-      data: markerData,
-      borderColor: 'rgba(183,110,0,1)',
-      backgroundColor: 'rgba(183,110,0,1)',
-      pointRadius: 5, pointHoverRadius: 6,
-      showLine: false,
-    });
-  }
-
-  const tg = holding.analyst_target;
-  if (tg && tg.target_mean != null && ccy === 'USD') {
-    // Analyst targets are USD-only (Yahoo doesn't provide them reliably for
-    // TASE tickers); skip the forecast overlay for ILS-native holdings.
-    const histLen = histLabels.length;
-    const anchorIdx = histLen - 1;
-    const endIdx = allLabels.length - 1;
-    const buildForecastLine = (endValue) => {
-      const arr = new Array(allLabels.length).fill(null);
-      arr[anchorIdx] = currentClose;
-      arr[endIdx] = endValue;
-      return arr;
-    };
-    if (tg.target_low != null) {
-      datasets.push({
-        label: t('chart.analystLow', { value: fmtNPrec.format(tg.target_low) }),
-        data: buildForecastLine(tg.target_low),
-        borderColor: 'rgba(31,138,76,0.55)',
-        borderDash: [3, 3], borderWidth: 1,
-        fill: false, spanGaps: true, pointRadius: 0, tension: 0,
-      });
-    }
-    if (tg.target_high != null) {
-      datasets.push({
-        label: t('chart.analystHigh', { value: fmtNPrec.format(tg.target_high) }),
-        data: buildForecastLine(tg.target_high),
-        borderColor: 'rgba(31,138,76,0.55)',
-        backgroundColor: 'rgba(31,138,76,0.12)',
-        borderDash: [3, 3], borderWidth: 1,
-        fill: tg.target_low != null ? '-1' : false,
-        spanGaps: true, pointRadius: 0, tension: 0,
-      });
-    }
-    const nAnalysts = tg.num_analysts ? t('chart.analystsCount', { n: tg.num_analysts }) : t('chart.consensus');
-    datasets.push({
-      label: t('chart.analystMean', { value: fmtNPrec.format(tg.target_mean), analysts: nAnalysts }),
-      data: buildForecastLine(tg.target_mean),
-      borderColor: 'rgba(31,138,76,1)',
-      borderDash: [6, 3], borderWidth: 1.75,
-      fill: false, spanGaps: true, pointRadius: 0, tension: 0,
-    });
-  }
-
-  if (summaryEl) {
-    const parts = [
-      `<strong style="color:rgba(61,127,224,1)">●</strong> ${t('chart.currentClose')} <strong>${fmtNPrec.format(currentClose)}</strong>`,
-    ];
-    if (anyMarker) {
-      parts.push(`<strong style="color:rgba(183,110,0,1)">●</strong> ${purchases.length === 1 ? t('chart.purchaseMarked', { n: purchases.length }) : t('chart.purchasesMarked', { n: purchases.length })}`);
-    }
-    if (tg && tg.target_mean != null && ccy === 'USD') {
-      const delta = tg.target_mean - currentClose;
-      const sign = delta >= 0 ? '+' : '';
-      const pct = currentClose ? (delta / currentClose) * 100 : 0;
-      const range = (tg.target_low != null && tg.target_high != null)
-        ? ` <span style="color:var(--color-muted)">${t('chart.rangeAnalysts', { low: fmtNPrec.format(tg.target_low), high: fmtNPrec.format(tg.target_high), n: tg.num_analysts || '?' })}</span>`
-        : '';
-      parts.push(`<strong style="color:rgba(31,138,76,1)">●</strong> ${t('chart.analystTargetSummary')} <strong>${fmtNPrec.format(tg.target_mean)}</strong> <span style="color:var(--color-muted)">${t('chart.vsCurrent', { sign, pct: pct.toFixed(1) })}</span>${range}`);
-    } else {
-      parts.push(`<span style="color:var(--color-muted)">${escapeHtml(t('chart.noAnalystTarget', { ticker: holding.ticker }))}</span>`);
-    }
-    summaryEl.innerHTML = parts.join(' &nbsp;·&nbsp; ');
-  }
-
-  DETAIL_CHARTS[canvasId] = new Chart(ctx.getContext('2d'), {
-    type: 'line',
-    data: { labels: allLabels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 12 } },
-        y: { ticks: { callback: (v) => fmtNPrec.format(v) } },
-      },
-      plugins: {
-        legend: { display: true, position: 'bottom', labels: { font: { size: 11 } } },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${fmtNPrec.format(ctx.parsed.y || 0)}`,
-          },
-        },
-      },
-    },
-  });
 }
 
 // ── Cash ──
@@ -4895,7 +4533,6 @@ const HELP_TITLE_KEYS = {
   'retirement-sim': 'help.retirementSim.title',
   rsu: 'help.rsu.title',
   espp: 'help.espp.title',
-  stocks: 'help.stocks.title',
   cash: 'help.cash.title',
   settings: 'help.settings.title',
 };
@@ -4907,7 +4544,6 @@ const HELP_BODY_KEYS = {
   'retirement-sim': 'help.retirementSim.body',
   rsu: 'help.rsu.body',
   espp: 'help.espp.body',
-  stocks: 'help.stocks.body',
   cash: 'help.cash.body',
   settings: 'help.settings.body',
 };
@@ -5001,18 +4637,6 @@ const HELP_CONTENT = {
       <p><strong>Sales</strong>: same shape as RSU sales (FIFO across purchase lots). Tick "Auto-sell at period end" on the purchase form for a sell-immediately strategy — it auto-creates a paired sale.</p>
       <p><strong>Forecast on the main chart</strong>: ESPP holdings show as <em>flat at current value</em> across the horizon (no assumption that you keep contributing). To stop tracking, archive the plan.</p>
       <p>Tax: discount is taxed as ordinary income in Israel; long-term holding under §102 capital-gains track moves the appreciation portion to 25%. <strong>The app does not compute Israeli tax.</strong></p>
-    `,
-  },
-  stocks: {
-    title: 'About Stocks',
-    body: `
-      <p>Track brokerage buys/sells of individual <strong>Israeli (TASE)</strong> and <strong>USA</strong> stocks — separate from equity compensation (RSU/ESPP).</p>
-      <p>Search by ticker or company name (TASE tickers end in <code>.TA</code>, e.g. <code>TEVA.TA</code>). Prices are fetched automatically from Yahoo Finance and cached daily, same as RSU/ESPP.</p>
-      <p><strong>Currency</strong>: every price you enter — purchases, sales, and the manual override — is always in the stock's real-world currency: <strong>₪ (ILS)</strong> for TASE tickers, <strong>$ (USD)</strong> for US tickers. You never enter agorot, even though Israeli brokers sometimes quote in agorot — a live "Yahoo last close" hint next to each price field helps you sanity-check the number before saving.</p>
-      <p><strong>Cost basis</strong> uses FIFO across purchase lots, same as RSU/ESPP sales — the oldest shares are considered sold first.</p>
-      <p><strong>Manual price override</strong>: if Yahoo's price looks stale or wrong, set an override (in the same native currency) to use for valuation instead. Clear it to go back to the live Yahoo price.</p>
-      <p><strong>Forecast on the main chart</strong>: like ESPP, stock holdings show as <em>flat at current value</em> across the horizon — no growth assumption is baked in.</p>
-      <p>No dividend tracking. <strong>The app does not compute Israeli tax</strong> — the tax estimate uses a flat capital-gains rate on unrealized profit as a rough approximation only.</p>
     `,
   },
   cash: {
@@ -5928,19 +5552,6 @@ function init() {
   document.getElementById('add-espp-save').addEventListener('click', saveESPPPlan);
   setupESPPTickerSearch();
 
-  // ── Add Stock holding flow ──
-  document.getElementById('add-stock-btn').addEventListener('click', () => {
-    const panel = document.getElementById('add-stock-panel');
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden) document.getElementById('stock-ticker-search').focus();
-  });
-  document.getElementById('add-stock-cancel').addEventListener('click', () => {
-    document.getElementById('add-stock-panel').hidden = true;
-    resetAddStock();
-  });
-  document.getElementById('add-stock-save').addEventListener('click', saveStockHolding);
-  setupStockTickerSearch();
-
   const insightRefresh = document.getElementById('ai-insight-refresh');
   if (insightRefresh) insightRefresh.addEventListener('click', () => loadInsights(true));
   document.getElementById('settings-btn').addEventListener('click', openSettings);
@@ -6538,120 +6149,6 @@ function init() {
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
-
-    // ── Stocks handlers ──
-    const addStockBuyBtn = e.target.closest('[data-add-stock-purchase]');
-    if (addStockBuyBtn) {
-      const hid = addStockBuyBtn.dataset.addStockPurchase;
-      const date = document.getElementById(`sp-date-${hid}`).value;
-      const shares = +document.getElementById(`sp-shares-${hid}`).value;
-      const price = +document.getElementById(`sp-price-${hid}`).value;
-      const note = document.getElementById(`sp-note-${hid}`).value;
-      if (!date || !shares || !price) { toast(t('toast.purchaseSharesPriceRequired'), 'error'); return; }
-      const j = await api('POST', `/api/stock-holdings/${hid}/purchases`, { date, shares, price, note });
-      if (j.ok) { toast(t('toast.purchaseLogged'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const delStockBuyBtn = e.target.closest('[data-del-stock-purchase]');
-    if (delStockBuyBtn) {
-      const [hid, pid] = delStockBuyBtn.dataset.delStockPurchase.split(':');
-      const ok = await modalConfirm({
-        title: t('modal.deletePurchase.title'),
-        description: t('modal.deleteStockPurchase.desc'),
-        okLabel: t('action.delete'),
-        danger: true,
-      });
-      if (!ok) return;
-      const j = await api('DELETE', `/api/stock-holdings/${hid}/purchases/${pid}`);
-      if (j.ok) { toast(t('toast.purchaseDeleted'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const addStockSaleBtn = e.target.closest('[data-add-stock-sale]');
-    if (addStockSaleBtn) {
-      const hid = addStockSaleBtn.dataset.addStockSale;
-      const date = document.getElementById(`ss-date-${hid}`).value;
-      const shares = +document.getElementById(`ss-shares-${hid}`).value;
-      const price = +document.getElementById(`ss-price-${hid}`).value;
-      const note = document.getElementById(`ss-note-${hid}`).value;
-      if (!date || !shares || !price) { toast(t('toast.saleSharesPriceRequired'), 'error'); return; }
-      const j = await api('POST', `/api/stock-holdings/${hid}/sales`, { date, shares_sold: shares, price, note });
-      if (j.ok) { toast(t('toast.saleRecorded'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const delStockSaleBtn = e.target.closest('[data-del-stock-sale]');
-    if (delStockSaleBtn) {
-      const [hid, sid] = delStockSaleBtn.dataset.delStockSale.split(':');
-      const ok = await modalConfirm({
-        title: t('modal.deleteSale.title'),
-        description: t('modal.deleteSale.desc'),
-        okLabel: t('action.delete'),
-        danger: true,
-      });
-      if (!ok) return;
-      const j = await api('DELETE', `/api/stock-holdings/${hid}/sales/${sid}`);
-      if (j.ok) { toast(t('toast.saleDeleted'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const setStockOverrideBtn = e.target.closest('[data-set-stock-override]');
-    if (setStockOverrideBtn) {
-      const hid = setStockOverrideBtn.dataset.setStockOverride;
-      const raw = document.getElementById(`stock-override-${hid}`).value.trim();
-      const j = await api('PATCH', `/api/stock-holdings/${hid}`, { manual_price_override: raw === '' ? null : +raw });
-      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const clearStockOverrideBtn = e.target.closest('[data-clear-stock-override]');
-    if (clearStockOverrideBtn) {
-      const hid = clearStockOverrideBtn.dataset.clearStockOverride;
-      const j = await api('PATCH', `/api/stock-holdings/${hid}`, { manual_price_override: null });
-      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const editStockBtn = e.target.closest('[data-edit-stock]');
-    if (editStockBtn) {
-      const id = editStockBtn.dataset.editStock;
-      const holding = APP.stock_holdings.find(x => x.id === id);
-      const newName = await modalPrompt({
-        title: t('modal.editStock.title'),
-        label: t('common.nickname'),
-        value: holding.nickname || '',
-      });
-      if (newName === null) return;
-      const j = await api('PATCH', `/api/stock-holdings/${id}`, { nickname: newName });
-      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const archiveStockBtn = e.target.closest('[data-archive-stock]');
-    if (archiveStockBtn) {
-      const id = archiveStockBtn.dataset.archiveStock;
-      const holding = APP.stock_holdings.find(x => x.id === id);
-      const j = await api('PATCH', `/api/stock-holdings/${id}`, { archived: !holding.archived });
-      if (j.ok) { toast(holding.archived ? t('toast.unarchived') : t('toast.archived'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
-    const delStockBtn = e.target.closest('[data-delete-stock]');
-    if (delStockBtn) {
-      const id = delStockBtn.dataset.deleteStock;
-      const ok = await modalConfirm({
-        title: t('modal.deleteStock.title'),
-        description: t('modal.deleteStock.desc'),
-        okLabel: t('action.delete'),
-        danger: true,
-      });
-      if (!ok) return;
-      const j = await api('DELETE', `/api/stock-holdings/${id}`);
-      if (j.ok) { toast(t('toast.stockDeleted'), 'info'); fetchData(); }
-      else toast(j.error || t('common.failed'), 'error');
-      return;
-    }
   });
 }
 
@@ -7081,87 +6578,6 @@ async function saveESPPPlan() {
     toast(t('toast.esppAdded'), 'info');
     document.getElementById('add-espp-panel').hidden = true;
     resetAddESPP();
-    fetchData();
-  } else {
-    toast(j.error || t('common.failed'), 'error');
-    setStatus('error', j.error || t('status.addFailed'));
-  }
-}
-
-// ── Add Stock holding flow ──
-let SELECTED_STOCK_TICKER = null;
-let stockTickerSearchTimer = null;
-function setupStockTickerSearch() {
-  const inp = document.getElementById('stock-ticker-search');
-  if (!inp) return;
-  inp.addEventListener('input', () => {
-    clearTimeout(stockTickerSearchTimer);
-    const q = inp.value.trim();
-    SELECTED_STOCK_TICKER = null;
-    document.getElementById('stock-ticker-selected').hidden = true;
-    if (!q) { document.getElementById('stock-ticker-results').innerHTML = ''; return; }
-    stockTickerSearchTimer = setTimeout(async () => {
-      const j = await api('GET', `/api/stocks/tickers/search?q=${encodeURIComponent(q)}&limit=10`);
-      const box = document.getElementById('stock-ticker-results');
-      if (!j.ok) { box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || t('search.failed'))}</div>`; return; }
-      const hits = j.results || [];
-      if (!hits.length) { box.innerHTML = `<div class="empty-state">${t('search.noMatches')}</div>`; return; }
-      box.innerHTML = `<div class="search-results">${hits.map(h => `
-        <div class="search-results__item" data-symbol="${escapeHtml(h.symbol)}">
-          <div class="search-results__title">${escapeHtml(h.symbol)} <span style="color:var(--color-muted); font-weight:400; font-size:0.8125rem">· ${escapeHtml(h.name)}</span></div>
-          <div class="search-results__sub">
-            <span>${escapeHtml(h.type || '')}</span>
-            ${h.exchange ? `<span>·</span><span>${escapeHtml(h.exchange)}</span>` : ''}
-          </div>
-        </div>`).join('')}</div>`;
-      box.querySelectorAll('[data-symbol]').forEach(el => {
-        el.addEventListener('click', () => {
-          const sym = el.dataset.symbol;
-          SELECTED_STOCK_TICKER = hits.find(h => h.symbol === sym);
-          renderSelectedStockTicker();
-        });
-      });
-    }, 280);
-  });
-}
-function renderSelectedStockTicker() {
-  const box = document.getElementById('stock-ticker-selected');
-  document.getElementById('stock-ticker-results').innerHTML = '';
-  if (!SELECTED_STOCK_TICKER) { box.hidden = true; return; }
-  box.hidden = false;
-  box.innerHTML = `<span class="selected-pill">${escapeHtml(SELECTED_STOCK_TICKER.symbol)} · ${escapeHtml(SELECTED_STOCK_TICKER.name)}<button class="selected-pill__clear" id="stock-ticker-clear" title="${escapeHtml(t('search.clear'))}">×</button></span>`;
-  document.getElementById('stock-ticker-clear').addEventListener('click', () => {
-    SELECTED_STOCK_TICKER = null;
-    document.getElementById('stock-ticker-search').value = '';
-    renderSelectedStockTicker();
-  });
-  if (!document.getElementById('stock-nickname').value) {
-    document.getElementById('stock-nickname').value = SELECTED_STOCK_TICKER.name || SELECTED_STOCK_TICKER.symbol;
-  }
-}
-function resetAddStock() {
-  SELECTED_STOCK_TICKER = null;
-  document.getElementById('stock-ticker-search').value = '';
-  document.getElementById('stock-ticker-results').innerHTML = '';
-  document.getElementById('stock-ticker-selected').hidden = true;
-  document.getElementById('stock-nickname').value = '';
-}
-async function saveStockHolding() {
-  let ticker = SELECTED_STOCK_TICKER ? SELECTED_STOCK_TICKER.symbol : '';
-  if (!ticker) {
-    const raw = document.getElementById('stock-ticker-search').value.trim().toUpperCase();
-    if (raw && /^[A-Z0-9.\-^=]{1,12}$/.test(raw)) ticker = raw;
-  }
-  if (!ticker) { toast(t('toast.pickTicker'), 'error'); return; }
-  const nickname = document.getElementById('stock-nickname').value.trim();
-  document.getElementById('add-stock-save').disabled = true;
-  setStatus('pending', t('status.addingStock'));
-  const j = await api('POST', '/api/stock-holdings', { ticker, nickname });
-  document.getElementById('add-stock-save').disabled = false;
-  if (j.ok) {
-    toast(t('toast.stockAdded'), 'info');
-    document.getElementById('add-stock-panel').hidden = true;
-    resetAddStock();
     fetchData();
   } else {
     toast(j.error || t('common.failed'), 'error');

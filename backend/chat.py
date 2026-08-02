@@ -37,7 +37,7 @@ def _gemini_model() -> str:
 
 
 SYSTEM_PROMPT = """You are a helpful assistant inside Saving Tracker, a personal Israeli portfolio notebook.
-You receive a compact JSON summary of the user's holdings (קופות גמל / השתלמות via gemelnet, pension via pensia-net, RSU, ESPP, brokerage Stocks (Israel/TASE + USA), cash).
+You receive a compact JSON summary of the user's holdings (קופות גמל / השתלמות via gemelnet, pension via pensia-net, RSU, ESPP, cash).
 
 Backend capabilities (use tools — do not invent math):
 - project_portfolio: runs the same server projection as the app dashboard (compose_state / what-if).
@@ -66,7 +66,7 @@ Savings goal questions (e.g. "am I on pace?", "how far from my goal?", "what's m
 1. Prefer savings_goal in the portfolio JSON when present and configured.
 2. For an explicit pace/gap check, call evaluate_savings_goal.
 3. Explain using returned numbers only: progress_pct, projected_value_ils at target_date, on_pace, gap_ils.
-4. Note the basis: historical fund averages; headline Total Wealth (funds+RSU+ESPP+Stocks+cash); pension excluded.
+4. Note the basis: historical fund averages; headline Total Wealth (funds+RSU+ESPP+cash); pension excluded.
 5. You cannot set or clear the goal — tell the user to use the dashboard goal strip / Set a goal modal (POST /api/settings).
 
 Cash-out / tax questions (e.g. "how much tax if I cash out everything?"):
@@ -109,8 +109,6 @@ BACKEND_API_CATALOG = {
         "GET /api/tickers/search",
         "CRUD /api/rsu-grants (+ sales)",
         "CRUD /api/espp-plans (+ purchases/sales)",
-        "GET /api/stocks/tickers/search (includes TASE/.TA)",
-        "CRUD /api/stock-holdings (+ purchases/sales) — brokerage buys/sells, Israel + USA",
         "CRUD /api/cash",
     ],
     "chat": [
@@ -118,7 +116,7 @@ BACKEND_API_CATALOG = {
         "POST /api/chat — this assistant; may call project_portfolio, query_portfolio_history, or evaluate_savings_goal",
     ],
     "projection_rules": {
-        "what_if_annual_pct": "Compounds funds (and pension what-if) at assumed %; cash+ESPP+Stocks flat; RSU vesting curve at current price/FX",
+        "what_if_annual_pct": "Compounds funds (and pension what-if) at assumed %; cash+ESPP flat; RSU vesting curve at current price/FX",
         "historical_default": "Without assumed %, funds use historical average monthly return from gemelnet/pensia",
         "horizon_cap_months": HORIZON_CAP_MONTHS,
         "pension": "Excluded from dashboard total; surfaced separately in pension_summary",
@@ -167,7 +165,7 @@ TOOLS = [
                 "name": "query_portfolio_history",
                 "description": (
                     "Return real historical monthly portfolio totals and month-over-month changes "
-                    "(dashboard-style: funds + RSU + ESPP + Stocks + cash; pension excluded). "
+                    "(dashboard-style: funds + RSU + ESPP + cash; pension excluded). "
                     "Includes change_from_prev_* (balance delta), net_external_flow_ils (fund deposits − withdrawals), "
                     "and investment_return_* (balance delta minus fund flows). "
                     "Use investment_return_* for profit/yield; do not treat deposits as profit."
@@ -210,7 +208,7 @@ TOOLS = [
 ]
 
 GOAL_BASIS_NOTE = (
-    "historical fund averages; Total Wealth (funds+RSU+ESPP+Stocks+cash); pension excluded"
+    "historical fund averages; Total Wealth (funds+RSU+ESPP+cash); pension excluded"
 )
 
 
@@ -296,22 +294,6 @@ def _espp_summary(p: dict) -> dict:
         "current_value_ils": _round_or_none(computed.get("current_value_ils")),
         "current_value_usd": _round_or_none(computed.get("current_value_usd")),
         "purchase_count": len(p.get("purchases") or []),
-    }
-
-
-def _stock_summary(h: dict) -> dict:
-    computed = h.get("computed") or {}
-    return {
-        "kind": "stock",
-        "nickname": h.get("nickname") or h.get("ticker"),
-        "ticker": h.get("ticker"),
-        "native_currency": computed.get("native_currency"),
-        "archived": bool(h.get("archived")),
-        "shares_held_now": _round_or_none(computed.get("shares_held_now"), 4),
-        "current_value_ils": _round_or_none(computed.get("current_value_ils")),
-        "current_value_native": _round_or_none(computed.get("current_value_native")),
-        "profit_ils": _round_or_none(computed.get("profit_ils")),
-        "purchase_count": len(h.get("purchases") or []),
     }
 
 
@@ -415,10 +397,9 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         funds = _round_or_none(s.get("funds_ils")) or 0.0
         rsu = _round_or_none(s.get("rsu_ils")) or 0.0
         espp = _round_or_none(s.get("espp_ils")) or 0.0
-        stocks = _round_or_none(s.get("stocks_ils")) or 0.0
         subtotal = _round_or_none(s.get("total_ils"))
         if subtotal is None:
-            subtotal = round(funds + rsu + espp + stocks, 2)
+            subtotal = round(funds + rsu + espp, 2)
         total = round(subtotal + cash_now, 2)
         change_ils = round(total - prev_total, 2) if prev_total is not None else None
         change_pct = None
@@ -448,7 +429,6 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
             "funds_ils": funds,
             "rsu_ils": rsu,
             "espp_ils": espp,
-            "stocks_ils": stocks,
             "cash_ils": cash_now,
             "change_from_prev_ils": change_ils,
             "change_from_prev_pct": change_pct,
@@ -500,7 +480,7 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         "latest_yield_month": latest_yield_month,
         "note": (
             "Real history from holdings + synced monthly yields. Matches dashboard total "
-            "(funds+RSU+ESPP+Stocks+cash). Cash uses today's amount for all past months. Pension excluded. "
+            "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded. "
             "change_from_prev_* = total balance MoM delta. "
             "investment_return_* = change_from_prev minus fund net_external_flow_ils "
             "(deposits − withdrawals). Do not call balance growth 'profit' when flows are large. "
@@ -537,11 +517,6 @@ def build_portfolio_context(state: dict) -> dict:
         for p in (state.get("espp_plans") or [])
         if not p.get("archived")
     ]
-    stocks = [
-        _stock_summary(h)
-        for h in (state.get("stock_holdings") or [])
-        if not h.get("archived")
-    ]
     cash = [_cash_summary(c) for c in (state.get("cash_holdings") or [])]
 
     monthly_history = _build_monthly_history(state)
@@ -562,7 +537,6 @@ def build_portfolio_context(state: dict) -> dict:
             "funds_value_ils": _round_or_none(portfolio.get("funds_value_ils")),
             "rsu_value_ils": _round_or_none(portfolio.get("rsu_value_ils")),
             "espp_value_ils": _round_or_none(portfolio.get("espp_value_ils")),
-            "stocks_value_ils": _round_or_none(portfolio.get("stocks_value_ils")),
             "cash_value_ils": _round_or_none(portfolio.get("cash_value_ils")),
             "note": "Dashboard total excludes pension (tracked separately).",
         },
@@ -578,7 +552,6 @@ def build_portfolio_context(state: dict) -> dict:
             "pensions": pensions,
             "rsu": rsus,
             "espp": espps,
-            "stocks": stocks,
             "cash": cash,
         },
         "monthly_history": monthly_history,
@@ -593,7 +566,6 @@ def _insight_slots_hint(portfolio: dict, monthly_history: dict, goal_status: Any
         ("funds", float(portfolio.get("funds_value_ils") or 0)),
         ("rsu", float(portfolio.get("rsu_value_ils") or 0)),
         ("espp", float(portfolio.get("espp_value_ils") or 0)),
-        ("stocks", float(portfolio.get("stocks_value_ils") or 0)),
         ("cash", float(portfolio.get("cash_value_ils") or 0)),
     ]
     sleeves = [(k, v) for k, v in sleeves if v > 0]
@@ -755,7 +727,6 @@ def summarize_projection_state(
                 _path_end(paths.get("funds_mean")),
                 _path_end(paths.get("rsu_mean")),
                 _path_end(paths.get("espp_mean")),
-                _path_end(paths.get("stocks_mean")),
             ]
             cash_now = _round_or_none(portfolio.get("cash_value_ils")) or 0.0
             if any(p is not None for p in parts):
@@ -764,7 +735,7 @@ def summarize_projection_state(
                     2,
                 )
         notes.append(
-            "No assumed_annual_pct: funds use historical average monthly returns; cash+ESPP+Stocks flat; RSU vesting curve."
+            "No assumed_annual_pct: funds use historical average monthly returns; cash+ESPP flat; RSU vesting curve."
         )
         if proj.get("funds_annual_pct") is not None:
             notes.append(
@@ -790,7 +761,6 @@ def summarize_projection_state(
             "funds_value_ils": _round_or_none(portfolio.get("funds_value_ils")),
             "rsu_value_ils": _round_or_none(portfolio.get("rsu_value_ils")),
             "espp_value_ils": _round_or_none(portfolio.get("espp_value_ils")),
-            "stocks_value_ils": _round_or_none(portfolio.get("stocks_value_ils")),
             "cash_value_ils": _round_or_none(portfolio.get("cash_value_ils")),
         },
         "projected": {
