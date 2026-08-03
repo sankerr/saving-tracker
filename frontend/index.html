@@ -2069,7 +2069,7 @@ html[dir="rtl"] .chat-panel {
 
   <section class="card" id="bank-investments-card">
     <div class="card__header">
-      <h2><span data-i18n="section.bankInvestments">השקעות בבנק</span> <span class="h2-count" id="bank-investments-count">0</span> <button class="help-btn" data-help="bankInvestments" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.bankInvestments.title" title="מה זה החלק הזה?" aria-label="על השקעות בבנק">?</button></h2>
+      <h2><span data-i18n="section.bankInvestments">ניירות ערך</span> <span class="h2-count" id="bank-investments-count">0</span> <button class="help-btn" data-help="bankInvestments" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.bankInvestments.title" title="מה זה החלק הזה?" aria-label="על ניירות ערך">?</button></h2>
       <button class="btn btn--primary btn--small" id="add-bank-investment-btn" data-i18n="bankInvestments.add">+ הוספת השקעה</button>
     </div>
     <div id="bank-investments-list" class="holdings-list"></div>
@@ -4596,87 +4596,99 @@ function renderBankInvestments() {
     list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.bankInvestments.title'))}</strong>${escapeHtml(t('empty.bankInvestments.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-bank-investment-btn">${escapeHtml(t('bankInvestments.add'))}</button></div></div>`;
     return;
   }
-  list.innerHTML = items.map(h => {
-    const cv = h.computed || {};
-    const title = h.nickname || h.fund_name_snapshot || h.fund_id;
-    const priceBit = cv.unit_price_ils != null
-      ? t('bankInvestments.priceSub', {
-          price: fmtILSPrec.format(cv.unit_price_ils),
-          units: Number(cv.units || h.units || 0).toLocaleString(undefined, { maximumFractionDigits: 6 }),
-          date: cv.price_date || '—',
-        })
-      : t('bankInvestments.noPrice');
-    const lastM = cv.last_month_return_pct;
-    const ytd = cv.ytd_return_pct;
-    const ytdYear = cv.ytd_year;
-    const returnsBit = [
-      lastM != null ? `${t('row.last')} ${fmtPctSigned(lastM / 100)}` : null,
-      ytd != null ? `YTD${ytdYear ? ' ' + ytdYear : ''} ${fmtPctSigned(ytd)}` : null,
-    ].filter(Boolean).join(` <span class="holding-row__sub-sep">·</span> `);
-    const projCanvasId = `detail-tase-${h.id}`;
-    const events = (h.events || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-    return `
-    <div class="holding-row" data-id="${h.id}">
-      <div class="holding-row__head" style="cursor:default">
-        <div>
-          <p class="holding-row__title" dir="auto">${escapeHtml(title)} <span class="badge">${escapeHtml(String(h.fund_id))}</span></p>
-          <p class="holding-row__sub" dir="auto">${escapeHtml(priceBit)}${returnsBit ? ` <span class="holding-row__sub-sep">·</span> ${returnsBit}` : ''}</p>
-        </div>
-        <svg class="holding-row__sparkline" id="spark-tase-${h.id}"></svg>
-        <div style="text-align:right">
-          <div class="holding-row__value">${cv.value_ils != null ? fmtILS.format(cv.value_ils) : '—'}</div>
-          <div class="actions-row" style="justify-content:flex-end; gap:0.25rem; margin-top:0.4rem">
-            <button class="btn btn--ghost btn--small" data-edit-bank-investment="${h.id}">${t('bankInvestments.editLabel')}</button>
-            <button class="btn btn--danger btn--small" data-delete-bank-investment="${h.id}">${t('action.delete')}</button>
-          </div>
-        </div>
-      </div>
-      <div class="holding-row__detail" style="padding:0.75rem 1rem 1rem">
-        <p class="chart-caption projection-mean-caption" data-projection-caption-for="${projCanvasId}" hidden></p>
-        <div class="chart-wrap" style="height:220px"><canvas id="${projCanvasId}"></canvas></div>
-
-        <details class="collapse-section"${events.length ? '' : ' open'}>
-        <summary class="collapse-summary">${t('detail.events')} <span class="h2-count">${events.length}</span></summary>
-        ${events.length ? `<div style="overflow-x:auto"><table class="event-table">
-          <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('bankInvestments.units')}</th><th>${t('table.note')}</th><th></th></tr></thead>
-          <tbody>${events.map(e => `
-            <tr>
-              <td>${escapeHtml(e.date || '')}</td>
-              <td>${escapeHtml(bankEventKindLabel(e.kind))}</td>
-              <td><strong>${Number(e.units || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</strong></td>
-              <td dir="auto">${escapeHtml(e.note || '')}</td>
-              <td><button class="btn btn--danger btn--small" data-del-bank-event="${h.id}:${e.id}">×</button></td>
-            </tr>`).join('')}</tbody>
-        </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noEvents')}</p>`}
-        </details>
-        <div class="event-form">
-          <div class="field"><label>${t('table.date')}</label><input type="date" id="bank-ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-          <div class="field"><label>${t('common.kind')}</label><select id="bank-ev-kind-${h.id}">
-            <option value="buy">${t('bankInvestments.ev.kind.buy')}</option>
-            <option value="sell">${t('bankInvestments.ev.kind.sell')}</option>
-            <option value="correction">${t('bankInvestments.ev.kind.correction')}</option>
-          </select></div>
-          <div class="field"><label>${t('bankInvestments.units')}</label><input type="number" id="bank-ev-units-${h.id}" min="0" step="any"></div>
-          <div class="field"><label>${t('common.note')}</label><input type="text" id="bank-ev-note-${h.id}"></div>
-          <button class="btn btn--primary btn--small" data-add-bank-event="${h.id}">${t('common.add')}</button>
-          <span></span>
-        </div>
-        <p class="chart-caption">${t('bankInvestments.eventCaption')}</p>
-      </div>
-    </div>`;
-  }).join('');
+  list.innerHTML = items.map(h => renderBankInvestmentRow(h)).join('');
   requestAnimationFrame(() => {
     items.forEach(h => {
       drawSparkline(`spark-tase-${h.id}`, (h.computed?.time_series || []).map(p => p.value_ils));
-      drawDetailChart(`detail-tase-${h.id}`, h, 'tase');
+      if (EXPANDED.has(`tase:${h.id}`)) {
+        drawDetailChart(`detail-tase-${h.id}`, h, 'tase');
+      }
     });
   });
+}
+
+function renderBankInvestmentRow(h) {
+  const cv = h.computed || {};
+  const expanded = EXPANDED.has(`tase:${h.id}`);
+  const title = h.nickname || h.fund_name_snapshot || h.fund_id;
+  const priceBit = cv.unit_price_ils != null
+    ? t('bankInvestments.priceSub', {
+        price: fmtILSPrec.format(cv.unit_price_ils),
+        units: Number(cv.units || h.units || 0).toLocaleString(undefined, { maximumFractionDigits: 6 }),
+        date: cv.price_date || '—',
+      })
+    : t('bankInvestments.noPrice');
+  const lastM = cv.last_month_return_pct;
+  const ytd = cv.ytd_return_pct;
+  const ytdYear = cv.ytd_year;
+  const returnsBit = [
+    lastM != null ? `${t('row.last')} ${fmtPctSigned(lastM / 100)}` : null,
+    ytd != null ? `YTD${ytdYear ? ' ' + ytdYear : ''} ${fmtPctSigned(ytd)}` : null,
+  ].filter(Boolean).join(` <span class="holding-row__sub-sep">·</span> `);
+  return `
+  <div class="holding-row" data-id="${h.id}" data-archived="${!!h.archived}" data-expanded="${expanded}">
+    <div class="holding-row__head" data-toggle="tase:${h.id}">
+      <div>
+        <p class="holding-row__title" dir="auto">${escapeHtml(title)} <span class="badge">${escapeHtml(String(h.fund_id))}</span></p>
+        <p class="holding-row__sub" dir="auto">${escapeHtml(priceBit)}${returnsBit ? ` <span class="holding-row__sub-sep">·</span> ${returnsBit}` : ''}</p>
+      </div>
+      <svg class="holding-row__sparkline" id="spark-tase-${h.id}"></svg>
+      <div style="text-align:right">
+        <div class="holding-row__value">${cv.value_ils != null ? fmtILS.format(cv.value_ils) : '—'}</div>
+        <span class="holding-row__chev">▾</span>
+      </div>
+    </div>
+    ${expanded ? renderBankInvestmentDetail(h) : ''}
+  </div>`;
+}
+
+function renderBankInvestmentDetail(h) {
+  const events = (h.events || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const projCanvasId = `detail-tase-${h.id}`;
+  return `
+  <div class="holding-row__detail">
+    <p class="chart-caption projection-mean-caption" data-projection-caption-for="${projCanvasId}" hidden></p>
+    <div class="chart-wrap" style="height:220px"><canvas id="${projCanvasId}"></canvas></div>
+
+    <details class="collapse-section"${events.length ? '' : ' open'}>
+    <summary class="collapse-summary">${t('detail.events')} <span class="h2-count">${events.length}</span></summary>
+    ${events.length ? `<div style="overflow-x:auto"><table class="event-table">
+      <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('bankInvestments.units')}</th><th>${t('table.note')}</th><th></th></tr></thead>
+      <tbody>${events.map(e => `
+        <tr>
+          <td>${escapeHtml(e.date || '')}</td>
+          <td>${escapeHtml(bankEventKindLabel(e.kind))}</td>
+          <td><strong>${Number(e.units || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</strong></td>
+          <td dir="auto">${escapeHtml(e.note || '')}</td>
+          <td><button class="btn btn--danger btn--small" data-del-bank-event="${h.id}:${e.id}">×</button></td>
+        </tr>`).join('')}</tbody>
+    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noEvents')}</p>`}
+    </details>
+    <div class="event-form">
+      <div class="field"><label>${t('table.date')}</label><input type="date" id="bank-ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>${t('common.kind')}</label><select id="bank-ev-kind-${h.id}">
+        <option value="buy">${t('bankInvestments.ev.kind.buy')}</option>
+        <option value="sell">${t('bankInvestments.ev.kind.sell')}</option>
+        <option value="correction">${t('bankInvestments.ev.kind.correction')}</option>
+      </select></div>
+      <div class="field"><label>${t('bankInvestments.units')}</label><input type="number" id="bank-ev-units-${h.id}" min="0" step="any"></div>
+      <div class="field"><label>${t('common.note')}</label><input type="text" id="bank-ev-note-${h.id}"></div>
+      <button class="btn btn--primary btn--small" data-add-bank-event="${h.id}">${t('common.add')}</button>
+      <span></span>
+    </div>
+    <p class="chart-caption">${t('bankInvestments.eventCaption')}</p>
+
+    <div class="actions-row" style="margin-top:1rem">
+      <button class="btn btn--ghost btn--small" data-edit-bank-investment="${h.id}">${t('bankInvestments.editLabel')}</button>
+      <button class="btn btn--danger btn--small" data-delete-bank-investment="${h.id}">${t('action.delete')}</button>
+    </div>
+  </div>`;
 }
 
 function redrawBankInvestmentCharts() {
   if (!APP) return;
   (APP.tase_fund_holdings || []).filter((h) => !h.archived).forEach((h) => {
-    if (document.getElementById(`detail-tase-${h.id}`)) {
+    if (EXPANDED.has(`tase:${h.id}`) && document.getElementById(`detail-tase-${h.id}`)) {
       drawDetailChart(`detail-tase-${h.id}`, h, 'tase');
     }
   });
@@ -4856,12 +4868,12 @@ const HELP_CONTENT = {
     `,
   },
   bankInvestments: {
-    title: 'על השקעות בבנק',
+    title: 'על ניירות ערך',
     body: `
       <p>קרנות נאמנות בבורסה שמוחזקות בחשבון הבנק — נפרד מסעיף <em>קופות</em> (גמל/פנסיה).</p>
       <p>כל אחזקה מזוהה לפי מספר קרן במאיה. הזינו מספר <strong>יחידות</strong> מהדף בבנק; האפליקציה מושכת שער יחידה יומי ממאיה ומחשבת <code>שווי = יחידות × שער</code>.</p>
       <p>מאיה מפרסמת שערי יחידה באגורות; האפליקציה ממירה לש״ח (÷100). ערכו יחידות בקנייה או מכירה. השער מתעדכן בסנכרון / בקרון היומי.</p>
-      <p>אין היסטוריית קניות/מכירות או בסיס עלות בגרסה זו. בתחזית האחזקות נשמרות שטוחות (כמו מזומן).</p>
+      <p>רשמו קניות/מכירות כאירועים. הגרף מציג היסטוריית שווי + תחזית ממוצע תשואות מאיה.</p>
     `,
   },
   cash: {

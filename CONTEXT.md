@@ -9,7 +9,7 @@ A gemel/pension/insurance savings product sourced from data.gov.il (gemelnet / p
 _Avoid_: Mutual fund, investment fund, Bank Investment
 
 **Bank Investment**:
-A TASE-listed mutual fund (קרן נאמנות) held directly through a bank brokerage account, identified by its Maya/TASE security ID (e.g. 5123898), valued daily as Units × NAV via the Maya public API. UI section: "Bank Investments".
+A TASE-listed mutual fund (קרן נאמנות) held directly through a bank brokerage account, identified by its Maya/TASE security ID (e.g. 5123898), valued daily as Units × NAV via the Maya public API. UI section: "ניירות ערך" (Securities / Bank Investments).
 _Avoid_: Stock, TASE fund, "mutual fund" as a UI label
 
 **Units**:

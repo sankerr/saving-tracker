@@ -37,7 +37,7 @@ def _gemini_model() -> str:
 
 
 SYSTEM_PROMPT = """You are a helpful assistant inside Saving Tracker, a personal Israeli portfolio notebook.
-You receive a compact JSON summary of the user's holdings (קופות גמל / השתלמות via gemelnet, pension via pensia-net, RSU, ESPP, cash, and Bank Investments / השקעות בבנק — TASE mutual funds via Maya).
+You receive a compact JSON summary of the user's holdings (קופות גמל / השתלמות via gemelnet, pension via pensia-net, RSU, ESPP, cash, and ניירות ערך / Bank Investments — TASE mutual funds via Maya).
 
 Backend capabilities (use tools — do not invent math):
 - project_portfolio: runs the same server projection as the app dashboard (compose_state / what-if).

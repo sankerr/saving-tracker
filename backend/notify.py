@@ -217,7 +217,7 @@ def _build_dashboard_html(
           <td style="padding:4px 0;">מזומן</td><td style="text-align:left;">{_esc(_fmt_ils(cash))}</td>
         </tr>
         <tr>
-          <td style="padding:4px 0;">השקעות בבנק</td><td style="text-align:left;">{_esc(_fmt_ils(tase))}</td>
+          <td style="padding:4px 0;">ניירות ערך</td><td style="text-align:left;">{_esc(_fmt_ils(tase))}</td>
         </tr>
         <tr>
           <td style="padding:4px 0;">פנסיה (לא כלול)</td><td style="text-align:left;">{_esc(_fmt_ils(pension_total))}</td>
