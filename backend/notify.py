@@ -110,6 +110,18 @@ def _holding_rows(state: dict, limit: int = 8) -> list[dict]:
                 "profit": None,
             }
         )
+    for h in state.get("tase_fund_holdings") or []:
+        if h.get("archived"):
+            continue
+        c = h.get("computed") or {}
+        rows.append(
+            {
+                "kind": "השקעה בבנק",
+                "name": h.get("nickname") or h.get("fund_name_snapshot") or h.get("fund_id") or "השקעה בבנק",
+                "value": c.get("value_ils") or c.get("current_value_ils"),
+                "profit": None,
+            }
+        )
     rows.sort(key=lambda r: float(r.get("value") or 0), reverse=True)
     return rows[:limit]
 
@@ -145,6 +157,7 @@ def _build_dashboard_html(
     rsu = portfolio.get("rsu_value_ils")
     espp = portfolio.get("espp_value_ils")
     cash = portfolio.get("cash_value_ils")
+    tase = portfolio.get("tase_funds_value_ils")
     pension_total = pension.get("total_value_ils")
 
     banner = ""
@@ -202,6 +215,9 @@ def _build_dashboard_html(
         </tr>
         <tr>
           <td style="padding:4px 0;">מזומן</td><td style="text-align:left;">{_esc(_fmt_ils(cash))}</td>
+        </tr>
+        <tr>
+          <td style="padding:4px 0;">השקעות בבנק</td><td style="text-align:left;">{_esc(_fmt_ils(tase))}</td>
         </tr>
         <tr>
           <td style="padding:4px 0;">פנסיה (לא כלול)</td><td style="text-align:left;">{_esc(_fmt_ils(pension_total))}</td>

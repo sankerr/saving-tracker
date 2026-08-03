@@ -20,6 +20,10 @@ _Avoid_: Shares (reserved for RSU/ESPP equity holdings)
 Daily unit price of a Bank Investment fund, in ILS, fetched from Maya.
 _Avoid_: Price (used generically elsewhere in the app), Rate
 
+**Bank Investment projection**:
+Forward value path from the mean of ≥6 month-end Maya NAV returns (same `project_returns` engine as gemelnet Funds). The dashboard what-if growth % does **not** compound Bank Investments — they stay flat there (like cash/ESPP).
+_Avoid_: Analyst target (RSU/ESPP only)
+
 ## Relationships
 
 - A **Bank Investment** holding references exactly one TASE mutual fund via `fund_id`

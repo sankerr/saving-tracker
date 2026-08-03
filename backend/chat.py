@@ -37,15 +37,16 @@ def _gemini_model() -> str:
 
 
 SYSTEM_PROMPT = """You are a helpful assistant inside Saving Tracker, a personal Israeli portfolio notebook.
-You receive a compact JSON summary of the user's holdings (קופות גמל / השתלמות via gemelnet, pension via pensia-net, RSU, ESPP, cash).
+You receive a compact JSON summary of the user's holdings (קופות גמל / השתלמות via gemelnet, pension via pensia-net, RSU, ESPP, cash, and Bank Investments / השקעות בבנק — TASE mutual funds via Maya).
 
 Backend capabilities (use tools — do not invent math):
 - project_portfolio: runs the same server projection as the app dashboard (compose_state / what-if).
-  Growth % applies to funds (and pension when included). Cash and ESPP are held flat; RSU follows vesting at today's price/FX.
+  Growth % applies to funds (and pension when included). Cash, ESPP, and Bank Investments are held flat under what-if;
+  Bank Investments still have a separate historical NAV mean projection when no assumed % is used; RSU follows vesting at today's price/FX.
 - query_portfolio_history: returns real past monthly dashboard totals and month-over-month changes from synced holdings/yields.
   Use for "what was my total in June?", "how much did I gain last month?", or comparing two past months.
 - evaluate_savings_goal: returns the user's savings-goal status (same as the dashboard goal strip).
-  Pace uses historical fund averages projected to the goal month; Total Wealth only (pension excluded). No growth-% override.
+  Pace uses historical fund/NAV averages projected to the goal month; Total Wealth only (pension excluded). No growth-% override.
 - describe_backend_apis: lists REST APIs and what they do.
 
 Past totals / change questions (e.g. "what was my portfolio worth in March?", "how much changed since last month?"):
@@ -55,43 +56,47 @@ Past totals / change questions (e.g. "what was my portfolio worth in March?", "h
    investment_return_pct (excludes fund deposits/withdrawals). change_from_prev_* is total balance delta and
    may be mostly deposits — if net_external_flow_ils is material, say so (break out deposits vs return).
 4. Note cash is held at today's amount for all past months (same as the dashboard chart). Pension is excluded from dashboard totals.
+   Bank Investments (tase_ils) are included in dashboard totals when present.
 
 Future value / profit questions (e.g. "what will my profit be in May 2030?"):
 1. If the user gave an annual growth % (year %), call project_portfolio with target_year_month=YYYY-MM and assumed_annual_pct.
 2. If they did NOT give a %, ask them for an assumed annual growth % OR offer to project using historical fund averages (call project_portfolio omitting assumed_annual_pct). Prefer asking when they said "profit" and want a what-if.
 3. After the tool returns, explain projected total, change vs today, and assumptions. Never invent projected numbers.
 4. Say clearly that projections are estimates, not guarantees, and not tax/financial advice.
+5. Remind that what-if growth % does NOT compound Bank Investments (held flat there); historical mode may grow them via Maya NAV averages.
 
 Savings goal questions (e.g. "am I on pace?", "how far from my goal?", "what's my savings goal?"):
 1. Prefer savings_goal in the portfolio JSON when present and configured.
 2. For an explicit pace/gap check, call evaluate_savings_goal.
 3. Explain using returned numbers only: progress_pct, projected_value_ils at target_date, on_pace, gap_ils.
-4. Note the basis: historical fund averages; headline Total Wealth (funds+RSU+ESPP+cash); pension excluded.
+4. Note the basis: historical fund/NAV averages; headline Total Wealth (funds+RSU+ESPP+cash+bank investments); pension excluded.
 5. You cannot set or clear the goal — tell the user to use the dashboard goal strip / Set a goal modal (POST /api/settings).
 
 Cash-out / tax questions (e.g. "how much tax if I cash out everything?"):
 1. Use cashout_tax_estimate from the portfolio JSON only — never invent tax figures.
 2. Report estimated_tax_ils, net_after_tax_ils, taxable_profit_ils, and that tax is on profit/gains only.
-3. Note: קרן השתלמות is treated as tax-free; cash 0%; pension excluded from cash-out; other funds/RSU/ESPP use 25% on gains.
+3. Note: קרן השתלמות is treated as tax-free; cash 0%; pension excluded from cash-out; other funds/RSU/ESPP use 25% on gains;
+   Bank Investments have no cost basis in v1 so taxable profit may be 0 for that sleeve.
 4. Always repeat the disclaimer: rough educational estimate, not tax advice.
 
 When asked what the app can do / how to use it:
-- Call describe_backend_apis if helpful, then explain in plain language: track gemelnet/provident funds, pension (separate), RSU, ESPP, cash; savings goal toward Total Wealth; dashboard projections/what-if; spot-check; sync; AI chat for questions, projections, goal pace, and rough cash-out tax estimate. Keep it short and numbered.
+- Call describe_backend_apis if helpful, then explain in plain language: track gemelnet/provident funds, pension (separate), RSU, ESPP, cash, Bank Investments (TASE mutual funds); savings goal toward Total Wealth; dashboard projections/what-if; spot-check; sync; AI chat for questions, projections, goal pace, and rough cash-out tax estimate. Keep it short and numbered.
 
 Guidelines:
-- Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP.
+- Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP/TASE mutual funds.
 - Suggest concrete educational improvements when asked (allocation, concentration, contributions, vesting, growth assumptions). Keep replies concise.
 - Do NOT discuss management fees, deposit fees, or "~mgmt fees paid" as features of this app — the app does not calculate fees for advice. Prefer allocation and growth topics instead.
 - Always reply in Hebrew.
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
-- Dashboard total excludes pension (tracked separately). For tax/cash-out, only use cashout_tax_estimate."""
+- Dashboard total excludes pension (tracked separately). For tax/cash-out, only use cashout_tax_estimate.
+- Bank Investments are valued as units × daily Maya NAV; no purchase cost basis / true P&L in v1 (not in total_profit_ils)."""
 
 
 BACKEND_API_CATALOG = {
     "auth": ["POST /api/login", "POST /api/register", "POST /api/account/password", "DELETE /api/account"],
     "portfolio": [
         "GET /api/data?horizon=&assumed_annual_pct= — composed holdings + projections/what-if + goal_status",
-        "POST /api/sync — refresh gemelnet/pensia/Yahoo caches then return composed state",
+        "POST /api/sync — refresh gemelnet/pensia/Yahoo/Maya caches then return composed state",
         "GET /api/export / POST /api/import",
         "POST /api/settings — patch settings including goal ({target_amount_ils, target_date} or null to clear)",
     ],
@@ -111,13 +116,23 @@ BACKEND_API_CATALOG = {
         "CRUD /api/espp-plans (+ purchases/sales)",
         "CRUD /api/cash",
     ],
+    "bank_investments": [
+        "GET /api/tase-funds/search",
+        "CRUD /api/tase-fund-holdings — TASE mutual funds (Maya); units × daily NAV",
+    ],
     "chat": [
         "GET /api/chat/status",
         "POST /api/chat — this assistant; may call project_portfolio, query_portfolio_history, or evaluate_savings_goal",
     ],
     "projection_rules": {
-        "what_if_annual_pct": "Compounds funds (and pension what-if) at assumed %; cash+ESPP flat; RSU vesting curve at current price/FX",
-        "historical_default": "Without assumed %, funds use historical average monthly return from gemelnet/pensia",
+        "what_if_annual_pct": (
+            "Compounds funds (and pension what-if) at assumed %; cash+ESPP+Bank Investments flat; "
+            "RSU vesting curve at current price/FX"
+        ),
+        "historical_default": (
+            "Without assumed %, funds use historical average monthly return from gemelnet/pensia; "
+            "Bank Investments use historical average monthly Maya NAV returns (≥6 months)"
+        ),
         "horizon_cap_months": HORIZON_CAP_MONTHS,
         "pension": "Excluded from dashboard total; surfaced separately in pension_summary",
         "savings_goal": (
@@ -126,7 +141,7 @@ BACKEND_API_CATALOG = {
         ),
         "cashout_tax_estimate": (
             "Rough educational estimate if liquidating accessible holdings: 25% on profit/gains only; "
-            "קרן השתלמות tax-free; cash 0%; pension excluded; not tax advice"
+            "קרן השתלמות tax-free; cash 0%; pension excluded; Bank Investments: no cost basis in v1; not tax advice"
         ),
     },
 }
@@ -165,7 +180,7 @@ TOOLS = [
                 "name": "query_portfolio_history",
                 "description": (
                     "Return real historical monthly portfolio totals and month-over-month changes "
-                    "(dashboard-style: funds + RSU + ESPP + cash; pension excluded). "
+                    "(dashboard-style: funds + RSU + ESPP + cash + bank investments; pension excluded). "
                     "Includes change_from_prev_* (balance delta), net_external_flow_ils (fund deposits − withdrawals), "
                     "and investment_return_* (balance delta minus fund flows). "
                     "Use investment_return_* for profit/yield; do not treat deposits as profit."
@@ -208,7 +223,7 @@ TOOLS = [
 ]
 
 GOAL_BASIS_NOTE = (
-    "historical fund averages; Total Wealth (funds+RSU+ESPP+cash); pension excluded"
+    "historical fund/NAV averages; Total Wealth (funds+RSU+ESPP+cash+bank investments); pension excluded"
 )
 
 
@@ -379,6 +394,30 @@ def _fund_net_flows_by_period(state: dict) -> dict[int, float]:
     return flows
 
 
+def _tase_fund_summary(h: dict) -> dict:
+    computed = h.get("computed") or {}
+    proj = h.get("projection") or {}
+    out = {
+        "id": h.get("id"),
+        "kind": "bank_investment",
+        "fund_id": h.get("fund_id"),
+        "name": (h.get("nickname") or h.get("fund_name_snapshot") or h.get("fund_id")),
+        "units": computed.get("units", h.get("units")),
+        "unit_price_ils": _round_or_none(computed.get("unit_price_ils")),
+        "value_ils": _round_or_none(computed.get("value_ils") or computed.get("current_value_ils")),
+        "price_date": computed.get("price_date"),
+        "last_month_return_pct": _round_or_none(computed.get("last_month_return_pct"), 4),
+        "ytd_return_pct": _round_or_none(computed.get("ytd_return_pct"), 4),
+        "ytd_year": computed.get("ytd_year"),
+        "last_synced": h.get("last_synced"),
+        "note": "units × Maya NAV; no cost basis / profit_ils in v1; what-if does not grow this sleeve",
+    }
+    if proj.get("annual_pct") is not None:
+        out["projection_annual_pct"] = _round_or_none(proj.get("annual_pct"), 2)
+        out["projection_n_samples"] = proj.get("n_samples")
+    return out
+
+
 def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MONTHS) -> dict:
     """Real monthly dashboard totals from portfolio.time_series_ils + cash (flat at today)."""
     portfolio = state.get("portfolio") or {}
@@ -397,9 +436,10 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         funds = _round_or_none(s.get("funds_ils")) or 0.0
         rsu = _round_or_none(s.get("rsu_ils")) or 0.0
         espp = _round_or_none(s.get("espp_ils")) or 0.0
+        tase = _round_or_none(s.get("tase_ils")) or 0.0
         subtotal = _round_or_none(s.get("total_ils"))
         if subtotal is None:
-            subtotal = round(funds + rsu + espp, 2)
+            subtotal = round(funds + rsu + espp + tase, 2)
         total = round(subtotal + cash_now, 2)
         change_ils = round(total - prev_total, 2) if prev_total is not None else None
         change_pct = None
@@ -429,6 +469,7 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
             "funds_ils": funds,
             "rsu_ils": rsu,
             "espp_ils": espp,
+            "tase_ils": tase,
             "cash_ils": cash_now,
             "change_from_prev_ils": change_ils,
             "change_from_prev_pct": change_pct,
@@ -479,9 +520,9 @@ def _build_monthly_history(state: dict, *, max_months: int = HISTORY_CONTEXT_MON
         "published_through_yyyymm": published_through,
         "latest_yield_month": latest_yield_month,
         "note": (
-            "Real history from holdings + synced monthly yields. Matches dashboard total "
-            "(funds+RSU+ESPP+cash). Cash uses today's amount for all past months. Pension excluded. "
-            "change_from_prev_* = total balance MoM delta. "
+            "Real history from holdings + synced monthly yields/NAV. Matches dashboard total "
+            "(funds+RSU+ESPP+cash+bank investments). Cash uses today's amount for all past months. "
+            "Pension excluded. change_from_prev_* = total balance MoM delta. "
             "investment_return_* = change_from_prev minus fund net_external_flow_ils "
             "(deposits − withdrawals). Do not call balance growth 'profit' when flows are large. "
             "For 'last month' / recent move, use ONLY latest_yield_month (has_published_yield). "
@@ -519,16 +560,7 @@ def build_portfolio_context(state: dict) -> dict:
     ]
     cash = [_cash_summary(c) for c in (state.get("cash_holdings") or [])]
     tase = [
-        {
-            "id": h.get("id"),
-            "kind": "bank_investment",
-            "fund_id": h.get("fund_id"),
-            "name": (h.get("nickname") or h.get("fund_name_snapshot") or h.get("fund_id")),
-            "units": (h.get("computed") or {}).get("units", h.get("units")),
-            "unit_price_ils": _round_or_none((h.get("computed") or {}).get("unit_price_ils")),
-            "value_ils": _round_or_none((h.get("computed") or {}).get("value_ils")),
-            "price_date": (h.get("computed") or {}).get("price_date"),
-        }
+        _tase_fund_summary(h)
         for h in (state.get("tase_fund_holdings") or [])
         if not h.get("archived")
     ]
@@ -721,16 +753,19 @@ def summarize_projection_state(
     mode = "what_if" if assumed_annual_pct is not None else "historical_funds"
     projected_total = None
     funds_end = None
+    tase_end = None
     notes = []
 
     if assumed_annual_pct is not None:
         wf = portfolio.get("what_if") or {}
         projected_total = _round_or_none(wf.get("end_value_ils"))
+        tase_end = _round_or_none(portfolio.get("tase_funds_value_ils"))
         if projected_total is None:
             notes.append("what_if projection unavailable; check holdings/sync.")
         else:
             notes.append(
-                f"Funds/pension compounded at {assumed_annual_pct}%/yr; cash+ESPP flat; RSU vesting at current price/FX."
+                f"Funds/pension compounded at {assumed_annual_pct}%/yr; "
+                "cash+ESPP+Bank Investments flat; RSU vesting at current price/FX."
             )
     else:
         proj = portfolio.get("projection") or {}
@@ -738,12 +773,14 @@ def summarize_projection_state(
         mean = paths.get("mean") or paths.get("total_mean")
         projected_total = _path_end(mean)
         funds_end = _path_end(paths.get("funds_mean"))
+        tase_end = _path_end(paths.get("tase_mean"))
         if projected_total is None:
             # Fallback: today's total + any path components we can find.
             parts = [
                 _path_end(paths.get("funds_mean")),
                 _path_end(paths.get("rsu_mean")),
                 _path_end(paths.get("espp_mean")),
+                _path_end(paths.get("tase_mean")),
             ]
             cash_now = _round_or_none(portfolio.get("cash_value_ils")) or 0.0
             if any(p is not None for p in parts):
@@ -752,7 +789,9 @@ def summarize_projection_state(
                     2,
                 )
         notes.append(
-            "No assumed_annual_pct: funds use historical average monthly returns; cash+ESPP flat; RSU vesting curve."
+            "No assumed_annual_pct: funds use historical average monthly returns; "
+            "Bank Investments use historical Maya NAV monthly averages when available; "
+            "cash+ESPP flat; RSU vesting curve."
         )
         if proj.get("funds_annual_pct") is not None:
             notes.append(
@@ -779,16 +818,18 @@ def summarize_projection_state(
             "rsu_value_ils": _round_or_none(portfolio.get("rsu_value_ils")),
             "espp_value_ils": _round_or_none(portfolio.get("espp_value_ils")),
             "cash_value_ils": _round_or_none(portfolio.get("cash_value_ils")),
+            "tase_funds_value_ils": _round_or_none(portfolio.get("tase_funds_value_ils")),
         },
         "projected": {
             "total_value_ils": projected_total,
             "change_from_today_ils": change_from_today,
             "funds_value_ils": funds_end,
+            "tase_funds_value_ils": tase_end,
             "interpretation": {
                 "change_from_today": "Projected portfolio total minus today's dashboard total (excludes pension).",
                 "profit_note": (
-                    "Accounting 'profit' today is funds/RSU/ESPP profit fields. Future 'profit' usually means "
-                    "change_from_today under the stated assumptions — not a tax figure."
+                    "Accounting 'profit' today is funds/RSU/ESPP profit fields (Bank Investments have no cost basis). "
+                    "Future 'profit' usually means change_from_today under the stated assumptions — not a tax figure."
                 ),
             },
         },
@@ -1143,10 +1184,10 @@ Write insights for these FIXED SLOTS in order (skip a slot entirely if data is m
    When |net_external_flow_ils| is material vs the balance change, break BOTH out in one sentence
    (total grew by Z, of which deposits W and investment return X / Y%). Never attribute deposits to "profit" or "yield".
    If flows are ~0, you may speak about investment return alone.
-2. allocation — Which sleeve (funds/RSU/ESPP/cash) or concentration stands out vs Total Wealth.
+2. allocation — Which sleeve (funds/RSU/ESPP/cash/bank_investments) or concentration stands out vs Total Wealth.
    Prefer insight_slots_hint.slot2_allocation when present.
-3. goal_or_lifetime_pl — If savings_goal.configured: ONE summary of pace/progress vs target (include progress_pct and gap or projected value — pick one framing, not both). Else: lifetime total_profit_ils vs invested.
-4. risk — A DIFFERENT topic from slots 1–3. Prefer concentration, single-ticker RSU/ESPP, or cash-buffer size.
+3. goal_or_lifetime_pl — If savings_goal.configured: ONE summary of pace/progress vs target (include progress_pct and gap or projected value — pick one framing, not both). Else: lifetime total_profit_ils vs invested (note: Bank Investments are not in total_profit_ils — no cost basis).
+4. risk — A DIFFERENT topic from slots 1–3. Prefer concentration, single-ticker RSU/ESPP, Bank Investment concentration, or cash-buffer size.
    Do NOT restate that the savings goal is on/off pace, the target amount, progress %, gap, or projected value if slot 3 already covered the goal.
 5. suggestion — One concrete educational next step grounded in the data. Must not repeat slots 1–4; build on them (e.g. what to review next).
 

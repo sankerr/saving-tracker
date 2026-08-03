@@ -1143,8 +1143,38 @@ def tase_funds_search(q: str, limit: int = 20) -> list:
     return hits
 
 
+def _tase_month_end_closes(fund_id: str) -> list:
+    """Last NAV close per calendar month from cached Maya daily rows → [{ym, close}]."""
+    fid = str(fund_id or "")
+    with _market_lock:
+        rows = ((MARKET.get("tase_fund_daily") or {}).get(fid) or {}).get("rows") or []
+    by_month = {}
+    for r in rows:
+        day = r.get("date") or ""
+        if len(day) < 7:
+            continue
+        ym = day[:7]
+        close = _to_float(r.get("close"))
+        if close is None:
+            continue
+        by_month[ym] = close
+    return [{"ym": ym, "close": by_month[ym]} for ym in sorted(by_month.keys())]
+
+
+def _tase_monthly_returns(fund_id: str) -> list:
+    """Month-over-month NAV returns as fractions (e.g. 0.01 = +1%)."""
+    month_ends = _tase_month_end_closes(fund_id)
+    returns = []
+    for i in range(1, len(month_ends)):
+        prev = month_ends[i - 1]["close"]
+        cur = month_ends[i]["close"]
+        if prev and prev > 0:
+            returns.append(cur / prev - 1.0)
+    return returns
+
+
 def value_tase_fund(holding: dict) -> dict:
-    """units × latest NAV (ILS)."""
+    """units × latest NAV (ILS), plus trailing return helpers from NAV history."""
     fid = str(holding.get("fund_id") or "")
     units = float(holding.get("units") or 0)
     with _market_lock:
@@ -1154,14 +1184,67 @@ def value_tase_fund(holding: dict) -> dict:
     unit_price = float(last["close"]) if last else None
     price_date = last["date"] if last else None
     value = round(units * unit_price, 2) if unit_price is not None else None
+
+    month_ends = _tase_month_end_closes(fid)
+    last_month_return_pct = None
+    ytd_return_pct = None
+    ytd_year = None
+    time_series = []
+    for me in month_ends:
+        ym = me["ym"]
+        y, m = ym.split("-")
+        period = int(y) * 100 + int(m)
+        time_series.append({
+            "period": period,
+            "date": f"{ym}-01",
+            "value_ils": round(units * float(me["close"]), 2) if units else 0.0,
+            "close": float(me["close"]),
+        })
+    returns = _tase_monthly_returns(fid)
+    if returns:
+        last_month_return_pct = round(returns[-1] * 100.0, 4)
+    if month_ends and price_date:
+        ytd_year = int(str(price_date)[:4])
+        year_start = f"{ytd_year}-01"
+        # Prefer last close of prior year; else first close in YTD year.
+        base = None
+        for me in reversed(month_ends):
+            if me["ym"] < year_start:
+                base = me["close"]
+                break
+        if base is None:
+            for me in month_ends:
+                if me["ym"][:4] == str(ytd_year):
+                    base = me["close"]
+                    break
+        if base and base > 0 and unit_price is not None:
+            ytd_return_pct = round((unit_price / base - 1.0), 4)
+
     return {
         "units": units,
         "unit_price_ils": unit_price,
         "price_date": price_date,
         "value_ils": value,
+        "current_value_ils": value,  # alias for fund-style chart / projection helpers
         "currency": "ILS",
         "has_price": unit_price is not None,
+        "last_month_return_pct": last_month_return_pct,
+        "ytd_return_pct": ytd_return_pct,
+        "ytd_year": ytd_year,
+        "time_series": time_series,
     }
+
+
+def project_tase_fund(holding: dict, computed: dict, horizon_months: int) -> dict:
+    """Historical mean monthly NAV return projection (same engine as gemelnet funds)."""
+    fid = str(holding.get("fund_id") or "")
+    returns = _tase_monthly_returns(fid)
+    current = float(
+        (computed or {}).get("value_ils")
+        or (computed or {}).get("current_value_ils")
+        or 0.0
+    )
+    return project_returns(returns, current, horizon_months)
 
 
 def _tase_fund_display_name(holding: dict) -> str:
@@ -2816,7 +2899,8 @@ def _months_until(target_date: str) -> int:
 
 
 def compute_goal_status(goal: dict, funds_out: list, grants_out: list,
-                        espp_out: list, portfolio: dict) -> dict:
+                        espp_out: list, portfolio: dict,
+                        tase_out: list = None) -> dict:
     """Evaluate a single savings goal against the headline Total Wealth.
 
     Projects Total Wealth forward to the goal's target month using the same
@@ -2858,10 +2942,17 @@ def compute_goal_status(goal: dict, funds_out: list, grants_out: list,
             pg = dict(plan)
             pg["projection"] = project_espp(plan, plan["computed"], horizon_g)
             espp_g.append(pg)
+        tase_g = []
+        for h in (tase_out or []):
+            if h.get("archived"):
+                continue
+            th = dict(h)
+            th["projection"] = project_tase_fund(h, h.get("computed") or {}, horizon_g)
+            tase_g.append(th)
         proj = compose_portfolio_projection(
             funds_g, grants_g, horizon_g, espp_g,
             portfolio.get("cash_value_ils") or 0.0,
-            portfolio.get("tase_funds_value_ils") or 0.0,
+            tase_g,
         )
         mean = (proj or {}).get("paths", {}).get("mean") or []
         projected = mean[-1] if mean else current
@@ -2987,10 +3078,14 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             cash_holdings_out.append(out)
 
         # Bank Investments (TASE mutual funds) — units × daily NAV.
+        # Historical mean projection from Maya NAV; what-if does NOT grow these
+        # (held flat in portfolio what-if alongside cash/ESPP).
         tase_fund_holdings_out = []
         cutoff_nav = (date.today() - timedelta(days=400)).isoformat()
         for h in DATA.get("tase_fund_holdings", []) or []:
             computed = value_tase_fund(h)
+            archived = h.get("archived")
+            projection = project_tase_fund(h, computed, horizon_months) if not archived else None
             fid = str(h.get("fund_id") or "")
             ticker_cache = (MARKET.get("tase_fund_daily") or {}).get(fid) or {}
             nav_rows = ticker_cache.get("rows") or []
@@ -3000,6 +3095,8 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             ]
             out = dict(h)
             out["computed"] = computed
+            out["projection"] = projection
+            out["what_if"] = None
             out["nav_history"] = nav_history
             out["last_synced"] = ticker_cache.get("last_synced")
             tase_fund_holdings_out.append(out)
@@ -3057,7 +3154,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
         goal = DATA["settings"].get("goal")
         goal_status = (
             compute_goal_status(goal, fund_holdings_out, rsu_grants_out,
-                                espp_plans_out, portfolio)
+                                espp_plans_out, portfolio, tase_fund_holdings_out)
             if goal else None
         )
 
@@ -3355,7 +3452,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     employer_total = sum(h["computed"].get("total_employer_ils", 0) for h in funds if not h.get("archived"))
 
     # Portfolio projection — sum per-holding cones at each horizon step.
-    proj = compose_portfolio_projection(funds, grants, horizon_months, espp, cash_now, tase_now)
+    proj = compose_portfolio_projection(funds, grants, horizon_months, espp, cash_now, tase)
 
     # Aggregate recurring contributions across all active fund holdings, per
     # future month, so the what-if line picks them up too.
@@ -3368,7 +3465,8 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             monthly_recurring[i] += c
 
     # What-if: growth rate applies to funds only. Cash + Bank Investments + ESPP
-    # added flat; RSU contribution is deterministic vesting.
+    # added flat (Bank Investments still get a separate historical NAV projection
+    # in compose_portfolio_projection); RSU contribution is deterministic vesting.
     rsu_per_month = (proj or {}).get("paths", {}).get("rsu_mean") or [0.0] * horizon_months
     espp_per_month = (proj or {}).get("paths", {}).get("espp_mean") or [espp_now_ils] * horizon_months
     deterministic_per_month = [r + cash_now + tase_now + e for r, e in zip(rsu_per_month, espp_per_month)]
@@ -3408,14 +3506,21 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
 
 def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
                                  espp: list = None, cash_now_ils: float = 0.0,
-                                 tase_now_ils: float = 0.0) -> dict:
+                                 tase=None) -> dict:
     espp = espp or []
+    # Back-compat: older callers passed a flat tase_now float.
+    if isinstance(tase, (int, float)):
+        tase_holdings = []
+        tase_flat_fallback = float(tase)
+    else:
+        tase_holdings = tase or []
+        tase_flat_fallback = 0.0
     mean_path = [0.0] * horizon_months
     funds_mean = [0.0] * horizon_months
     rsu_mean = [0.0] * horizon_months
     espp_mean = [0.0] * horizon_months
     cash_mean = [round(cash_now_ils, 2)] * horizon_months
-    tase_mean = [round(tase_now_ils, 2)] * horizon_months
+    tase_mean = [0.0] * horizon_months
     any_data = False
     funds_weight_total = 0.0
     funds_weighted_annual = 0.0
@@ -3463,10 +3568,36 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
         any_data = True
         for i in range(horizon_months):
             mean_path[i] += cash_now_ils
-    if tase_now_ils > 0:
-        any_data = True
+    # Bank Investments: per-holding historical NAV mean when available; else flat.
+    tase_any = False
+    for h in tase_holdings:
+        if h.get("archived"):
+            continue
+        cur = float((h.get("computed") or {}).get("value_ils")
+                    or (h.get("computed") or {}).get("current_value_ils")
+                    or 0)
+        p = h.get("projection")
+        path = None
+        if p and (p.get("paths") or {}).get("mean"):
+            path = p["paths"]["mean"]
+        if path:
+            tase_any = True
+            for i in range(horizon_months):
+                v = float(path[i] if i < len(path) else path[-1])
+                tase_mean[i] += v
+                mean_path[i] += v
+        elif cur > 0:
+            tase_any = True
+            for i in range(horizon_months):
+                tase_mean[i] += cur
+                mean_path[i] += cur
+    if not tase_any and tase_flat_fallback > 0:
+        tase_any = True
         for i in range(horizon_months):
-            mean_path[i] += tase_now_ils
+            tase_mean[i] += tase_flat_fallback
+            mean_path[i] += tase_flat_fallback
+    if tase_any:
+        any_data = True
     if not any_data:
         return None
     return {
@@ -3476,7 +3607,7 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
             "rsu_mean": [round(v, 2) for v in rsu_mean],
             "espp_mean": [round(v, 2) for v in espp_mean],
             "cash_mean": cash_mean,
-            "tase_mean": tase_mean,
+            "tase_mean": [round(v, 2) for v in tase_mean],
         },
         "horizon_months": horizon_months,
         "funds_annual_pct": round(funds_weighted_annual / funds_weight_total, 2)

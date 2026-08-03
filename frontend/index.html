@@ -3120,7 +3120,9 @@ function drawDashboardChart() {
   const rsuFuture = projRsuMean.length ? projRsuMean : Array(horizonMonths).fill(0);
   const esppFuture = projEsppMean.length ? projEsppMean : Array(horizonMonths).fill(todayEspp);
   const cashFuture = projCashMean.length ? projCashMean : Array(horizonMonths).fill(todayCash);
-  const taseFuture = projTaseMean.length ? projTaseMean : Array(horizonMonths).fill(todayTase);
+  const taseFuture = (wf && wf.paths && wf.paths.length)
+    ? Array(horizonMonths).fill(todayTase)
+    : (projTaseMean.length ? projTaseMean : Array(horizonMonths).fill(todayTase));
 
   const labels = [...histLabels, ...futureLabels];
   const fundsData = [...histFunds, todayFunds, ...fundsFuture];
@@ -4320,6 +4322,14 @@ function projectionMeanLabel(proj, kind) {
   }
   if (kind === 'rsu') return t('proj.meanRsu');
   if (kind === 'espp') return t('proj.meanEspp');
+  if (kind === 'tase') {
+    const annual = proj.annual_pct != null
+      ? proj.annual_pct
+      : (proj.mu_monthly != null ? (Math.pow(1 + proj.mu_monthly, 12) - 1) * 100 : null);
+    if (annual == null) return t('proj.mean');
+    const n = proj.n_samples || 0;
+    return t('proj.meanTase', { pct: annual.toFixed(1), n });
+  }
   return t('proj.mean');
 }
 
@@ -4331,7 +4341,7 @@ function drawDetailChart(canvasId, item, kind) {
   const proj = item.projection;
   const futureVesting = (kind === 'rsu') ? (item.computed.future_at_current_price || []) : [];
   let labels, dataActual;
-  if (kind === 'fund') {
+  if (kind === 'fund' || kind === 'tase') {
     labels = ts.map(p => periodLabel(p.period));
     dataActual = ts.map(p => p.value_ils);
   } else {
@@ -4367,7 +4377,7 @@ function drawDetailChart(canvasId, item, kind) {
   // For RSU, projection is in ILS (server side); convert via current usdils for axis match.
   let projMeanArr;
   if (proj) {
-    const projVals = kind === 'fund'
+    const projVals = (kind === 'fund' || kind === 'tase')
       ? proj.paths.mean.slice()
       : proj.paths.mean.map(v => v / (item.computed.current_usdils || 1));
     if (labels.length) {
@@ -4383,8 +4393,8 @@ function drawDetailChart(canvasId, item, kind) {
     projMeanArr = [];
   }
   const dataPadded = [...dataActual, ...Array(projLabels.length).fill(null)];
-  const fmt = kind === 'fund' ? fmtILS : fmtUSD;
-  const fmtP = kind === 'fund' ? fmtILSPrec : fmtUSDPrec;
+  const fmt = (kind === 'fund' || kind === 'tase') ? fmtILS : fmtUSD;
+  const fmtP = (kind === 'fund' || kind === 'tase') ? fmtILSPrec : fmtUSDPrec;
 
   // Future-vesting line for RSU (USD on the USD axis); align to allLabels
   let futureVestArr = [];
@@ -4435,8 +4445,8 @@ function drawDetailChart(canvasId, item, kind) {
 
   const capEl = document.querySelector(`[data-projection-caption-for="${canvasId}"]`);
   if (capEl) {
-    if (kind === 'fund' && proj && proj.annual_pct != null) {
-      const contrib = proj.includes_recurring ? t('detail.projCaptionContrib') : '';
+    if ((kind === 'fund' || kind === 'tase') && proj && proj.annual_pct != null) {
+      const contrib = (kind === 'fund' && proj.includes_recurring) ? t('detail.projCaptionContrib') : '';
       capEl.textContent = t('detail.projCaption', { pct: proj.annual_pct.toFixed(1), n: proj.n_samples || 0, contrib });
       capEl.hidden = false;
     } else {
@@ -4450,7 +4460,7 @@ function drawDetailChart(canvasId, item, kind) {
     data: {
       labels: allLabels,
       datasets: [
-        { label: t('chart.value'), data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : 'rgba(77,205,205,1)'), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : 'rgba(77,205,205,0.18)'), fill: 'origin', tension: 0.25, pointRadius: 0 },
+        { label: t('chart.value'), data: dataPadded, borderColor: kind === 'fund' ? 'rgba(110,95,224,1)' : (kind === 'tase' ? 'rgba(217,119,6,1)' : (kind === 'espp' ? 'rgba(224,151,95,1)' : 'rgba(77,205,205,1)')), backgroundColor: kind === 'fund' ? 'rgba(110,95,224,0.18)' : (kind === 'tase' ? 'rgba(217,119,6,0.12)' : (kind === 'espp' ? 'rgba(224,151,95,0.18)' : 'rgba(77,205,205,0.18)')), fill: 'origin', tension: 0.25, pointRadius: 0 },
         { label: projMeanLabel, data: projMeanArr, borderColor: PROJECTION_MEAN_COLOR, backgroundColor: PROJECTION_MEAN_FILL, borderDash: [6,4], borderWidth: 2, fill: false, tension: 0.2, pointRadius: 0 },
         ...(futureVestArr.length ? [{
           label: t('chart.vestingAtToday'),
@@ -4485,7 +4495,7 @@ function drawDetailChart(canvasId, item, kind) {
       plugins: {
         legend: {
           display: (kind === 'rsu' && futureVestArr.length > 0) || whatIfArr.length > 0
-            || (kind === 'fund' && proj && proj.annual_pct != null),
+            || ((kind === 'fund' || kind === 'tase') && proj && proj.annual_pct != null),
           position: 'bottom',
           labels: {
             font: { size: 11 },
@@ -4541,15 +4551,23 @@ function renderBankInvestments() {
           date: cv.price_date || '—',
         })
       : t('bankInvestments.noPrice');
-    const canvasId = `bank-nav-${h.id}`;
+    const lastM = cv.last_month_return_pct;
+    const ytd = cv.ytd_return_pct;
+    const ytdYear = cv.ytd_year;
+    const returnsBit = [
+      lastM != null ? `${t('row.last')} ${fmtPctSigned(lastM / 100)}` : null,
+      ytd != null ? `YTD${ytdYear ? ' ' + ytdYear : ''} ${fmtPctSigned(ytd)}` : null,
+    ].filter(Boolean).join(` <span class="holding-row__sub-sep">·</span> `);
+    const navCanvasId = `bank-nav-${h.id}`;
+    const projCanvasId = `detail-tase-${h.id}`;
     return `
     <div class="holding-row" data-id="${h.id}">
       <div class="holding-row__head" style="cursor:default">
         <div>
           <p class="holding-row__title" dir="auto">${escapeHtml(title)} <span class="badge">${escapeHtml(String(h.fund_id))}</span></p>
-          <p class="holding-row__sub" dir="auto">${escapeHtml(priceBit)}</p>
+          <p class="holding-row__sub" dir="auto">${escapeHtml(priceBit)}${returnsBit ? ` <span class="holding-row__sub-sep">·</span> ${returnsBit}` : ''}</p>
         </div>
-        <span></span>
+        <svg class="holding-row__sparkline" id="spark-tase-${h.id}"></svg>
         <div style="text-align:right">
           <div class="holding-row__value">${cv.value_ils != null ? fmtILS.format(cv.value_ils) : '—'}</div>
           <div class="actions-row" style="justify-content:flex-end; gap:0.25rem; margin-top:0.4rem">
@@ -4560,12 +4578,19 @@ function renderBankInvestments() {
       </div>
       <div class="holding-row__detail" style="padding:0.75rem 1rem 1rem">
         <p class="chart-caption" id="bank-nav-summary-${h.id}" style="margin:0 0 0.5rem"></p>
-        <div class="chart-wrap" style="height:160px"><canvas id="${canvasId}"></canvas></div>
+        <div class="chart-wrap" style="height:160px"><canvas id="${navCanvasId}"></canvas></div>
+        <h3 style="margin:1rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('bankInvestments.valueProjection')}</h3>
+        <p class="chart-caption projection-mean-caption" data-projection-caption-for="${projCanvasId}" hidden></p>
+        <div class="chart-wrap" style="height:180px"><canvas id="${projCanvasId}"></canvas></div>
       </div>
     </div>`;
   }).join('');
   requestAnimationFrame(() => {
-    items.forEach(h => drawBankNavHistoryChart(`bank-nav-${h.id}`, h));
+    items.forEach(h => {
+      drawSparkline(`spark-tase-${h.id}`, (h.computed?.time_series || []).map(p => p.value_ils));
+      drawBankNavHistoryChart(`bank-nav-${h.id}`, h);
+      drawDetailChart(`detail-tase-${h.id}`, h, 'tase');
+    });
   });
 }
 
