@@ -2613,7 +2613,7 @@ function setDashboardSkeleton(on) {
   });
   const wrap = document.querySelector('#dashboard-card .chart-wrap');
   if (wrap) wrap.classList.toggle('chart-wrap--skel', on);
-  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
+  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'bank-investments-list', 'cash-list'].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (on) {
