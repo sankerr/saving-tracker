@@ -1346,10 +1346,16 @@ def run_sync(*, force=False) -> dict:
                 tk = plan["ticker"].upper()
                 purchases = plan.get("purchases", []) or []
                 earliest_p = min((p["date"] for p in purchases), default=None)
-                if earliest_p:
-                    grants_by_ticker.setdefault(tk, []).append(earliest_p)
+                enrollments = plan.get("enrollments", []) or []
+                earliest_e = min(
+                    (e["period_start"] for e in enrollments if e.get("period_start")),
+                    default=None,
+                )
+                candidates = [x for x in (earliest_p, earliest_e) if x]
+                if candidates:
+                    grants_by_ticker.setdefault(tk, []).append(min(candidates))
                 else:
-                    # No purchases yet — at least fetch the last ~year so the plan
+                    # No purchases/enrolments yet — at least fetch the last ~year so the plan
                     # has a price to show.
                     grants_by_ticker.setdefault(tk, []).append(
                         (date.today() - timedelta(days=400)).isoformat()
@@ -2532,6 +2538,230 @@ def _espp_purchase_breakdown(plan: dict, contribution_usd: float,
     }
 
 
+def _close_on_or_before(rows: list, d) -> tuple:
+    """Last close on or before date `d`. Returns (date_iso, close) or (None, None)."""
+    if hasattr(d, "isoformat") and not isinstance(d, str):
+        d_iso = d.isoformat()
+    else:
+        d_iso = str(d)[:10]
+    for r in reversed(rows or []):
+        rd = r.get("date") or ""
+        if rd <= d_iso:
+            return rd, r.get("close")
+    return None, None
+
+
+def _espp_contribution_dates(period_start: date, period_end: date) -> list:
+    """Inclusive calendar months from start through end.
+
+    Contribution date each month = period_start's day-of-month, clamped to the
+    month's last day and to [period_start, period_end].
+    """
+    if period_end < period_start:
+        raise ValueError("period_end must be >= period_start")
+    dates = []
+    y, m = period_start.year, period_start.month
+    dom = period_start.day
+    end_ym = (period_end.year, period_end.month)
+    while (y, m) <= end_ym:
+        last = monthrange(y, m)[1]
+        day = min(dom, last)
+        contrib = date(y, m, day)
+        if contrib < period_start:
+            contrib = period_start
+        if contrib > period_end:
+            contrib = period_end
+        dates.append(contrib)
+        if m == 12:
+            y += 1
+            m = 1
+        else:
+            m += 1
+    return dates
+
+
+def _espp_ensure_enrollment_market(plan: dict, enrollment: dict):
+    """Best-effort Yahoo fetch so stock/FX cover the enrolment offering period."""
+    since = enrollment.get("period_start") or (date.today() - timedelta(days=400)).isoformat()
+    ticker = (plan.get("ticker") or "").upper()
+    if ticker:
+        yahoo_fetch_stock(ticker, since)
+    yahoo_fetch_fx_usdils(since)
+
+
+def _espp_enrollment_breakdown(plan: dict, enrollment: dict, as_of: date = None,
+                               *, settle: bool = False) -> dict:
+    """Compute contribution (monthly NIS→USD via FX) and purchase estimate/settle.
+
+    Uses MARKET cache only (no network). Raises ValueError if required closes
+    or FX are missing — caller must not settle in that case.
+    """
+    if as_of is None:
+        as_of = date.today()
+    period_start = date.fromisoformat(enrollment["period_start"])
+    period_end = date.fromisoformat(enrollment["period_end"])
+    monthly_ils = float(enrollment.get("monthly_contribution_ils") or 0)
+    if monthly_ils <= 0:
+        raise ValueError("monthly_contribution_ils must be > 0")
+
+    all_dates = _espp_contribution_dates(period_start, period_end)
+    if settle:
+        counted = list(all_dates)
+    else:
+        counted = [d for d in all_dates if d <= as_of]
+
+    ticker = (plan.get("ticker") or "").upper()
+    stock_rows = (MARKET.get("stock_daily", {}).get(ticker, {}) or {}).get("rows") or []
+    fx_rows = (MARKET.get("fx", {}).get("USDILS", {}) or {}).get("rows") or []
+
+    monthly_breakdown = []
+    contribution_usd = 0.0
+    contribution_ils = 0.0
+    for d in counted:
+        fx_date, fx_close = _close_on_or_before(fx_rows, d)
+        if fx_close is None or float(fx_close) <= 0:
+            raise ValueError(f"missing FX for {d.isoformat()}")
+        usd = monthly_ils / float(fx_close)
+        contribution_usd += usd
+        contribution_ils += monthly_ils
+        monthly_breakdown.append({
+            "date": d.isoformat(),
+            "contribution_ils": round(monthly_ils, 2),
+            "usdils": float(fx_close),
+            "fx_date": fx_date,
+            "contribution_usd": round(usd, 4),
+        })
+
+    start_date_used, start_price = _close_on_or_before(stock_rows, period_start)
+    if start_price is None or float(start_price) <= 0:
+        raise ValueError(f"missing stock close for {period_start.isoformat()}")
+
+    is_estimate = period_end > as_of and not settle
+    if is_estimate:
+        if not stock_rows:
+            raise ValueError(f"missing stock close for {ticker or 'ticker'}")
+        end_date_used = stock_rows[-1]["date"]
+        end_price = stock_rows[-1]["close"]
+    else:
+        end_date_used, end_price = _close_on_or_before(stock_rows, period_end)
+        if end_price is None or float(end_price) <= 0:
+            raise ValueError(f"missing stock close for {period_end.isoformat()}")
+
+    result = {
+        "months_total": len(all_dates),
+        "months_paid": len(counted),
+        "contribution_ils": round(contribution_ils, 2),
+        "contribution_usd": round(contribution_usd, 4),
+        "monthly_breakdown": monthly_breakdown,
+        "period_start_price_usd": float(start_price),
+        "period_start_price_date": start_date_used,
+        "period_end_price_usd": float(end_price),
+        "period_end_price_date": end_date_used,
+        "is_estimate": is_estimate,
+        "purchase_price_usd": None,
+        "shares": 0.0,
+        "discount_captured_usd": 0.0,
+        "lookback_bonus_usd": 0.0,
+    }
+    if contribution_usd <= 0:
+        return result
+    br = _espp_purchase_breakdown(plan, contribution_usd, start_price, end_price)
+    result["purchase_price_usd"] = br["purchase_price_usd"]
+    result["shares"] = round(br["shares"], 4)
+    result["discount_captured_usd"] = round(br["discount_captured_usd"], 2)
+    result["lookback_bonus_usd"] = round(br["lookback_bonus_usd"], 2)
+    return result
+
+
+def _espp_apply_settled_purchase(plan: dict, enrollment: dict, br: dict) -> dict:
+    """Append purchase (+ optional auto-sale) from a successful enrolment breakdown."""
+    purchase_date = enrollment["period_end"]
+    purchase = {
+        "id": str(uuid.uuid4()),
+        "date": purchase_date,
+        "contribution_usd": br["contribution_usd"],
+        "contribution_ils": br["contribution_ils"],
+        "period_start_price_usd": br["period_start_price_usd"],
+        "period_end_price_usd": br["period_end_price_usd"],
+        "purchase_price_usd": br["purchase_price_usd"],
+        "shares": br["shares"],
+        "enrollment_id": enrollment["id"],
+        "note": (enrollment.get("note") or "").strip(),
+    }
+    plan.setdefault("purchases", []).append(purchase)
+    plan["purchases"].sort(key=lambda p: p["date"])
+    enrollment["settled_purchase_id"] = purchase["id"]
+
+    sale_id = None
+    if bool(enrollment.get("sell_immediately", True)):
+        sale = {
+            "id": str(uuid.uuid4()),
+            "date": purchase_date,
+            "shares_sold": br["shares"],
+            "sale_price_usd": br["period_end_price_usd"],
+            "purchase_id": purchase["id"],
+            "note": (enrollment.get("note") or "").strip() or "auto-fill at period end",
+        }
+        plan.setdefault("sales", []).append(sale)
+        plan["sales"].sort(key=lambda s: s["date"])
+        sale_id = sale["id"]
+    return {
+        "purchase_id": purchase["id"],
+        "sale_id": sale_id,
+        "shares": purchase["shares"],
+        "purchase_price_usd": purchase["purchase_price_usd"],
+        "discount_captured_usd": br["discount_captured_usd"],
+        "lookback_bonus_usd": br["lookback_bonus_usd"],
+        "contribution_usd": br["contribution_usd"],
+        "contribution_ils": br["contribution_ils"],
+    }
+
+
+def _settle_espp_enrollment(plan: dict, enrollment: dict, *, fetch: bool = True) -> dict:
+    """Settle one unsettled enrolment. Returns {ok, ...} or {ok: False, error}."""
+    if enrollment.get("settled_purchase_id"):
+        return {
+            "ok": True,
+            "already_settled": True,
+            "purchase_id": enrollment["settled_purchase_id"],
+        }
+    period_end = date.fromisoformat(enrollment["period_end"])
+    if period_end > date.today():
+        return {"ok": False, "error": "offering period has not ended yet"}
+    if fetch:
+        try:
+            _espp_ensure_enrollment_market(plan, enrollment)
+        except Exception as ex:
+            return {"ok": False, "error": f"Could not fetch market data: {ex}"}
+    try:
+        br = _espp_enrollment_breakdown(plan, enrollment, as_of=period_end, settle=True)
+    except ValueError as ex:
+        return {"ok": False, "error": str(ex)}
+    if br["contribution_usd"] <= 0:
+        return {"ok": False, "error": "no contributions to settle"}
+    applied = _espp_apply_settled_purchase(plan, enrollment, br)
+    return {"ok": True, **applied}
+
+
+def _espp_try_auto_settle_plan(plan: dict) -> bool:
+    """Settle any enrolments whose period has ended. Returns True if data changed."""
+    changed = False
+    today = date.today()
+    for enr in plan.get("enrollments", []) or []:
+        if enr.get("settled_purchase_id"):
+            continue
+        try:
+            end = date.fromisoformat(enr["period_end"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if end > today:
+            continue
+        result = _settle_espp_enrollment(plan, enr, fetch=True)
+        if result.get("ok") and not result.get("already_settled"):
+            changed = True
+    return changed
+
+
 def value_espp(plan: dict) -> dict:
     """Compute current ESPP plan state: holdings, value, gains, discount captured."""
     ticker = plan["ticker"].upper()
@@ -2545,6 +2775,62 @@ def value_espp(plan: dict) -> dict:
     purchases = sorted(plan.get("purchases", []) or [], key=lambda p: p["date"])
     sales = sorted(plan.get("sales", []) or [], key=lambda s: s["date"])
     override = DATA["settings"].get("usdils_rate_override")
+
+    # Unsettled enrolments: pending NIS contributions + detail-only estimates.
+    today = date.today()
+    enrollment_computed = []
+    pending_contribution_ils = 0.0
+    pending_contribution_usd = 0.0
+    for enr in plan.get("enrollments", []) or []:
+        if enr.get("settled_purchase_id"):
+            continue
+        entry = {
+            "id": enr.get("id"),
+            "period_start": enr.get("period_start"),
+            "period_end": enr.get("period_end"),
+            "monthly_contribution_ils": enr.get("monthly_contribution_ils"),
+            "sell_immediately": bool(enr.get("sell_immediately", True)),
+            "note": enr.get("note") or "",
+            "error": None,
+        }
+        try:
+            br = _espp_enrollment_breakdown(plan, enr, as_of=today, settle=False)
+            pending_contribution_ils += br["contribution_ils"]
+            pending_contribution_usd += br["contribution_usd"]
+            cur_price = stock_rows[-1]["close"] if stock_rows else None
+            est_fmv_usd = (br["shares"] * cur_price) if (br["shares"] and cur_price) else None
+            entry.update({
+                "months_paid": br["months_paid"],
+                "months_total": br["months_total"],
+                "contribution_ils": br["contribution_ils"],
+                "contribution_usd": br["contribution_usd"],
+                "period_start_price_usd": br["period_start_price_usd"],
+                "period_end_price_usd": br["period_end_price_usd"],
+                "purchase_price_usd": br["purchase_price_usd"],
+                "shares": br["shares"],
+                "discount_captured_usd": br["discount_captured_usd"],
+                "lookback_bonus_usd": br["lookback_bonus_usd"],
+                "is_estimate": br["is_estimate"],
+                "estimated_fmv_usd": round(est_fmv_usd, 2) if est_fmv_usd is not None else None,
+                "monthly_breakdown": br["monthly_breakdown"],
+            })
+        except ValueError as ex:
+            entry["error"] = str(ex)
+            # Still accrue pending NIS from months we can count without FX if possible.
+            try:
+                start = date.fromisoformat(enr["period_start"])
+                end = date.fromisoformat(enr["period_end"])
+                monthly = float(enr.get("monthly_contribution_ils") or 0)
+                dates = _espp_contribution_dates(start, end)
+                paid = [d for d in dates if d <= today]
+                ils = monthly * len(paid)
+                entry["months_paid"] = len(paid)
+                entry["months_total"] = len(dates)
+                entry["contribution_ils"] = round(ils, 2)
+                pending_contribution_ils += ils
+            except Exception:
+                pass
+        enrollment_computed.append(entry)
 
     shares_acquired = sum(float(p.get("shares") or 0) for p in purchases)
     shares_sold = sum(float(s.get("shares_sold") or 0) for s in sales)
@@ -2585,38 +2871,54 @@ def value_espp(plan: dict) -> dict:
     fx_now = fx_rows[-1]["close"] if fx_rows else None
     current_fx = override if override else fx_now
 
-    if current_price_usd is None or current_fx is None or not purchases:
-        return {
+    def _base_out(**extra):
+        out = {
             "shares_acquired_total": round(shares_acquired, 4),
             "shares_sold_total": round(shares_sold, 4),
             "shares_held_now": round(shares_held, 4),
             "current_price_usd": current_price_usd,
             "current_usdils": current_fx,
-            "current_value_usd": 0,
-            "current_value_ils": 0,
             "total_contributed_usd": round(total_contributed_usd, 2),
-            "total_contributed_ils": 0,
             "cost_basis_per_share_usd": round(cost_basis_per_share_usd, 4),
             "cost_basis_total_usd": round(cost_basis_held_usd, 2),
-            "cost_basis_total_ils": 0,
             "discount_captured_usd_total": round(discount_captured_total, 2),
             "lookback_bonus_usd_total": round(lookback_bonus_total, 2),
-            "realized_proceeds_usd": 0,
-            "realized_proceeds_ils": 0,
-            "realized_gain_usd": 0,
-            "realized_gain_ils": 0,
-            "unrealized_gain_usd": 0,
-            "unrealized_gain_ils": 0,
-            "profit_usd": 0,
-            "profit_ils": 0,
-            "time_series": [],
-            "no_data": True,
+            "pending_contribution_ils": round(pending_contribution_ils, 2),
+            "pending_contribution_usd": round(pending_contribution_usd, 2),
+            "enrollments": enrollment_computed,
         }
+        out.update(extra)
+        return out
 
-    current_value_usd = shares_held * current_price_usd
-    current_value_ils = current_value_usd * current_fx
+    if current_price_usd is None or current_fx is None or not purchases:
+        # Pending contributions still count toward portfolio value (NIS).
+        pending_usd = (pending_contribution_ils / current_fx) if (current_fx and pending_contribution_ils) else pending_contribution_usd
+        return _base_out(
+            current_value_usd=round(pending_usd, 2) if pending_usd else 0,
+            current_value_ils=round(pending_contribution_ils, 2),
+            total_contributed_ils=round(pending_contribution_ils, 2),
+            cost_basis_total_ils=0,
+            realized_proceeds_usd=0,
+            realized_proceeds_ils=0,
+            realized_gain_usd=0,
+            realized_gain_ils=0,
+            unrealized_gain_usd=0,
+            unrealized_gain_ils=0,
+            profit_usd=0,
+            profit_ils=0,
+            time_series=[],
+            no_data=not purchases and pending_contribution_ils <= 0,
+        )
+
+    held_value_usd = shares_held * current_price_usd
+    held_value_ils = held_value_usd * current_fx
+    # Portfolio: held equity FMV + unsettled enrolment pending NIS contributions.
+    current_value_ils = held_value_ils + pending_contribution_ils
+    current_value_usd = held_value_usd + (
+        pending_contribution_ils / current_fx if pending_contribution_ils else 0.0
+    )
     cost_basis_total_ils = cost_basis_held_usd * current_fx
-    total_contributed_ils = total_contributed_usd * current_fx
+    total_contributed_ils = total_contributed_usd * current_fx + pending_contribution_ils
 
     # Realized gains via FIFO lot consumption per sale, FX from sale date.
     lot_pool = [[float(p.get("shares") or 0), float(p.get("purchase_price_usd") or 0)] for p in purchases]
@@ -2704,39 +3006,31 @@ def value_espp(plan: dict) -> dict:
             })
         d += timedelta(days=1)
 
-    return {
-        "shares_acquired_total": round(shares_acquired, 4),
-        "shares_sold_total": round(shares_sold, 4),
-        "shares_held_now": round(shares_held, 4),
-        "current_price_usd": current_price_usd,
-        "current_usdils": current_fx,
-        "current_value_usd": round(current_value_usd, 2),
-        "current_value_ils": round(current_value_ils, 2),
-        "total_contributed_usd": round(total_contributed_usd, 2),
-        "total_contributed_ils": round(total_contributed_ils, 2),
-        "cost_basis_per_share_usd": round(cost_basis_per_share_usd, 4),
-        "cost_basis_total_usd": round(cost_basis_held_usd, 2),
-        "cost_basis_total_ils": round(cost_basis_total_ils, 2),
-        "discount_captured_usd_total": round(discount_captured_total, 2),
-        "lookback_bonus_usd_total": round(lookback_bonus_total, 2),
-        "realized_proceeds_usd": round(realized_proceeds_usd, 2),
-        "realized_proceeds_ils": round(realized_proceeds_ils, 2),
-        "realized_gain_usd": round(realized_gain_usd, 2),
-        "realized_gain_ils": round(realized_gain_ils, 2),
-        "unrealized_gain_usd": round(unrealized_gain_usd, 2),
-        "unrealized_gain_ils": round(unrealized_gain_ils, 2),
-        "profit_usd": round(realized_gain_usd + unrealized_gain_usd, 2),
-        "profit_ils": round(realized_gain_ils + unrealized_gain_ils, 2),
-        "time_series": series,
-        "no_data": False,
-    }
+    return _base_out(
+        current_value_usd=round(current_value_usd, 2),
+        current_value_ils=round(current_value_ils, 2),
+        total_contributed_ils=round(total_contributed_ils, 2),
+        cost_basis_total_ils=round(cost_basis_total_ils, 2),
+        realized_proceeds_usd=round(realized_proceeds_usd, 2),
+        realized_proceeds_ils=round(realized_proceeds_ils, 2),
+        realized_gain_usd=round(realized_gain_usd, 2),
+        realized_gain_ils=round(realized_gain_ils, 2),
+        unrealized_gain_usd=round(unrealized_gain_usd, 2),
+        unrealized_gain_ils=round(unrealized_gain_ils, 2),
+        profit_usd=round(realized_gain_usd + unrealized_gain_usd, 2),
+        profit_ils=round(realized_gain_ils + unrealized_gain_ils, 2),
+        time_series=series,
+        no_data=False,
+    )
 
 
 def project_espp(plan: dict, computed: dict, horizon_months: int) -> dict:
     """Forward projection — Option A: hold ESPP value flat at current_value_ils."""
-    if computed.get("no_data") or computed.get("current_price_usd") is None:
+    if computed.get("current_value_ils") is None and computed.get("no_data"):
         return None
     cur = float(computed.get("current_value_ils") or 0.0)
+    if cur <= 0 and computed.get("no_data"):
+        return None
     return {
         "paths": {"mean": [round(cur, 2)] * horizon_months},
         "horizon_months": horizon_months,
@@ -3088,7 +3382,11 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
 
         # ESPP plans — same stock/FX cache, plan-level purchases & sales.
         espp_plans_out = []
+        espp_changed = False
         for plan in DATA.get("espp_plans", []) or []:
+            plan.setdefault("enrollments", [])
+            if _espp_try_auto_settle_plan(plan):
+                espp_changed = True
             computed = value_espp(plan)
             archived = plan.get("archived")
             projection = project_espp(plan, computed, horizon_months) if not archived else None
@@ -3097,7 +3395,12 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             stock_rows = ticker_cache.get("rows", []) or []
             purchases_sorted = sorted(plan.get("purchases", []) or [], key=lambda p: p["date"])
             earliest_purchase = purchases_sorted[0]["date"] if purchases_sorted else None
-            cutoff = min(cutoff_6m, earliest_purchase) if earliest_purchase else cutoff_6m
+            earliest_enroll = min(
+                (e.get("period_start") for e in (plan.get("enrollments") or []) if e.get("period_start")),
+                default=None,
+            )
+            history_anchors = [x for x in (earliest_purchase, earliest_enroll) if x]
+            cutoff = min(cutoff_6m, min(history_anchors)) if history_anchors else cutoff_6m
             stock_history = [
                 {"date": r["date"], "close": r["close"]}
                 for r in stock_rows if r.get("date", "") >= cutoff
@@ -3109,6 +3412,8 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             out["analyst_target"] = analyst_targets_cache.get(tk)
             out["last_synced"] = ticker_cache.get("last_synced")
             espp_plans_out.append(out)
+        if espp_changed:
+            save_data()
 
         # Cash holdings — flat ILS-equivalent values; no historical/projection math.
         cash_holdings_out = []
@@ -4205,6 +4510,7 @@ def add_espp_plan(payload: dict) -> dict:
             "offering_months": offering_months,
             "purchases": [],
             "sales": [],
+            "enrollments": [],
             "archived": False,
         }
     except (KeyError, ValueError, TypeError) as ex:
@@ -4266,6 +4572,124 @@ def delete_espp_plan(plan_id: str) -> dict:
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Plan not found"}
+
+
+def add_espp_enrollment(plan_id: str, payload: dict) -> dict:
+    """Create an ESPP enrolment (dates + monthly NIS). Auto-settles if period ended."""
+    try:
+        period_start = payload["period_start"]
+        period_end = payload["period_end"]
+        start_d = date.fromisoformat(period_start)
+        end_d = date.fromisoformat(period_end)
+        if end_d < start_d:
+            return {"ok": False, "error": "period_end must be >= period_start"}
+        monthly = float(payload["monthly_contribution_ils"])
+        if monthly <= 0:
+            return {"ok": False, "error": "monthly_contribution_ils must be > 0"}
+        sell_immediately = bool(payload.get("sell_immediately", True))
+        note = (payload.get("note") or "").strip()
+    except (KeyError, ValueError, TypeError) as ex:
+        return {"ok": False, "error": f"Invalid enrolment: {ex}"}
+
+    with _data_lock:
+        plan = next((p for p in DATA.get("espp_plans", []) or [] if p["id"] == plan_id), None)
+        if not plan:
+            return {"ok": False, "error": "Plan not found"}
+        enrollment = {
+            "id": str(uuid.uuid4()),
+            "period_start": period_start,
+            "period_end": period_end,
+            "monthly_contribution_ils": monthly,
+            "sell_immediately": sell_immediately,
+            "note": note,
+            "settled_purchase_id": None,
+            "created_at": now_iso(),
+        }
+        plan.setdefault("enrollments", []).append(enrollment)
+
+    try:
+        _espp_ensure_enrollment_market(plan, enrollment)
+    except Exception:
+        # Keep enrolment; estimates/settle will surface missing-data errors.
+        pass
+
+    settled = False
+    settle_result = None
+    with _data_lock:
+        plan = next((p for p in DATA.get("espp_plans", []) or [] if p["id"] == plan_id), None)
+        if not plan:
+            return {"ok": False, "error": "Plan not found"}
+        enr = next((e for e in plan.get("enrollments", []) or [] if e["id"] == enrollment["id"]), None)
+        if not enr:
+            return {"ok": False, "error": "Enrolment not found after create"}
+        if end_d <= date.today():
+            settle_result = _settle_espp_enrollment(plan, enr, fetch=False)
+            settled = bool(settle_result.get("ok") and not settle_result.get("already_settled"))
+            if not settle_result.get("ok"):
+                # Enrolment stays pending with error available on next compute.
+                save_data()
+                return {
+                    "ok": True,
+                    "enrollment_id": enr["id"],
+                    "settled": False,
+                    "settle_error": settle_result.get("error"),
+                }
+        save_data()
+
+    out = {"ok": True, "enrollment_id": enrollment["id"], "settled": settled}
+    if settle_result and settle_result.get("ok"):
+        out.update({
+            "purchase_id": settle_result.get("purchase_id"),
+            "sale_id": settle_result.get("sale_id"),
+            "shares": settle_result.get("shares"),
+            "purchase_price_usd": settle_result.get("purchase_price_usd"),
+            "discount_captured_usd": settle_result.get("discount_captured_usd"),
+            "lookback_bonus_usd": settle_result.get("lookback_bonus_usd"),
+            "contribution_usd": settle_result.get("contribution_usd"),
+            "contribution_ils": settle_result.get("contribution_ils"),
+        })
+    return out
+
+
+def delete_espp_enrollment(plan_id: str, enrollment_id: str) -> dict:
+    with _data_lock:
+        plan = next((p for p in DATA.get("espp_plans", []) or [] if p["id"] == plan_id), None)
+        if not plan:
+            return {"ok": False, "error": "Plan not found"}
+        enr = next((e for e in plan.get("enrollments", []) or [] if e["id"] == enrollment_id), None)
+        if not enr:
+            return {"ok": False, "error": "Enrolment not found"}
+        if enr.get("settled_purchase_id"):
+            return {"ok": False, "error": "Cannot delete a settled enrolment"}
+        plan["enrollments"] = [e for e in plan.get("enrollments", []) if e["id"] != enrollment_id]
+        save_data()
+    return {"ok": True}
+
+
+def settle_espp_enrollment(plan_id: str, enrollment_id: str) -> dict:
+    with _data_lock:
+        plan = next((p for p in DATA.get("espp_plans", []) or [] if p["id"] == plan_id), None)
+        if not plan:
+            return {"ok": False, "error": "Plan not found"}
+        enr = next((e for e in plan.get("enrollments", []) or [] if e["id"] == enrollment_id), None)
+        if not enr:
+            return {"ok": False, "error": "Enrolment not found"}
+    # Fetch outside the write path when possible; settle re-acquires lock below.
+    try:
+        _espp_ensure_enrollment_market(plan, enr)
+    except Exception as ex:
+        return {"ok": False, "error": f"Could not fetch market data: {ex}"}
+    with _data_lock:
+        plan = next((p for p in DATA.get("espp_plans", []) or [] if p["id"] == plan_id), None)
+        if not plan:
+            return {"ok": False, "error": "Plan not found"}
+        enr = next((e for e in plan.get("enrollments", []) or [] if e["id"] == enrollment_id), None)
+        if not enr:
+            return {"ok": False, "error": "Enrolment not found"}
+        result = _settle_espp_enrollment(plan, enr, fetch=False)
+        if result.get("ok"):
+            save_data()
+        return result
 
 
 def add_espp_purchase(plan_id: str, payload: dict) -> dict:
@@ -4343,6 +4767,11 @@ def delete_espp_purchase(plan_id: str, purchase_id: str) -> dict:
             return {"ok": False, "error": "Purchase not found"}
         # Cascade: drop any auto-fill sale tied to this purchase.
         plan["sales"] = [s for s in plan.get("sales", []) if s.get("purchase_id") != purchase_id]
+        # Remove enrolment that settled into this purchase (avoids auto-re-settle).
+        plan["enrollments"] = [
+            e for e in (plan.get("enrollments") or [])
+            if e.get("settled_purchase_id") != purchase_id
+        ]
         save_data()
     return {"ok": True}
 
@@ -5287,6 +5716,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 pid = path.rsplit("/", 1)[-1]
                 self._json(200, update_espp_plan(pid, body))
                 return
+            if method == "POST" and path.startswith("/api/espp-plans/") and path.endswith("/enrollments"):
+                pid = path.split("/")[3]
+                self._json(200, add_espp_enrollment(pid, body))
+                return
+            if method == "POST" and path.startswith("/api/espp-plans/") and "/enrollments/" in path and path.endswith("/settle"):
+                parts = path.strip("/").split("/")
+                # /api/espp-plans/{id}/enrollments/{eid}/settle
+                if len(parts) == 6 and parts[3] == "enrollments" and parts[5] == "settle":
+                    self._json(200, settle_espp_enrollment(parts[2], parts[4]))
+                    return
+            if method == "DELETE" and path.startswith("/api/espp-plans/") and "/enrollments/" in path:
+                parts = path.strip("/").split("/")
+                if len(parts) == 5 and parts[3] == "enrollments":
+                    self._json(200, delete_espp_enrollment(parts[2], parts[4]))
+                    return
             if method == "POST" and path.startswith("/api/espp-plans/") and path.endswith("/purchases"):
                 pid = path.split("/")[3]
                 self._json(200, add_espp_purchase(pid, body))

@@ -113,7 +113,7 @@ BACKEND_API_CATALOG = {
     "equity_cash": [
         "GET /api/tickers/search",
         "CRUD /api/rsu-grants (+ sales)",
-        "CRUD /api/espp-plans (+ purchases/sales)",
+        "CRUD /api/espp-plans (+ enrollments/purchases/sales)",
         "CRUD /api/cash",
     ],
     "bank_investments": [
@@ -310,6 +310,8 @@ def _espp_summary(p: dict) -> dict:
         "current_value_ils": _round_or_none(computed.get("current_value_ils")),
         "current_value_usd": _round_or_none(computed.get("current_value_usd")),
         "purchase_count": len(p.get("purchases") or []),
+        "active_enrollment_count": len(computed.get("enrollments") or []),
+        "pending_contribution_ils": _round_or_none(computed.get("pending_contribution_ils")),
     }
 
 

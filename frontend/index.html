@@ -3911,6 +3911,7 @@ function renderESPPDetail(plan) {
       <div><dt>${t('espp.discountLabel')}</dt><dd>${plan.discount_pct}% <small>${plan.has_lookback ? t('espp.plusLookback') : t('espp.noLookback')}</small></dd></div>
       <div><dt>${t('espp.offeringLength')}</dt><dd>${plan.offering_months} ${t('espp.months')}</dd></div>
       <div><dt>${t('espp.totalContributed')}</dt><dd>${fmtUSD.format(c.total_contributed_usd || 0)} <small>≈ ${fmtILS.format(c.total_contributed_ils || 0)}</small></dd></div>
+      ${(c.pending_contribution_ils > 0) ? `<div><dt>${t('espp.pendingContributions')}</dt><dd>${fmtILS.format(c.pending_contribution_ils)}</dd></div>` : ''}
       <div><dt>${t('espp.sharesAcquired')}</dt><dd>${fmtNum.format(c.shares_acquired_total || 0)}</dd></div>
       <div><dt>${t('espp.heldSold')}</dt><dd>${fmtNum.format(c.shares_held_now || 0)} / ${fmtNum.format(c.shares_sold_total || 0)}</dd></div>
       <div><dt>${t('espp.costBasisHeld')}</dt><dd>${fmtUSDPrec.format(c.cost_basis_total_usd || 0)} <small>${cbPerShare ? fmtUSDPrec.format(cbPerShare) + '/sh' : ''}</small></dd></div>
@@ -3927,6 +3928,37 @@ function renderESPPDetail(plan) {
     <p class="chart-caption" id="espp-stock-summary-${plan.id}" style="margin-bottom:0.4rem"></p>
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-espp-stock-${plan.id}"></canvas></div>
 
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('espp.enrollments')} <span class="h2-count">${(c.enrollments || []).length}</span></h3>
+    ${(c.enrollments || []).length ? `<div style="overflow-x:auto"><table class="event-table">
+      <thead><tr><th>${t('espp.periodStart')}</th><th>${t('espp.periodEnd')}</th><th>${t('espp.monthlyIls')}</th><th>${t('espp.progress')}</th><th>${t('espp.pendingIls')}</th><th>${t('espp.estBuyPrice')}</th><th>${t('espp.estShares')}</th><th>${t('table.note')}</th><th></th></tr></thead>
+      <tbody>${(c.enrollments || []).map(en => {
+        const err = en.error ? `<div style="color:var(--color-danger);font-size:0.75rem">${escapeHtml(en.error)}</div>` : '';
+        const estHint = en.is_estimate ? ` <small style="color:var(--color-muted)">${t('espp.estimate')}</small>` : '';
+        return `<tr>
+          <td>${en.period_start || '—'}</td>
+          <td>${en.period_end || '—'}</td>
+          <td>${fmtILS.format(en.monthly_contribution_ils || 0)}</td>
+          <td>${en.months_paid != null ? `${en.months_paid}/${en.months_total}` : '—'}${err}</td>
+          <td>${fmtILS.format(en.contribution_ils || 0)}</td>
+          <td>${en.purchase_price_usd != null ? fmtUSDPrec.format(en.purchase_price_usd) : '—'}${estHint}</td>
+          <td>${en.shares != null ? fmtNum.format(en.shares) : '—'}</td>
+          <td dir="auto">${escapeHtml(en.note || '')}</td>
+          <td><button class="btn btn--danger btn--small" data-del-espp-enrollment="${plan.id}:${en.id}" title="${escapeHtml(t('espp.deleteEnrollmentTitle'))}">×</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('espp.noEnrollments')}</p>`}
+    <div class="event-form">
+      <div class="field"><label>${t('espp.periodStart')}</label><input type="date" id="ee-start-${plan.id}"></div>
+      <div class="field"><label>${t('espp.periodEnd')}</label><input type="date" id="ee-end-${plan.id}"></div>
+      <div class="field"><label>${t('espp.monthlyIls')}</label><input type="number" id="ee-monthly-${plan.id}" min="0.01" step="0.01" placeholder="5000"></div>
+      <div class="field"><label>${t('common.note')}</label><input type="text" id="ee-note-${plan.id}"></div>
+      <label class="form-checkbox" style="font-size:0.8125rem; padding-top:1.4rem">
+        <input type="checkbox" id="ee-sell-${plan.id}" checked>
+        <span>${t('espp.autoSell')}</span>
+      </label>
+      <button class="btn btn--primary btn--small" data-add-espp-enrollment="${plan.id}">${t('espp.enrol')}</button>
+    </div>
+
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('espp.purchases')} <span class="h2-count">${purchases.length}</span></h3>
     ${purchases.length ? `<div style="overflow-x:auto"><table class="event-table">
       <thead><tr><th>${t('table.date')}</th><th>${t('table.contribution')}</th><th>${t('table.periodStart')}</th><th>${t('table.periodEnd')}</th><th>${t('table.buyPrice')}</th><th>${t('table.shares')}</th><th>${t('table.discountCaptured')}</th><th>${t('table.lookbackBonus')}</th><th>${t('table.note')}</th><th></th></tr></thead>
@@ -3942,23 +3974,11 @@ function renderESPPDetail(plan) {
           <td>${fmtNum.format(p.shares)}</td>
           <td style="color:var(--color-success)">${fmtUSD.format(dc)}</td>
           <td style="color:${lb > 0 ? 'var(--color-success)' : 'var(--color-muted)'}">${fmtUSD.format(lb)}</td>
-          <td dir="auto">${escapeHtml(p.note || '')}</td>
+          <td dir="auto">${escapeHtml(p.note || '')}${p.enrollment_id ? ` <span class="badge">${t('badge.enrol')}</span>` : ''}</td>
           <td><button class="btn btn--danger btn--small" data-del-espp-purchase="${plan.id}:${p.id}" title="${escapeHtml(t('espp.deletePurchaseTitle'))}">×</button></td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('espp.noPurchases')}</p>`}
-    <div class="event-form">
-      <div class="field"><label>${t('espp.purchaseDate')}</label><input type="date" id="ep-date-${plan.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>${t('espp.contributionUsd')}</label><input type="number" id="ep-contrib-${plan.id}" min="0.01" step="0.01" placeholder="6000"></div>
-      <div class="field"><label>${t('espp.periodStartPrice')}</label><input type="number" id="ep-start-${plan.id}" min="0.01" step="0.01"></div>
-      <div class="field"><label>${t('espp.periodEndPrice')}</label><input type="number" id="ep-end-${plan.id}" min="0.01" step="0.01"></div>
-      <div class="field"><label>${t('common.note')}</label><input type="text" id="ep-note-${plan.id}"></div>
-      <label class="form-checkbox" style="font-size:0.8125rem; padding-top:1.4rem">
-        <input type="checkbox" id="ep-sell-${plan.id}" checked>
-        <span>${t('espp.autoSell')}</span>
-      </label>
-      <button class="btn btn--primary btn--small" data-add-espp-purchase="${plan.id}">${t('espp.logPurchase')}</button>
-    </div>
 
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('rsu.sales')} <span class="h2-count">${sales.length}</span></h3>
     ${sales.length ? `<div style="overflow-x:auto"><table class="event-table">
@@ -6324,29 +6344,49 @@ function init() {
     }
 
     // ── ESPP handlers ──
-    const addEspBuyBtn = e.target.closest('[data-add-espp-purchase]');
-    if (addEspBuyBtn) {
-      const pid = addEspBuyBtn.dataset.addEsppPurchase;
-      const date = document.getElementById(`ep-date-${pid}`).value;
-      const contrib = +document.getElementById(`ep-contrib-${pid}`).value;
-      const start = +document.getElementById(`ep-start-${pid}`).value;
-      const end = +document.getElementById(`ep-end-${pid}`).value;
-      const note = document.getElementById(`ep-note-${pid}`).value;
-      const sell = document.getElementById(`ep-sell-${pid}`).checked;
-      if (!date || !contrib || !start || !end) {
-        toast(t('toast.purchaseFieldsRequired'), 'error');
+    const addEspEnrollBtn = e.target.closest('[data-add-espp-enrollment]');
+    if (addEspEnrollBtn) {
+      const pid = addEspEnrollBtn.dataset.addEsppEnrollment;
+      const period_start = document.getElementById(`ee-start-${pid}`).value;
+      const period_end = document.getElementById(`ee-end-${pid}`).value;
+      const monthly = +document.getElementById(`ee-monthly-${pid}`).value;
+      const note = document.getElementById(`ee-note-${pid}`).value;
+      const sell = document.getElementById(`ee-sell-${pid}`).checked;
+      if (!period_start || !period_end || !monthly) {
+        toast(t('toast.enrollmentFieldsRequired'), 'error');
         return;
       }
-      const j = await api('POST', `/api/espp-plans/${pid}/purchases`, {
-        date, contribution_usd: contrib,
-        period_start_price_usd: start, period_end_price_usd: end,
+      const j = await api('POST', `/api/espp-plans/${pid}/enrollments`, {
+        period_start, period_end,
+        monthly_contribution_ils: monthly,
         sell_immediately: sell, note,
       });
       if (j.ok) {
-        const lbHint = j.lookback_bonus_usd > 0 ? t('toast.lookbackHint', { amount: fmtUSD.format(j.lookback_bonus_usd) }) : '';
-        toast(t('toast.loggedShares', { shares: j.shares.toFixed(2), captured: fmtUSD.format(j.discount_captured_usd) }) + lbHint, 'info');
+        if (j.settled) {
+          const lbHint = j.lookback_bonus_usd > 0 ? t('toast.lookbackHint', { amount: fmtUSD.format(j.lookback_bonus_usd) }) : '';
+          toast(t('toast.enrollmentSettled', { shares: (j.shares || 0).toFixed(2), captured: fmtUSD.format(j.discount_captured_usd || 0) }) + lbHint, 'info');
+        } else if (j.settle_error) {
+          toast(t('toast.enrollmentPendingError', { error: j.settle_error }), 'error');
+        } else {
+          toast(t('toast.enrollmentAdded'), 'info');
+        }
         fetchData();
       } else toast(j.error || t('common.failed'), 'error');
+      return;
+    }
+    const delEspEnrollBtn = e.target.closest('[data-del-espp-enrollment]');
+    if (delEspEnrollBtn) {
+      const [pid, eid] = delEspEnrollBtn.dataset.delEsppEnrollment.split(':');
+      const ok = await modalConfirm({
+        title: t('modal.deleteEnrollment.title'),
+        description: t('modal.deleteEnrollment.desc'),
+        okLabel: t('action.delete'),
+        danger: true,
+      });
+      if (!ok) return;
+      const j = await api('DELETE', `/api/espp-plans/${pid}/enrollments/${eid}`);
+      if (j.ok) { toast(t('toast.enrollmentDeleted'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
       return;
     }
     const delEspBuyBtn = e.target.closest('[data-del-espp-purchase]');
