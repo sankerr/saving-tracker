@@ -119,6 +119,7 @@ BACKEND_API_CATALOG = {
     "bank_investments": [
         "GET /api/tase-funds/search",
         "CRUD /api/tase-fund-holdings — TASE mutual funds (Maya); units × daily NAV",
+        "POST/DELETE /api/tase-fund-holdings/{id}/events — buy/sell/correction of units",
     ],
     "chat": [
         "GET /api/chat/status",

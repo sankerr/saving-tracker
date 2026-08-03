@@ -2856,6 +2856,27 @@ function shiftMonthLabel(ym, delta) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** Same visible month window as the main dashboard chart (DASH_RANGE or default −2 → last label). */
+function resolveVisibleMonthRange(allLabels) {
+  if (!allLabels || !allLabels.length) return { xMin: undefined, xMax: undefined };
+  const today = new Date();
+  const currentMonthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  let xMin, xMax;
+  if (DASH_RANGE && DASH_RANGE.startLabel && DASH_RANGE.endLabel) {
+    xMin = DASH_RANGE.startLabel <= DASH_RANGE.endLabel ? DASH_RANGE.startLabel : DASH_RANGE.endLabel;
+    xMax = DASH_RANGE.startLabel <= DASH_RANGE.endLabel ? DASH_RANGE.endLabel : DASH_RANGE.startLabel;
+  } else {
+    const defaultStart = shiftMonthLabel(currentMonthLabel, -2);
+    xMin = defaultStart;
+    xMax = allLabels[allLabels.length - 1];
+  }
+  const inRange = allLabels.filter((l) => l >= xMin && l <= xMax);
+  if (!inRange.length) {
+    return { xMin: allLabels[0], xMax: allLabels[allLabels.length - 1] };
+  }
+  return { xMin: inRange[0], xMax: inRange[inRange.length - 1] };
+}
+
 // Compact savings-goal strip under the headline. Reads goal_status from the
 // backend (projection-based on-pace assessment); falls back to a "set a goal"
 // affordance when no goal is configured.
@@ -4455,6 +4476,8 @@ function drawDetailChart(canvasId, item, kind) {
     }
   }
 
+  const xRange = (kind === 'tase') ? resolveVisibleMonthRange(allLabels) : { xMin: undefined, xMax: undefined };
+
   DETAIL_CHARTS[canvasId] = new Chart(ctx.getContext('2d'), {
     type: 'line',
     data: {
@@ -4491,7 +4514,13 @@ function drawDetailChart(canvasId, item, kind) {
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
-      scales: { x: { grid: { display: false } }, y: { ticks: { callback: (v) => fmt.format(v) } } },
+      scales: {
+        x: {
+          grid: { display: false },
+          ...(xRange.xMin != null ? { min: xRange.xMin, max: xRange.xMax } : {}),
+        },
+        y: { ticks: { callback: (v) => fmt.format(v) } },
+      },
       plugins: {
         legend: {
           display: (kind === 'rsu' && futureVestArr.length > 0) || whatIfArr.length > 0
@@ -4529,6 +4558,12 @@ function drawSparkline(elId, values) {
 // ── Bank Investments (TASE mutual funds) ──
 let SELECTED_BANK_INVESTMENT = null;
 
+function bankEventKindLabel(kind) {
+  const key = `bankInvestments.ev.kind.${kind}`;
+  const v = t(key);
+  return v === key ? kind : v;
+}
+
 function renderBankInvestments() {
   const list = document.getElementById('bank-investments-list');
   if (!list) return;
@@ -4558,8 +4593,8 @@ function renderBankInvestments() {
       lastM != null ? `${t('row.last')} ${fmtPctSigned(lastM / 100)}` : null,
       ytd != null ? `YTD${ytdYear ? ' ' + ytdYear : ''} ${fmtPctSigned(ytd)}` : null,
     ].filter(Boolean).join(` <span class="holding-row__sub-sep">·</span> `);
-    const navCanvasId = `bank-nav-${h.id}`;
     const projCanvasId = `detail-tase-${h.id}`;
+    const events = (h.events || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     return `
     <div class="holding-row" data-id="${h.id}">
       <div class="holding-row__head" style="cursor:default">
@@ -4577,85 +4612,53 @@ function renderBankInvestments() {
         </div>
       </div>
       <div class="holding-row__detail" style="padding:0.75rem 1rem 1rem">
-        <p class="chart-caption" id="bank-nav-summary-${h.id}" style="margin:0 0 0.5rem"></p>
-        <div class="chart-wrap" style="height:160px"><canvas id="${navCanvasId}"></canvas></div>
-        <h3 style="margin:1rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('bankInvestments.valueProjection')}</h3>
         <p class="chart-caption projection-mean-caption" data-projection-caption-for="${projCanvasId}" hidden></p>
-        <div class="chart-wrap" style="height:180px"><canvas id="${projCanvasId}"></canvas></div>
+        <div class="chart-wrap" style="height:220px"><canvas id="${projCanvasId}"></canvas></div>
+
+        <details class="collapse-section"${events.length ? '' : ' open'}>
+        <summary class="collapse-summary">${t('detail.events')} <span class="h2-count">${events.length}</span></summary>
+        ${events.length ? `<div style="overflow-x:auto"><table class="event-table">
+          <thead><tr><th>${t('table.date')}</th><th>${t('table.kind')}</th><th>${t('bankInvestments.units')}</th><th>${t('table.note')}</th><th></th></tr></thead>
+          <tbody>${events.map(e => `
+            <tr>
+              <td>${escapeHtml(e.date || '')}</td>
+              <td>${escapeHtml(bankEventKindLabel(e.kind))}</td>
+              <td><strong>${Number(e.units || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</strong></td>
+              <td dir="auto">${escapeHtml(e.note || '')}</td>
+              <td><button class="btn btn--danger btn--small" data-del-bank-event="${h.id}:${e.id}">×</button></td>
+            </tr>`).join('')}</tbody>
+        </table></div>` : `<p style="color:var(--color-muted); font-size: 0.875rem; margin: 0.4rem 0;">${t('detail.noEvents')}</p>`}
+        </details>
+        <div class="event-form">
+          <div class="field"><label>${t('table.date')}</label><input type="date" id="bank-ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div class="field"><label>${t('common.kind')}</label><select id="bank-ev-kind-${h.id}">
+            <option value="buy">${t('bankInvestments.ev.kind.buy')}</option>
+            <option value="sell">${t('bankInvestments.ev.kind.sell')}</option>
+            <option value="correction">${t('bankInvestments.ev.kind.correction')}</option>
+          </select></div>
+          <div class="field"><label>${t('bankInvestments.units')}</label><input type="number" id="bank-ev-units-${h.id}" min="0" step="any"></div>
+          <div class="field"><label>${t('common.note')}</label><input type="text" id="bank-ev-note-${h.id}"></div>
+          <button class="btn btn--primary btn--small" data-add-bank-event="${h.id}">${t('common.add')}</button>
+          <span></span>
+        </div>
+        <p class="chart-caption">${t('bankInvestments.eventCaption')}</p>
       </div>
     </div>`;
   }).join('');
   requestAnimationFrame(() => {
     items.forEach(h => {
       drawSparkline(`spark-tase-${h.id}`, (h.computed?.time_series || []).map(p => p.value_ils));
-      drawBankNavHistoryChart(`bank-nav-${h.id}`, h);
       drawDetailChart(`detail-tase-${h.id}`, h, 'tase');
     });
   });
 }
 
-function drawBankNavHistoryChart(canvasId, holding) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx) return;
-  if (DETAIL_CHARTS[canvasId]) DETAIL_CHARTS[canvasId].destroy();
-  const dailyRows = holding.nav_history || [];
-  const summaryEl = document.getElementById(`bank-nav-summary-${holding.id}`);
-  if (!dailyRows.length) {
-    ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
-    if (summaryEl) {
-      summaryEl.innerHTML = `<span style="color:var(--color-muted)">${escapeHtml(t('bankInvestments.noHistory'))}</span>`;
+function redrawBankInvestmentCharts() {
+  if (!APP) return;
+  (APP.tase_fund_holdings || []).filter((h) => !h.archived).forEach((h) => {
+    if (document.getElementById(`detail-tase-${h.id}`)) {
+      drawDetailChart(`detail-tase-${h.id}`, h, 'tase');
     }
-    return;
-  }
-  const labels = dailyRows.map(r => r.date);
-  const data = dailyRows.map(r => r.close);
-  const first = data[0];
-  const last = data[data.length - 1];
-  const delta = last - first;
-  const pct = first ? delta / first : 0;
-  if (summaryEl) {
-    summaryEl.innerHTML = t('bankInvestments.historySummary', {
-      first: fmtILSPrec.format(first),
-      last: fmtILSPrec.format(last),
-      sign: delta >= 0 ? '+' : '',
-      delta: fmtILSPrec.format(delta),
-      pct: fmtPctSigned(pct),
-    });
-  }
-  const c = chartThemeColors();
-  DETAIL_CHARTS[canvasId] = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: t('bankInvestments.navLabel'),
-        data,
-        borderColor: 'rgba(217,119,6,1)',
-        backgroundColor: 'rgba(217,119,6,0.12)',
-        fill: 'origin',
-        tension: 0.1,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        borderWidth: 1.5,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 6, color: c.tick } },
-        y: { grid: { color: c.grid }, ticks: { color: c.tick, callback: (v) => fmtILSPrec.format(v) } },
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${fmtILSPrec.format(ctx.parsed.y || 0)}`,
-          },
-        },
-      },
-    },
   });
 }
 
@@ -5549,6 +5552,7 @@ function init() {
     if (!s || !e) {
       DASH_RANGE = null;
       drawDashboardChart();
+      redrawBankInvestmentCharts();
       return;
     }
     // Order-tolerant: swap if user picks end before start.
@@ -5569,12 +5573,14 @@ function init() {
       return;
     }
     drawDashboardChart();
+    redrawBankInvestmentCharts();
   }
   document.getElementById('range-start').addEventListener('change', onRangeInputChange);
   document.getElementById('range-end').addEventListener('change', onRangeInputChange);
   document.getElementById('range-reset').addEventListener('click', () => {
     DASH_RANGE = null;
     drawDashboardChart();
+    redrawBankInvestmentCharts();
   });
 
   // Drag-to-select on the dashboard chart canvas.
@@ -5635,8 +5641,10 @@ function init() {
     // refresh to clear any leftover drag overlay — destroying the chart on
     // every click would wipe Chart.js's per-dataset hidden state, breaking
     // multi-toggle on the legend.
-    if (rangeChanged) drawDashboardChart();
-    else if (DASH_CHART) DASH_CHART.draw();
+    if (rangeChanged) {
+      drawDashboardChart();
+      redrawBankInvestmentCharts();
+    } else if (DASH_CHART) DASH_CHART.draw();
   }
   dashCanvas.addEventListener('mouseup', () => endDrag(true));
   dashCanvas.addEventListener('mouseleave', () => endDrag(true));
@@ -5932,6 +5940,22 @@ function init() {
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
+    const addBankEvBtn = e.target.closest('[data-add-bank-event]');
+    if (addBankEvBtn) {
+      const hid = addBankEvBtn.dataset.addBankEvent;
+      const date = document.getElementById(`bank-ev-date-${hid}`).value;
+      const kind = document.getElementById(`bank-ev-kind-${hid}`).value;
+      const units = +document.getElementById(`bank-ev-units-${hid}`).value || 0;
+      const note = document.getElementById(`bank-ev-note-${hid}`).value;
+      if (!date) { toast(t('toast.dateRequired'), 'error'); return; }
+      if (!units && kind !== 'correction') { toast(t('toast.enterAmount'), 'error'); return; }
+      const j = await api('POST', `/api/tase-fund-holdings/${hid}/events`, {
+        date, kind, note, units,
+      });
+      if (j.ok) { toast(t('toast.eventAdded'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
+      return;
+    }
     const addRuleBtn = e.target.closest('[data-add-rule]');
     if (addRuleBtn) {
       const hid = addRuleBtn.dataset.addRule;
@@ -6000,6 +6024,14 @@ function init() {
     if (delEvBtn) {
       const [hid, eid] = delEvBtn.dataset.delEvent.split(':');
       const j = await api('DELETE', `${ruleHoldingBaseUrl(hid)}/${hid}/events/${eid}`);
+      if (j.ok) { toast(t('toast.eventDeleted'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
+      return;
+    }
+    const delBankEvBtn = e.target.closest('[data-del-bank-event]');
+    if (delBankEvBtn) {
+      const [hid, eid] = delBankEvBtn.dataset.delBankEvent.split(':');
+      const j = await api('DELETE', `/api/tase-fund-holdings/${hid}/events/${eid}`);
       if (j.ok) { toast(t('toast.eventDeleted'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;

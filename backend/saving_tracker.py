@@ -47,6 +47,7 @@ import sys
 import threading
 import time
 import uuid
+from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -1173,8 +1174,59 @@ def _tase_monthly_returns(fund_id: str) -> list:
     return returns
 
 
+_TASE_EVENT_KINDS = {"buy", "sell", "correction"}
+
+
+def _tase_sorted_events(holding: dict) -> list:
+    return sorted(
+        holding.get("events") or [],
+        key=lambda e: ((e.get("date") or ""), e.get("id") or ""),
+    )
+
+
+def _tase_units_on_date(holding: dict, on_date_iso: str) -> float:
+    """Units held as of on_date (inclusive), from dated buy/sell/correction events.
+
+    With no events, falls back to the static `units` field (v1 constant-units behavior).
+    """
+    events = _tase_sorted_events(holding)
+    if not events:
+        return float(holding.get("units") or 0)
+    day = str(on_date_iso or "")[:10]
+    u = 0.0
+    for ev in events:
+        ed = str(ev.get("date") or "")[:10]
+        if not ed or ed > day:
+            break
+        kind = ev.get("kind")
+        amt = float(ev.get("units") or 0)
+        if kind == "buy":
+            u += amt
+        elif kind == "sell":
+            u -= amt
+        elif kind == "correction":
+            u = amt
+    return max(0.0, u)
+
+
+def _tase_recompute_units_from_events(holding: dict) -> float:
+    """Set holding['units'] from the full event stream (today = far future)."""
+    events = _tase_sorted_events(holding)
+    if not events:
+        return float(holding.get("units") or 0)
+    u = _tase_units_on_date(holding, "9999-12-31")
+    holding["units"] = round(u, 6)
+    return holding["units"]
+
+
+def _tase_month_end_date(ym: str) -> str:
+    y, m = ym.split("-")
+    last = monthrange(int(y), int(m))[1]
+    return f"{int(y):04d}-{int(m):02d}-{last:02d}"
+
+
 def value_tase_fund(holding: dict) -> dict:
-    """units × latest NAV (ILS), plus trailing return helpers from NAV history."""
+    """units × latest NAV (ILS), with event-aware monthly value series."""
     fid = str(holding.get("fund_id") or "")
     units = float(holding.get("units") or 0)
     with _market_lock:
@@ -1194,10 +1246,12 @@ def value_tase_fund(holding: dict) -> dict:
         ym = me["ym"]
         y, m = ym.split("-")
         period = int(y) * 100 + int(m)
+        u = _tase_units_on_date(holding, _tase_month_end_date(ym))
         time_series.append({
             "period": period,
             "date": f"{ym}-01",
-            "value_ils": round(units * float(me["close"]), 2) if units else 0.0,
+            "value_ils": round(u * float(me["close"]), 2) if u else 0.0,
+            "units": u,
             "close": float(me["close"]),
         })
     returns = _tase_monthly_returns(fid)
@@ -1206,7 +1260,6 @@ def value_tase_fund(holding: dict) -> dict:
     if month_ends and price_date:
         ytd_year = int(str(price_date)[:4])
         year_start = f"{ytd_year}-01"
-        # Prefer last close of prior year; else first close in YTD year.
         base = None
         for me in reversed(month_ends):
             if me["ym"] < year_start:
@@ -1225,7 +1278,7 @@ def value_tase_fund(holding: dict) -> dict:
         "unit_price_ils": unit_price,
         "price_date": price_date,
         "value_ils": value,
-        "current_value_ils": value,  # alias for fund-style chart / projection helpers
+        "current_value_ils": value,
         "currency": "ILS",
         "has_price": unit_price is not None,
         "last_month_return_pct": last_month_return_pct,
@@ -3350,19 +3403,22 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             last_per_month[ym] = s
         espp_month_end.append((plan, last_per_month))
 
-    # Bank Investments: month-end NAV × current units (units assumed constant in v1).
+    # Bank Investments: month-end NAV × units held that month (event-aware).
     tase_month_end = []
     for h in tase:
         if h.get("archived"):
             continue
-        units = float(h.get("units") or 0)
         hist = h.get("nav_history") or []
-        if not hist or units == 0:
+        if not hist:
             continue
         last_per_month = {}
         for r in hist:
             ym = r["date"][:7]
-            last_per_month[ym] = units * float(r["close"])
+            u = _tase_units_on_date(h, _tase_month_end_date(ym))
+            if u == 0:
+                last_per_month[ym] = 0.0
+            else:
+                last_per_month[ym] = u * float(r["close"])
         tase_month_end.append(last_per_month)
 
     series = []
@@ -4477,9 +4533,20 @@ def add_tase_fund_holding(payload: dict) -> dict:
         "fund_name_snapshot": fund_name,
         "nickname": nickname,
         "units": units,
+        "events": [],
         "archived": False,
         "included_in_dashboard": True,
     }
+    if units > 0:
+        # Seed a buy event so history can reconstruct units over time.
+        item["events"].append({
+            "id": str(uuid.uuid4()),
+            "date": date.today().isoformat(),
+            "kind": "buy",
+            "units": units,
+            "note": "",
+            "source": "initial",
+        })
     with _data_lock:
         DATA.setdefault("tase_fund_holdings", []).append(item)
         save_data()
@@ -4501,7 +4568,21 @@ def update_tase_fund_holding(holding_id: str, patch: dict) -> dict:
                 return {"ok": False, "error": "מספר היחידות חייב להיות מספר"}
             if v < 0:
                 return {"ok": False, "error": "מספר היחידות לא יכול להיות שלילי"}
-            h["units"] = v
+            h.setdefault("events", [])
+            if h["events"]:
+                # Keep event stream as source of truth: record a correction.
+                h["events"].append({
+                    "id": str(uuid.uuid4()),
+                    "date": date.today().isoformat(),
+                    "kind": "correction",
+                    "units": v,
+                    "note": "",
+                    "source": "manual_edit",
+                })
+                h["events"].sort(key=lambda e: (e.get("date") or "", e.get("id") or ""))
+                _tase_recompute_units_from_events(h)
+            else:
+                h["units"] = v
         if "archived" in patch:
             h["archived"] = bool(patch["archived"])
         if "included_in_dashboard" in patch:
@@ -4519,6 +4600,66 @@ def delete_tase_fund_holding(holding_id: str) -> dict:
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "ההשקעה בבנק לא נמצאה"}
+
+
+def add_tase_fund_event(holding_id: str, payload: dict) -> dict:
+    kind = (payload.get("kind") or "").strip().lower()
+    if kind not in _TASE_EVENT_KINDS:
+        return {"ok": False, "error": "סוג אירוע חייב להיות buy / sell / correction"}
+    ev_date = (payload.get("date") or "").strip()
+    try:
+        date.fromisoformat(ev_date)
+    except ValueError:
+        return {"ok": False, "error": "תאריך לא תקין"}
+    try:
+        units = float(payload.get("units"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "מספר היחידות חייב להיות מספר"}
+    if units < 0:
+        return {"ok": False, "error": "מספר היחידות לא יכול להיות שלילי"}
+    if kind in ("buy", "sell") and units == 0:
+        return {"ok": False, "error": "מספר היחידות חייב להיות גדול מאפס"}
+
+    event = {
+        "id": str(uuid.uuid4()),
+        "date": ev_date,
+        "kind": kind,
+        "units": units,
+        "note": (payload.get("note") or "").strip(),
+        "source": "manual",
+    }
+    with _data_lock:
+        h = next((x for x in (DATA.get("tase_fund_holdings") or []) if x["id"] == holding_id), None)
+        if not h:
+            return {"ok": False, "error": "ההשקעה בבנק לא נמצאה"}
+        h.setdefault("events", [])
+        if kind == "sell":
+            held = _tase_units_on_date(h, ev_date)
+            # Units already include earlier events on/before this date; selling
+            # more than held after applying this sell would go negative — check
+            # against held before the new sell.
+            if units > held + 1e-9:
+                return {"ok": False, "error": f"אין מספיק יחידות למכירה (מוחזק: {held:g})"}
+        h["events"].append(event)
+        h["events"].sort(key=lambda e: (e.get("date") or "", e.get("id") or ""))
+        _tase_recompute_units_from_events(h)
+        save_data()
+        return {"ok": True, "event_id": event["id"], "units": h["units"]}
+
+
+def delete_tase_fund_event(holding_id: str, event_id: str) -> dict:
+    with _data_lock:
+        h = next((x for x in (DATA.get("tase_fund_holdings") or []) if x["id"] == holding_id), None)
+        if not h:
+            return {"ok": False, "error": "ההשקעה בבנק לא נמצאה"}
+        events = h.setdefault("events", [])
+        for i, ev in enumerate(events):
+            if ev.get("id") == event_id:
+                events.pop(i)
+                _tase_recompute_units_from_events(h)
+                save_data()
+                return {"ok": True, "units": h.get("units")}
+    return {"ok": False, "error": "האירוע לא נמצא"}
 
 
 def _normalize_goal(goal):
@@ -5188,14 +5329,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method == "POST" and path == "/api/tase-fund-holdings":
                 self._json(200, add_tase_fund_holding(body))
                 return
+            if method == "POST" and path.startswith("/api/tase-fund-holdings/") and path.endswith("/events"):
+                parts = path.strip("/").split("/")
+                if len(parts) == 4:
+                    self._json(200, add_tase_fund_event(parts[2], body))
+                    return
+            if method == "DELETE" and path.startswith("/api/tase-fund-holdings/") and "/events/" in path:
+                parts = path.strip("/").split("/")
+                if len(parts) == 5 and parts[3] == "events":
+                    self._json(200, delete_tase_fund_event(parts[2], parts[4]))
+                    return
             if method == "PATCH" and path.startswith("/api/tase-fund-holdings/"):
-                hid = path.rsplit("/", 1)[-1]
-                self._json(200, update_tase_fund_holding(hid, body))
-                return
+                parts = path.strip("/").split("/")
+                if len(parts) == 3:
+                    self._json(200, update_tase_fund_holding(parts[2], body))
+                    return
             if method == "DELETE" and path.startswith("/api/tase-fund-holdings/"):
-                hid = path.rsplit("/", 1)[-1]
-                self._json(200, delete_tase_fund_holding(hid))
-                return
+                parts = path.strip("/").split("/")
+                if len(parts) == 3:
+                    self._json(200, delete_tase_fund_holding(parts[2]))
+                    return
 
             if method == "POST" and path == "/api/import":
                 self._json(200, import_data(body))

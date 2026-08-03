@@ -157,6 +157,71 @@ def test_compose_portfolio_projection_sums_tase_paths():
     assert proj["paths"]["mean"] == holding["projection"]["paths"]["mean"]
 
 
+def test_tase_units_on_date_from_events():
+    holding = {
+        "units": 0,
+        "events": [
+            {"id": "1", "date": "2026-01-10", "kind": "buy", "units": 100},
+            {"id": "2", "date": "2026-03-05", "kind": "sell", "units": 40},
+            {"id": "3", "date": "2026-04-01", "kind": "correction", "units": 80},
+        ],
+    }
+    assert st._tase_units_on_date(holding, "2025-12-31") == 0
+    assert st._tase_units_on_date(holding, "2026-01-31") == 100
+    assert st._tase_units_on_date(holding, "2026-03-31") == 60
+    assert st._tase_units_on_date(holding, "2026-04-30") == 80
+
+
+def test_value_tase_fund_time_series_respects_events():
+    closes = {
+        "2026-01": 10.0,
+        "2026-02": 10.0,
+        "2026-03": 10.0,
+        "2026-04": 10.0,
+    }
+    _seed_monthly_nav("5123898", closes)
+    holding = {
+        "fund_id": "5123898",
+        "units": 80,
+        "events": [
+            {"id": "1", "date": "2026-01-15", "kind": "buy", "units": 100},
+            {"id": "2", "date": "2026-03-10", "kind": "sell", "units": 20},
+        ],
+    }
+    computed = st.value_tase_fund(holding)
+    by_period = {p["period"]: p for p in computed["time_series"]}
+    assert by_period[202601]["units"] == 100
+    assert by_period[202601]["value_ils"] == 1000.0
+    assert by_period[202602]["units"] == 100
+    assert by_period[202603]["units"] == 80
+    assert by_period[202604]["units"] == 80
+
+
+def test_add_tase_fund_event_updates_units():
+    st.DATA["tase_fund_holdings"] = [{
+        "id": "t1",
+        "fund_id": "5123898",
+        "units": 100,
+        "events": [
+            {"id": "init", "date": "2026-01-01", "kind": "buy", "units": 100, "note": "", "source": "initial"},
+        ],
+        "archived": False,
+    }]
+    # Monkeypatch save_data to no-op
+    orig = st.save_data
+    st.save_data = lambda: None
+    try:
+        r = st.add_tase_fund_event("t1", {"date": "2026-06-01", "kind": "buy", "units": 50})
+        assert r["ok"] is True
+        h = st.DATA["tase_fund_holdings"][0]
+        assert h["units"] == 150
+        assert len(h["events"]) == 2
+        bad = st.add_tase_fund_event("t1", {"date": "2026-06-02", "kind": "sell", "units": 999})
+        assert bad["ok"] is False
+    finally:
+        st.save_data = orig
+
+
 if __name__ == "__main__":
     test_normalize_tase_fund_id_strips_leading_zeros()
     test_agorot_to_ils()
@@ -167,4 +232,7 @@ if __name__ == "__main__":
     test_compose_portfolio_includes_tase_flat()
     test_what_if_holds_tase_flat_not_compounded()
     test_compose_portfolio_projection_sums_tase_paths()
+    test_tase_units_on_date_from_events()
+    test_value_tase_fund_time_series_respects_events()
+    test_add_tase_fund_event_updates_units()
     print("ok")

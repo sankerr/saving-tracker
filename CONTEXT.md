@@ -13,7 +13,7 @@ A TASE-listed mutual fund (קרן נאמנות) held directly through a bank bro
 _Avoid_: Stock, TASE fund, "mutual fund" as a UI label
 
 **Units**:
-Quantity of a Bank Investment fund held. User-editable directly; not derived from buy/sell lot history in v1.
+Quantity of a Bank Investment fund held. User-editable directly; also maintained via dated buy/sell/correction events. Historical charts use units held at each month-end.
 _Avoid_: Shares (reserved for RSU/ESPP equity holdings)
 
 **NAV (Net Asset Value)**:
