@@ -518,6 +518,20 @@ def build_portfolio_context(state: dict) -> dict:
         if not p.get("archived")
     ]
     cash = [_cash_summary(c) for c in (state.get("cash_holdings") or [])]
+    tase = [
+        {
+            "id": h.get("id"),
+            "kind": "bank_investment",
+            "fund_id": h.get("fund_id"),
+            "name": (h.get("nickname") or h.get("fund_name_snapshot") or h.get("fund_id")),
+            "units": (h.get("computed") or {}).get("units", h.get("units")),
+            "unit_price_ils": _round_or_none((h.get("computed") or {}).get("unit_price_ils")),
+            "value_ils": _round_or_none((h.get("computed") or {}).get("value_ils")),
+            "price_date": (h.get("computed") or {}).get("price_date"),
+        }
+        for h in (state.get("tase_fund_holdings") or [])
+        if not h.get("archived")
+    ]
 
     monthly_history = _build_monthly_history(state)
     return {
@@ -538,6 +552,7 @@ def build_portfolio_context(state: dict) -> dict:
             "rsu_value_ils": _round_or_none(portfolio.get("rsu_value_ils")),
             "espp_value_ils": _round_or_none(portfolio.get("espp_value_ils")),
             "cash_value_ils": _round_or_none(portfolio.get("cash_value_ils")),
+            "tase_funds_value_ils": _round_or_none(portfolio.get("tase_funds_value_ils")),
             "note": "Dashboard total excludes pension (tracked separately).",
         },
         "pension_summary": {
@@ -553,6 +568,7 @@ def build_portfolio_context(state: dict) -> dict:
             "rsu": rsus,
             "espp": espps,
             "cash": cash,
+            "bank_investments": tase,
         },
         "monthly_history": monthly_history,
         "insight_slots_hint": _insight_slots_hint(portfolio, monthly_history, state.get("goal_status")),
@@ -567,6 +583,7 @@ def _insight_slots_hint(portfolio: dict, monthly_history: dict, goal_status: Any
         ("rsu", float(portfolio.get("rsu_value_ils") or 0)),
         ("espp", float(portfolio.get("espp_value_ils") or 0)),
         ("cash", float(portfolio.get("cash_value_ils") or 0)),
+        ("bank_investments", float(portfolio.get("tase_funds_value_ils") or 0)),
     ]
     sleeves = [(k, v) for k, v in sleeves if v > 0]
     top = max(sleeves, key=lambda x: x[1]) if sleeves else None

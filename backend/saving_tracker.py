@@ -8,6 +8,7 @@ Tracks long-term savings:
   - RSU grants priced from Yahoo Finance (stock + USDILS), with vesting
     schedules, optional FMV cost-basis override, and dated sale events
   - Cash / non-invested balances (ILS or USD with auto-FX conversion)
+  - Bank Investments: TASE mutual funds (Maya) valued as units × daily NAV
 
 Cloud deployment — portfolio data in PostgreSQL (Neon), simple JWT auth.
 
@@ -96,6 +97,14 @@ HORIZON_CAP_MONTHS = 600  # 50 years — covers any retirement horizon the picke
 
 USER_AGENT = "Mozilla/5.0 (saving-tracker; local app)"
 
+# Maya / TASE mutual funds (קרנות נאמנות). Published unit prices are in Agorot;
+# ILS value = units × sellPrice / TASE_FUND_AGOROT_PER_ILS.
+MAYA_API_BASE = "https://maya.tase.co.il/api/v1"
+TASE_FUND_AGOROT_PER_ILS = 100
+TASE_FUND_CATALOG_TTL_SECONDS = 24 * 3600
+TASE_FUND_HISTORY_PERIOD_YEAR = 2  # Maya FundHistoryPeriod.YEAR
+TASE_FUND_HISTORY_PERIOD_CUSTOM = 4
+
 # Upstream column names (the misspelling 'WITHDRAWLS' is preserved as-is).
 COL_FUND_ID = "FUND_ID"
 COL_FUND_NAME = "FUND_NAME"
@@ -129,6 +138,7 @@ def default_data() -> dict:
         "rsu_grants": [],
         "cash_holdings": [],
         "espp_plans": [],
+        "tase_fund_holdings": [],
     }
 
 
@@ -147,6 +157,8 @@ def default_market() -> dict:
         "insurance_package_show": None,
         "insurance_monthly": {},
         "stock_daily": {},
+        "tase_fund_daily": {},
+        "tase_fund_catalog": None,
         "fx": {},
         "analyst_targets": {},
     }
@@ -425,6 +437,34 @@ def http_get(url, *, params=None, timeout=HTTP_TIMEOUT, max_retries=3, headers=N
     for attempt in range(max_retries):
         try:
             r = requests.get(url, params=params, headers=hdrs, timeout=timeout)
+            if 500 <= r.status_code < 600:
+                last_err = RuntimeError(f"HTTP {r.status_code}")
+                time.sleep(delay)
+                delay *= 3
+                continue
+            r.raise_for_status()
+            return r
+        except (requests.exceptions.RequestException, RuntimeError) as ex:
+            last_err = ex
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                delay *= 3
+    raise last_err if last_err else RuntimeError("HTTP failed")
+
+
+def http_post(url, *, json_body=None, timeout=HTTP_TIMEOUT, max_retries=3, headers=None):
+    hdrs = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    if headers:
+        hdrs.update(headers)
+    last_err = None
+    delay = 0.5
+    for attempt in range(max_retries):
+        try:
+            r = requests.post(url, json=json_body, headers=hdrs, timeout=timeout)
             if 500 <= r.status_code < 600:
                 last_err = RuntimeError(f"HTTP {r.status_code}")
                 time.sleep(delay)
@@ -877,6 +917,261 @@ def yahoo_fetch_fx_usdils(since_iso: str = None, *, force: bool = False):
     return out["rows"]
 
 
+# ── Maya / TASE mutual funds (Bank Investments) ───────────────────────────────
+def _normalize_tase_fund_id(raw) -> str:
+    s = str(raw or "").strip()
+    if not s.isdigit():
+        raise ValueError("fund_id must be numeric")
+    return str(int(s))
+
+
+def _maya_headers() -> dict:
+    return {"Referer": "https://maya.tase.co.il/he/funds/mutual-funds"}
+
+
+def _agorot_to_ils(agorot) -> float | None:
+    v = _to_float(agorot)
+    if v is None:
+        return None
+    return v / TASE_FUND_AGOROT_PER_ILS
+
+
+def _parse_maya_history_rows(raw_rows: list) -> list:
+    """Normalize Maya history rows to {date, close} with close in ILS."""
+    by_date = {}
+    for raw in raw_rows or []:
+        if not isinstance(raw, dict):
+            continue
+        trade = raw.get("tradeDate") or ""
+        day = str(trade)[:10]
+        if len(day) != 10:
+            continue
+        # Prefer sell/redemption price; fall back to purchase.
+        close_ils = _agorot_to_ils(raw.get("sellPrice"))
+        if close_ils is None:
+            close_ils = _agorot_to_ils(raw.get("purchasePrice"))
+        if close_ils is None:
+            continue
+        by_date[day] = {"date": day, "close": round(close_ils, 6)}
+    return [by_date[k] for k in sorted(by_date.keys())]
+
+
+def maya_fetch_fund_history(fund_id: str, *, force: bool = False, since_iso: str = None) -> list:
+    """Fetch daily NAV history for a TASE mutual fund into MARKET['tase_fund_daily']."""
+    fid = _normalize_tase_fund_id(fund_id)
+    if since_iso is None:
+        since_iso = (date.today() - timedelta(days=400)).isoformat()
+    want_from = datetime.fromisoformat(since_iso).date().isoformat()
+    with _market_lock:
+        existing = (MARKET.get("tase_fund_daily") or {}).get(fid)
+    if not force and existing and _ts_is_today(existing.get("last_synced_ts")):
+        rows = existing.get("rows") or []
+        covered_from = rows[0]["date"] if rows else None
+        if covered_from and covered_from <= want_from:
+            return rows
+
+    url = f"{MAYA_API_BASE}/funds/mutual/{fid}/history"
+    # Maya caps pageSize at 30. YEAR (~250 trading days) covers the mini-chart.
+    all_raw = []
+    page = 1
+    while page <= 20:
+        body = {
+            "pageSize": 30,
+            "pageNumber": page,
+            "period": TASE_FUND_HISTORY_PERIOD_YEAR,
+        }
+        r = http_post(url, json_body=body, headers=_maya_headers())
+        chunk = r.json()
+        if not isinstance(chunk, list) or not chunk:
+            break
+        all_raw.extend(chunk)
+        if len(chunk) < 30:
+            break
+        page += 1
+        time.sleep(SYNC_PAGE_PAUSE)
+
+    rows = _parse_maya_history_rows(all_raw)
+    # If FIVE_YEARS was empty, try a custom ~13-month window as fallback.
+    if not rows:
+        to_d = date.today()
+        from_d = date.fromisoformat(want_from)
+        page = 1
+        all_raw = []
+        while page <= 40:
+            body = {
+                "pageSize": 30,
+                "pageNumber": page,
+                "period": TASE_FUND_HISTORY_PERIOD_CUSTOM,
+                "fromDate": from_d.isoformat() + "T00:00:00.000Z",
+                "toDate": to_d.isoformat() + "T00:00:00.000Z",
+            }
+            r = http_post(url, json_body=body, headers=_maya_headers())
+            chunk = r.json() if r.ok else []
+            if not isinstance(chunk, list) or not chunk:
+                break
+            all_raw.extend(chunk)
+            if len(chunk) < 30:
+                break
+            page += 1
+            time.sleep(SYNC_PAGE_PAUSE)
+        rows = _parse_maya_history_rows(all_raw)
+
+    name = None
+    with _market_lock:
+        cat = MARKET.get("tase_fund_catalog") or {}
+        for item in cat.get("items") or []:
+            if str(item.get("fund_id")) == fid:
+                name = item.get("name")
+                break
+        if existing and not name:
+            name = existing.get("name")
+        MARKET.setdefault("tase_fund_daily", {})[fid] = {
+            "last_synced": now_iso(),
+            "last_synced_ts": time.time(),
+            "currency": "ILS",
+            "name": name,
+            "rows": rows,
+        }
+        save_market()
+    return rows
+
+
+def maya_ensure_fund_catalog(*, force: bool = False) -> list:
+    """Page Maya's mutual-fund list into MARKET['tase_fund_catalog'] (shared, ~daily)."""
+    with _market_lock:
+        cat = MARKET.get("tase_fund_catalog")
+        if (
+            not force
+            and isinstance(cat, dict)
+            and cat.get("items")
+            and (time.time() - (cat.get("fetched_at_ts") or 0) < TASE_FUND_CATALOG_TTL_SECONDS)
+        ):
+            return cat["items"]
+
+    items_by_id = {}
+    page = 1
+    while page <= 400:
+        body = {"pageSize": 30, "pageNumber": page}
+        r = http_post(
+            f"{MAYA_API_BASE}/funds/mutual",
+            json_body=body,
+            headers=_maya_headers(),
+        )
+        chunk = r.json()
+        if not isinstance(chunk, list) or not chunk:
+            break
+        for raw in chunk:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                fid = _normalize_tase_fund_id(raw.get("fundId"))
+            except ValueError:
+                continue
+            name = (raw.get("name") or raw.get("longName") or "").strip()
+            items_by_id[fid] = {
+                "fund_id": fid,
+                "name": name,
+                "manager_name": (raw.get("managerName") or "").strip(),
+                "isin": (raw.get("isin") or "").strip() or None,
+                "tax_status": (raw.get("taxStatusName") or "").strip() or None,
+            }
+        if len(chunk) < 30:
+            break
+        page += 1
+        time.sleep(SYNC_PAGE_PAUSE)
+
+    items = sorted(items_by_id.values(), key=lambda x: (x.get("name") or "", x["fund_id"]))
+    with _market_lock:
+        MARKET["tase_fund_catalog"] = {
+            "fetched_at": now_iso(),
+            "fetched_at_ts": time.time(),
+            "items": items,
+        }
+        save_market()
+    return items
+
+
+def tase_funds_search(q: str, limit: int = 20) -> list:
+    """Search TASE mutual funds by name/manager or exact numeric fund id."""
+    q = (q or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(50, int(limit or 20)))
+
+    # Numeric query → prefer exact fund_id from cached catalog; otherwise validate
+    # via history without forcing a full catalog download.
+    if q.isdigit():
+        fid = _normalize_tase_fund_id(q)
+        with _market_lock:
+            cat = MARKET.get("tase_fund_catalog")
+            items = list((cat or {}).get("items") or [])
+        exact = [x for x in items if x["fund_id"] == fid]
+        if exact:
+            return exact[:limit]
+        if items:
+            prefix = [x for x in items if x["fund_id"].startswith(fid) or fid in x["fund_id"]]
+            if prefix:
+                return prefix[:limit]
+        try:
+            rows = maya_fetch_fund_history(fid)
+        except Exception:
+            return []
+        if not rows:
+            return []
+        return [{
+            "fund_id": fid,
+            "name": f"קרן {fid}",
+            "manager_name": "",
+            "isin": None,
+            "tax_status": None,
+        }]
+
+    items = maya_ensure_fund_catalog()
+    q_lower = q.lower()
+    hits = []
+    for item in items:
+        hay = " ".join([
+            item.get("name") or "",
+            item.get("manager_name") or "",
+            item.get("fund_id") or "",
+            item.get("isin") or "",
+        ]).lower()
+        if q_lower in hay:
+            hits.append(item)
+            if len(hits) >= limit:
+                break
+    return hits
+
+
+def value_tase_fund(holding: dict) -> dict:
+    """units × latest NAV (ILS)."""
+    fid = str(holding.get("fund_id") or "")
+    units = float(holding.get("units") or 0)
+    with _market_lock:
+        cache = (MARKET.get("tase_fund_daily") or {}).get(fid) or {}
+        rows = cache.get("rows") or []
+    last = rows[-1] if rows else None
+    unit_price = float(last["close"]) if last else None
+    price_date = last["date"] if last else None
+    value = round(units * unit_price, 2) if unit_price is not None else None
+    return {
+        "units": units,
+        "unit_price_ils": unit_price,
+        "price_date": price_date,
+        "value_ils": value,
+        "currency": "ILS",
+        "has_price": unit_price is not None,
+    }
+
+
+def _tase_fund_display_name(holding: dict) -> str:
+    return (
+        (holding.get("nickname") or "").strip()
+        or (holding.get("fund_name_snapshot") or "").strip()
+        or str(holding.get("fund_id") or "השקעה בבנק")
+    )
+
+
 # ── Sync orchestrator ────────────────────────────────────────────────────────
 def run_sync(*, force=False) -> dict:
     if not _sync_lock.acquire(blocking=False):
@@ -902,6 +1197,11 @@ def run_sync(*, force=False) -> dict:
             pension_ids = sorted({h["fund_id"] for h in DATA.get("pension_holdings", []) or [] if not h.get("archived")})
             grants_active = [g for g in DATA["rsu_grants"] if not g.get("archived")]
             espp_active = [p for p in DATA.get("espp_plans", []) or [] if not p.get("archived")]
+            tase_ids = sorted({
+                str(h["fund_id"])
+                for h in DATA.get("tase_fund_holdings", []) or []
+                if not h.get("archived") and h.get("fund_id")
+            })
             # Tickers & earliest-known dates from BOTH RSU grants and ESPP plans.
             grants_by_ticker = {}
             for g in grants_active:
@@ -960,6 +1260,14 @@ def run_sync(*, force=False) -> dict:
             cached_at = ((MARKET.get("analyst_targets") or {}).get(tk) or {}).get("fetched_at_ts") or 0
             if force or (time.time() - cached_at) > ANALYST_TARGET_TTL_SECONDS:
                 yahoo_fetch_analyst_target(tk)
+            time.sleep(SYNC_PAGE_PAUSE)
+
+        for fid in tase_ids:
+            _sync_status["step"] = f"tase fund {fid}"
+            try:
+                maya_fetch_fund_history(fid, force=force)
+            except Exception as ex:
+                _sync_status["error"] = f"tase fund {fid}: {ex}"
             time.sleep(SYNC_PAGE_PAUSE)
 
         # Always refresh FX so cash USD entries (and future RSU grants) have a rate.
@@ -2337,6 +2645,7 @@ def compute_cashout_tax_estimate(
     espp_out: list,
     cash_out: list,
     pension_out: list,
+    tase_out: list = None,
 ) -> dict:
     """Rough educational estimate of tax if liquidating accessible holdings today.
 
@@ -2448,6 +2757,24 @@ def compute_cashout_tax_estimate(
             "note": "Cash assumed already after-tax",
         })
 
+    for h in tase_out or []:
+        if h.get("archived") or not h.get("included_in_dashboard", True):
+            continue
+        c = h.get("computed") or {}
+        value = _positive(c.get("value_ils"))
+        accessible_value += value
+        # No cost basis in v1 — treat like cash for the educational estimate.
+        tax_free_value += value
+        lines.append({
+            "kind": "tase_fund",
+            "label": _tase_fund_display_name(h),
+            "value_ils": round(value, 2),
+            "taxable_profit_ils": 0.0,
+            "estimated_tax_ils": 0.0,
+            "rate": 0.0,
+            "note": "Bank Investment: no cost basis tracked in v1",
+        })
+
     pension_value = 0.0
     for h in pension_out or []:
         if h.get("archived"):
@@ -2534,6 +2861,7 @@ def compute_goal_status(goal: dict, funds_out: list, grants_out: list,
         proj = compose_portfolio_projection(
             funds_g, grants_g, horizon_g, espp_g,
             portfolio.get("cash_value_ils") or 0.0,
+            portfolio.get("tase_funds_value_ils") or 0.0,
         )
         mean = (proj or {}).get("paths", {}).get("mean") or []
         projected = mean[-1] if mean else current
@@ -2658,9 +2986,28 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             }
             cash_holdings_out.append(out)
 
+        # Bank Investments (TASE mutual funds) — units × daily NAV.
+        tase_fund_holdings_out = []
+        cutoff_nav = (date.today() - timedelta(days=400)).isoformat()
+        for h in DATA.get("tase_fund_holdings", []) or []:
+            computed = value_tase_fund(h)
+            fid = str(h.get("fund_id") or "")
+            ticker_cache = (MARKET.get("tase_fund_daily") or {}).get(fid) or {}
+            nav_rows = ticker_cache.get("rows") or []
+            nav_history = [
+                {"date": r["date"], "close": r["close"]}
+                for r in nav_rows if r.get("date", "") >= cutoff_nav
+            ]
+            out = dict(h)
+            out["computed"] = computed
+            out["nav_history"] = nav_history
+            out["last_synced"] = ticker_cache.get("last_synced")
+            tase_fund_holdings_out.append(out)
+
         # Portfolio aggregation (monthly resolution).
         portfolio = compose_portfolio(fund_holdings_out, rsu_grants_out, horizon_months,
-                                      assumed_annual_pct, cash_holdings_out, espp_plans_out)
+                                      assumed_annual_pct, cash_holdings_out, espp_plans_out,
+                                      tase_fund_holdings_out)
 
         # cache freshness
         fx_entry = MARKET["fx"].get("USDILS", {})
@@ -2716,7 +3063,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
 
         cashout_tax_estimate = compute_cashout_tax_estimate(
             fund_holdings_out, rsu_grants_out, espp_plans_out,
-            cash_holdings_out, pension_holdings_out,
+            cash_holdings_out, pension_holdings_out, tase_fund_holdings_out,
         )
 
         return {
@@ -2731,6 +3078,7 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
             "rsu_grants": rsu_grants_out,
             "espp_plans": espp_plans_out,
             "cash_holdings": cash_holdings_out,
+            "tase_fund_holdings": tase_fund_holdings_out,
             "portfolio": portfolio,
             "pension_summary": {
                 "total_value_ils": round(pension_total_ils, 2),
@@ -2798,14 +3146,16 @@ def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_m
     }
 
 
-def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_annual_pct=None, cash: list = None, espp: list = None) -> dict:
+def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_annual_pct=None, cash: list = None, espp: list = None, tase: list = None) -> dict:
     espp = espp or []
+    tase = tase or []
     # Funds toggled off from the dashboard are excluded from the headline total,
     # the historical stack, the projection cone, and the what-if line. They stay
     # visible in the Funds section. Missing flag means included (default on).
     funds = [h for h in (funds or []) if h.get("included_in_dashboard", True)]
+    tase = [h for h in tase if h.get("included_in_dashboard", True)]
     # Build a unified monthly axis from earliest holding/grant/plan to today.
-    if not funds and not grants and not espp:
+    if not funds and not grants and not espp and not tase:
         return {
             "total_value_ils": 0,
             "funds_value_ils": 0,
@@ -2813,6 +3163,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "espp_value_ils": 0,
             "espp_value_usd": 0,
             "cash_value_ils": 0,
+            "tase_funds_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
             "time_series_ils": [],
@@ -2836,6 +3187,17 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         if purchases:
             first_p = min(p["date"] for p in purchases)
             starts.append(date_period(date.fromisoformat(first_p)))
+    for h in tase:
+        if h.get("archived"):
+            continue
+        # Prefer earliest cached NAV date; else fall back to created_at / today.
+        hist = h.get("nav_history") or []
+        if hist:
+            starts.append(date_period(date.fromisoformat(hist[0]["date"][:10])))
+        elif h.get("created_at"):
+            starts.append(date_period(date.fromisoformat(str(h["created_at"])[:10])))
+        else:
+            starts.append(current_period())
     if not starts:
         return {
             "total_value_ils": 0,
@@ -2844,6 +3206,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "espp_value_ils": 0,
             "espp_value_usd": 0,
             "cash_value_ils": 0,
+            "tase_funds_value_ils": 0,
             "total_invested_ils": 0,
             "total_profit_ils": 0,
             "time_series_ils": [],
@@ -2890,6 +3253,21 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             last_per_month[ym] = s
         espp_month_end.append((plan, last_per_month))
 
+    # Bank Investments: month-end NAV × current units (units assumed constant in v1).
+    tase_month_end = []
+    for h in tase:
+        if h.get("archived"):
+            continue
+        units = float(h.get("units") or 0)
+        hist = h.get("nav_history") or []
+        if not hist or units == 0:
+            continue
+        last_per_month = {}
+        for r in hist:
+            ym = r["date"][:7]
+            last_per_month[ym] = units * float(r["close"])
+        tase_month_end.append(last_per_month)
+
     series = []
     for period in period_iter(start_p, end_p):
         ym = period_to_yyyymm(period)
@@ -2898,6 +3276,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         rsu_val_usd = 0.0
         espp_val_ils = 0.0
         espp_val_usd = 0.0
+        tase_val = 0.0
         for h, by_period in fund_series_by_holding:
             v = by_period.get(period)
             if v is None:
@@ -2931,7 +3310,16 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             if v:
                 espp_val_ils += v.get("value_ils") or 0
                 espp_val_usd += v.get("value_usd") or 0
-        total = funds_val + rsu_val_ils + espp_val_ils
+        for last_per_month in tase_month_end:
+            v = last_per_month.get(ym)
+            if v is None:
+                latest_ym = None
+                for k in last_per_month.keys():
+                    if k <= ym and (latest_ym is None or k > latest_ym):
+                        latest_ym = k
+                v = last_per_month.get(latest_ym)
+            tase_val += float(v or 0)
+        total = funds_val + rsu_val_ils + espp_val_ils + tase_val
         series.append({
             "period": ym,
             "funds_ils": round(funds_val, 2),
@@ -2939,6 +3327,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "rsu_usd": round(rsu_val_usd, 2),
             "espp_ils": round(espp_val_ils, 2),
             "espp_usd": round(espp_val_usd, 2),
+            "tase_ils": round(tase_val, 2),
             "total_ils": round(total, 2),
         })
 
@@ -2948,7 +3337,11 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     espp_now_ils = sum(p["computed"]["current_value_ils"] for p in espp if not p.get("archived"))
     espp_now_usd = sum(p["computed"]["current_value_usd"] for p in espp if not p.get("archived"))
     cash_now = sum((c.get("computed") or {}).get("value_ils", 0) for c in (cash or []) if not c.get("archived"))
-    total_now = funds_now + rsu_now_ils + espp_now_ils + cash_now
+    tase_now = sum(
+        float((h.get("computed") or {}).get("value_ils") or 0)
+        for h in tase if not h.get("archived")
+    )
+    total_now = funds_now + rsu_now_ils + espp_now_ils + cash_now + tase_now
 
     funds_invested = sum(
         float(h["anchor_balance_ils"]) + h["computed"]["total_deposited_ils"] - h["computed"]["total_withdrawn_ils"]
@@ -2962,7 +3355,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     employer_total = sum(h["computed"].get("total_employer_ils", 0) for h in funds if not h.get("archived"))
 
     # Portfolio projection — sum per-holding cones at each horizon step.
-    proj = compose_portfolio_projection(funds, grants, horizon_months, espp, cash_now)
+    proj = compose_portfolio_projection(funds, grants, horizon_months, espp, cash_now, tase_now)
 
     # Aggregate recurring contributions across all active fund holdings, per
     # future month, so the what-if line picks them up too.
@@ -2974,13 +3367,11 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         for i, c in enumerate(contribs):
             monthly_recurring[i] += c
 
-    # What-if: growth rate applies to funds only. Cash + ESPP added flat at every
-    # future point (cash sits in bank; ESPP held flat at current value per Option A).
-    # RSU contribution is deterministic (vesting × current price × FX), folded in
-    # per month so the line reflects the same vesting curve the cone uses.
+    # What-if: growth rate applies to funds only. Cash + Bank Investments + ESPP
+    # added flat; RSU contribution is deterministic vesting.
     rsu_per_month = (proj or {}).get("paths", {}).get("rsu_mean") or [0.0] * horizon_months
     espp_per_month = (proj or {}).get("paths", {}).get("espp_mean") or [espp_now_ils] * horizon_months
-    deterministic_per_month = [r + cash_now + e for r, e in zip(rsu_per_month, espp_per_month)]
+    deterministic_per_month = [r + cash_now + tase_now + e for r, e in zip(rsu_per_month, espp_per_month)]
     what_if = compose_portfolio_what_if(
         funds_now,
         assumed_annual_pct,
@@ -3001,6 +3392,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         "espp_value_ils": round(espp_now_ils, 2),
         "espp_value_usd": round(espp_now_usd, 2),
         "cash_value_ils": round(cash_now, 2),
+        "tase_funds_value_ils": round(tase_now, 2),
         "total_invested_ils": round(funds_invested, 2),
         "funds_profit_ils": round(funds_profit, 2),
         "rsu_profit_ils": round(rsu_profit_ils, 2),
@@ -3015,13 +3407,15 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
 
 
 def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
-                                 espp: list = None, cash_now_ils: float = 0.0) -> dict:
+                                 espp: list = None, cash_now_ils: float = 0.0,
+                                 tase_now_ils: float = 0.0) -> dict:
     espp = espp or []
     mean_path = [0.0] * horizon_months
     funds_mean = [0.0] * horizon_months
     rsu_mean = [0.0] * horizon_months
     espp_mean = [0.0] * horizon_months
     cash_mean = [round(cash_now_ils, 2)] * horizon_months
+    tase_mean = [round(tase_now_ils, 2)] * horizon_months
     any_data = False
     funds_weight_total = 0.0
     funds_weighted_annual = 0.0
@@ -3069,6 +3463,10 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
         any_data = True
         for i in range(horizon_months):
             mean_path[i] += cash_now_ils
+    if tase_now_ils > 0:
+        any_data = True
+        for i in range(horizon_months):
+            mean_path[i] += tase_now_ils
     if not any_data:
         return None
     return {
@@ -3078,6 +3476,7 @@ def compose_portfolio_projection(funds: list, grants: list, horizon_months: int,
             "rsu_mean": [round(v, 2) for v in rsu_mean],
             "espp_mean": [round(v, 2) for v in espp_mean],
             "cash_mean": cash_mean,
+            "tase_mean": tase_mean,
         },
         "horizon_months": horizon_months,
         "funds_annual_pct": round(funds_weighted_annual / funds_weight_total, 2)
@@ -3904,6 +4303,93 @@ def delete_cash_holding(cash_id: str) -> dict:
     return {"ok": False, "error": "Cash holding not found"}
 
 
+# ── Bank Investments (TASE mutual funds) ─────────────────────────────────────
+def add_tase_fund_holding(payload: dict) -> dict:
+    try:
+        fund_id = _normalize_tase_fund_id(payload.get("fund_id"))
+    except ValueError:
+        return {"ok": False, "error": "מספר הקרן חייב להיות מספרי"}
+    try:
+        units = float(payload.get("units"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "מספר היחידות חייב להיות מספר"}
+    if units < 0:
+        return {"ok": False, "error": "מספר היחידות לא יכול להיות שלילי"}
+    nickname = (payload.get("nickname") or "").strip()
+
+    with _data_lock:
+        for h in DATA.get("tase_fund_holdings", []) or []:
+            if str(h.get("fund_id")) == fund_id and not h.get("archived"):
+                return {"ok": False, "error": f"הקרן {fund_id} כבר במעקב"}
+
+    # Resolve name from cached catalog (best-effort), then ensure price history.
+    fund_name = ""
+    with _market_lock:
+        for item in ((MARKET.get("tase_fund_catalog") or {}).get("items") or []):
+            if item.get("fund_id") == fund_id:
+                fund_name = item.get("name") or ""
+                break
+    try:
+        maya_fetch_fund_history(fund_id)
+    except Exception as ex:
+        return {"ok": False, "error": f"לא ניתן למשוך שערי מאיה עבור {fund_id}: {ex}"}
+    if not fund_name:
+        with _market_lock:
+            fund_name = ((MARKET.get("tase_fund_daily") or {}).get(fund_id) or {}).get("name") or ""
+    if not fund_name:
+        fund_name = f"קרן {fund_id}"
+
+    item = {
+        "id": str(uuid.uuid4()),
+        "created_at": now_iso(),
+        "fund_id": fund_id,
+        "fund_name_snapshot": fund_name,
+        "nickname": nickname,
+        "units": units,
+        "archived": False,
+        "included_in_dashboard": True,
+    }
+    with _data_lock:
+        DATA.setdefault("tase_fund_holdings", []).append(item)
+        save_data()
+    return {"ok": True, "id": item["id"]}
+
+
+def update_tase_fund_holding(holding_id: str, patch: dict) -> dict:
+    with _data_lock:
+        items = DATA.setdefault("tase_fund_holdings", [])
+        h = next((x for x in items if x["id"] == holding_id), None)
+        if not h:
+            return {"ok": False, "error": "ההשקעה בבנק לא נמצאה"}
+        if "nickname" in patch:
+            h["nickname"] = (patch["nickname"] or "").strip()
+        if "units" in patch:
+            try:
+                v = float(patch["units"])
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "מספר היחידות חייב להיות מספר"}
+            if v < 0:
+                return {"ok": False, "error": "מספר היחידות לא יכול להיות שלילי"}
+            h["units"] = v
+        if "archived" in patch:
+            h["archived"] = bool(patch["archived"])
+        if "included_in_dashboard" in patch:
+            h["included_in_dashboard"] = bool(patch["included_in_dashboard"])
+        save_data()
+    return {"ok": True}
+
+
+def delete_tase_fund_holding(holding_id: str) -> dict:
+    with _data_lock:
+        items = DATA.setdefault("tase_fund_holdings", [])
+        for i, h in enumerate(items):
+            if h["id"] == holding_id:
+                items.pop(i)
+                save_data()
+                return {"ok": True}
+    return {"ok": False, "error": "ההשקעה בבנק לא נמצאה"}
+
+
 def _normalize_goal(goal):
     """Validate/normalize a goal patch.
 
@@ -4162,6 +4648,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             limit = int((qs.get("limit") or ["10"])[0])
             try:
                 hits = yahoo_search_ticker(q, limit=limit)
+                self._json(200, {"ok": True, "results": hits})
+            except Exception as ex:
+                self._json(200, {"ok": False, "error": str(ex)})
+            return
+
+        if path == "/api/tase-funds/search":
+            q = (qs.get("q") or [""])[0]
+            limit = int((qs.get("limit") or ["20"])[0])
+            try:
+                hits = tase_funds_search(q, limit=limit)
                 self._json(200, {"ok": True, "results": hits})
             except Exception as ex:
                 self._json(200, {"ok": False, "error": str(ex)})
@@ -4556,6 +5052,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if method == "DELETE" and path.startswith("/api/cash/"):
                 cid = path.rsplit("/", 1)[-1]
                 self._json(200, delete_cash_holding(cid))
+                return
+
+            if method == "POST" and path == "/api/tase-fund-holdings":
+                self._json(200, add_tase_fund_holding(body))
+                return
+            if method == "PATCH" and path.startswith("/api/tase-fund-holdings/"):
+                hid = path.rsplit("/", 1)[-1]
+                self._json(200, update_tase_fund_holding(hid, body))
+                return
+            if method == "DELETE" and path.startswith("/api/tase-fund-holdings/"):
+                hid = path.rsplit("/", 1)[-1]
+                self._json(200, delete_tase_fund_holding(hid))
                 return
 
             if method == "POST" and path == "/api/import":

@@ -2067,6 +2067,42 @@ html[dir="rtl"] .chat-panel {
     </div>
   </section>
 
+  <section class="card" id="bank-investments-card">
+    <div class="card__header">
+      <h2><span data-i18n="section.bankInvestments">השקעות בבנק</span> <span class="h2-count" id="bank-investments-count">0</span> <button class="help-btn" data-help="bankInvestments" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.bankInvestments.title" title="מה זה החלק הזה?" aria-label="על השקעות בבנק">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-bank-investment-btn" data-i18n="bankInvestments.add">+ הוספת השקעה</button>
+    </div>
+    <div id="bank-investments-list" class="holdings-list"></div>
+    <div id="add-bank-investment-panel" class="add-panel" hidden>
+      <div class="field">
+        <label for="bank-investment-search" data-i18n="bankInvestments.searchLabel">חיפוש לפי שם או מספר קרן במאיה</label>
+        <input type="text" id="bank-investment-search" autocomplete="off" data-i18n-placeholder="bankInvestments.searchPlaceholder" placeholder="מיטב כספית, 5123898…">
+        <div style="font-size:0.75rem; color:var(--color-muted); margin-top:0.25rem;" data-i18n="bankInvestments.searchHint">קרנות נאמנות מהבורסה (מאיה). שער יחידה יומי מתעדכן בסנכרון.</div>
+      </div>
+      <div id="bank-investment-search-results"></div>
+      <div id="bank-investment-selected-row" hidden>
+        <div class="field-grid">
+          <div class="field">
+            <label data-i18n="bankInvestments.selectedFund">הקרן שנבחרה</label>
+            <div id="bank-investment-selected-pill"></div>
+          </div>
+          <div class="field">
+            <label for="bank-investment-nickname" data-i18n="common.nickname">כינוי</label>
+            <input type="text" id="bank-investment-nickname" data-i18n-placeholder="bankInvestments.nicknamePlaceholder" placeholder="אופציונלי">
+          </div>
+          <div class="field">
+            <label for="bank-investment-units" data-i18n="bankInvestments.units">יחידות</label>
+            <input type="number" id="bank-investment-units" min="0" step="any" placeholder="1234.56">
+          </div>
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn--ghost btn--small" id="add-bank-investment-cancel" data-i18n="common.cancel">ביטול</button>
+        <button class="btn btn--primary btn--small" id="add-bank-investment-save" disabled data-i18n="bankInvestments.save">שמירת השקעה</button>
+      </div>
+    </div>
+  </section>
+
   <section class="card" id="cash-card">
     <div class="card__header">
       <h2><span data-i18n="section.cash">Cash &amp; non-invested</span> <span class="h2-count" id="cash-count">0</span> <button class="help-btn" data-help="cash" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.cash.title" title="What is this section?" aria-label="About Cash">?</button></h2>
@@ -2369,11 +2405,11 @@ function clearPortfolioUi() {
   if (dataMonth) { dataMonth.textContent = ''; dataMonth.hidden = true; }
   document.getElementById('range-summary').hidden = true;
   document.getElementById('range-reset').hidden = true;
-  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'cash-list'].forEach((id) => {
+  ['funds-list', 'pension-list', 'rsu-list', 'espp-list', 'bank-investments-list', 'cash-list'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
   });
-  ['funds-count', 'pension-count', 'rsu-count', 'espp-count', 'cash-count'].forEach((id) => {
+  ['funds-count', 'pension-count', 'rsu-count', 'espp-count', 'bank-investments-count', 'cash-count'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.textContent = '0';
   });
@@ -2727,6 +2763,7 @@ function renderAll() {
   renderPension();
   renderRSU();
   renderESPP();
+  renderBankInvestments();
   renderCash();
   renderSettings();
   syncNavBadges();
@@ -2752,6 +2789,9 @@ function renderDashboard() {
   }
   if ((p.cash_value_ils || 0) > 0) {
     subline += ` · ${t('label.cash')} <strong>${fmtILS.format(p.cash_value_ils)}</strong>`;
+  }
+  if ((p.tase_funds_value_ils || 0) > 0) {
+    subline += ` · ${t('label.bankInvestments')} <strong>${fmtILS.format(p.tase_funds_value_ils)}</strong>`;
   }
   document.getElementById('dash-subline').innerHTML = subline;
   renderAllocation();
@@ -2879,6 +2919,7 @@ function renderAllocation() {
     { label: t('section.funds'), val: +p.funds_value_ils || 0, color: '#6E5FE0' },
     { label: t('section.rsu'),   val: +p.rsu_value_ils   || 0, color: '#00B8B8' },
     { label: t('section.espp'),  val: +p.espp_value_ils  || 0, color: '#B565D8' },
+    { label: t('section.bankInvestments'), val: +p.tase_funds_value_ils || 0, color: '#D97706' },
     { label: t('section.cash'),  val: +p.cash_value_ils  || 0, color: '#1F8A4C' },
   ].filter((c) => c.val > 0);
   const total = cats.reduce((s, c) => s + c.val, 0);
@@ -3026,12 +3067,14 @@ function drawDashboardChart() {
   const histFunds = [];
   const histRsu = [];
   const histEspp = [];
+  const histTase = [];
   for (const s of histSeries) {
     if (s.period < currentMonthLabel) {
       histLabels.push(s.period);
       histFunds.push(s.funds_ils || 0);
       histRsu.push(s.rsu_ils || 0);
       histEspp.push(s.espp_ils || 0);
+      histTase.push(s.tase_ils || 0);
     }
   }
 
@@ -3050,10 +3093,12 @@ function drawDashboardChart() {
   const todayRsu = p.rsu_value_ils || 0;
   const todayEspp = p.espp_value_ils || 0;
   const todayCash = p.cash_value_ils || 0;
+  const todayTase = p.tase_funds_value_ils || 0;
   const projFundsMean = (proj && proj.paths && proj.paths.funds_mean) ? proj.paths.funds_mean : [];
   const projRsuMean = (proj && proj.paths && proj.paths.rsu_mean) ? proj.paths.rsu_mean : [];
   const projEsppMean = (proj && proj.paths && proj.paths.espp_mean) ? proj.paths.espp_mean : [];
   const projCashMean = (proj && proj.paths && proj.paths.cash_mean) ? proj.paths.cash_mean : [];
+  const projTaseMean = (proj && proj.paths && proj.paths.tase_mean) ? proj.paths.tase_mean : [];
   const wf = p.what_if;
   // When what-if is active, drive the Funds stack from per-holding what-if paths
   // (your chosen %/yr) instead of historical-average projection — otherwise the
@@ -3075,14 +3120,16 @@ function drawDashboardChart() {
   const rsuFuture = projRsuMean.length ? projRsuMean : Array(horizonMonths).fill(0);
   const esppFuture = projEsppMean.length ? projEsppMean : Array(horizonMonths).fill(todayEspp);
   const cashFuture = projCashMean.length ? projCashMean : Array(horizonMonths).fill(todayCash);
+  const taseFuture = projTaseMean.length ? projTaseMean : Array(horizonMonths).fill(todayTase);
 
   const labels = [...histLabels, ...futureLabels];
   const fundsData = [...histFunds, todayFunds, ...fundsFuture];
   const rsuData = [...histRsu, todayRsu, ...rsuFuture];
   const esppData = [...histEspp, todayEspp, ...esppFuture];
-  // Cash is flat across every spot — sits at the bottom of the stack.
+  // Cash / Bank Investments are flat across every spot.
   const cashData = [...histLabels.map(_ => todayCash), todayCash, ...cashFuture];
-  const totalData = fundsData.map((v, i) => v + (rsuData[i] || 0) + (esppData[i] || 0) + (cashData[i] || 0));
+  const taseData = [...histTase, todayTase, ...taseFuture];
+  const totalData = fundsData.map((v, i) => v + (rsuData[i] || 0) + (esppData[i] || 0) + (cashData[i] || 0) + (taseData[i] || 0));
 
   // What-if line — only future portion, anchored at today's chart total.
   let whatIfData = [];
@@ -3155,6 +3202,7 @@ function drawDashboardChart() {
       labels,
       datasets: [
         { label: t('label.cash'), data: cashData, borderColor: 'rgba(176,175,194,1)', backgroundColor: 'rgba(176,175,194,0.45)', fill: 'origin', tension: 0.25, pointRadius: 0, stack: 'a' },
+        { label: t('label.bankInvestments'), data: taseData, borderColor: 'rgba(217,119,6,1)', backgroundColor: 'rgba(217,119,6,0.40)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
         { label: wf && wf.annual_pct != null ? t('chart.fundsAtRate', { pct: wf.annual_pct }) : t('label.funds'), data: fundsData, borderColor: 'rgba(110,95,224,1)', backgroundColor: 'rgba(110,95,224,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
         { label: t('label.rsu'), data: rsuData, borderColor: 'rgba(77,205,205,1)', backgroundColor: 'rgba(77,205,205,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
         { label: t('label.espp'), data: esppData, borderColor: 'rgba(224,151,95,1)', backgroundColor: 'rgba(224,151,95,0.45)', fill: '-1', tension: 0.25, pointRadius: 0, stack: 'a' },
@@ -4468,6 +4516,124 @@ function drawSparkline(elId, values) {
   el.innerHTML = `<polyline fill="none" stroke="${color}" stroke-width="1.5" points="${points}"/>`;
 }
 
+// ── Bank Investments (TASE mutual funds) ──
+let SELECTED_BANK_INVESTMENT = null;
+
+function renderBankInvestments() {
+  const list = document.getElementById('bank-investments-list');
+  if (!list) return;
+  const items = (APP.tase_fund_holdings || [])
+    .filter(h => !h.archived)
+    .slice()
+    .sort((a, b) => (b.computed?.value_ils || 0) - (a.computed?.value_ils || 0));
+  document.getElementById('bank-investments-count').textContent = items.length;
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-state"><strong>${escapeHtml(t('empty.bankInvestments.title'))}</strong>${escapeHtml(t('empty.bankInvestments.body'))}<div class="empty-state__cta"><button type="button" class="btn btn--primary btn--small" data-empty-add="add-bank-investment-btn">${escapeHtml(t('bankInvestments.add'))}</button></div></div>`;
+    return;
+  }
+  list.innerHTML = items.map(h => {
+    const cv = h.computed || {};
+    const title = h.nickname || h.fund_name_snapshot || h.fund_id;
+    const priceBit = cv.unit_price_ils != null
+      ? t('bankInvestments.priceSub', {
+          price: fmtILSPrec.format(cv.unit_price_ils),
+          units: Number(cv.units || h.units || 0).toLocaleString(undefined, { maximumFractionDigits: 6 }),
+          date: cv.price_date || '—',
+        })
+      : t('bankInvestments.noPrice');
+    const canvasId = `bank-nav-${h.id}`;
+    return `
+    <div class="holding-row" data-id="${h.id}">
+      <div class="holding-row__head" style="cursor:default">
+        <div>
+          <p class="holding-row__title" dir="auto">${escapeHtml(title)} <span class="badge">${escapeHtml(String(h.fund_id))}</span></p>
+          <p class="holding-row__sub" dir="auto">${escapeHtml(priceBit)}</p>
+        </div>
+        <span></span>
+        <div style="text-align:right">
+          <div class="holding-row__value">${cv.value_ils != null ? fmtILS.format(cv.value_ils) : '—'}</div>
+          <div class="actions-row" style="justify-content:flex-end; gap:0.25rem; margin-top:0.4rem">
+            <button class="btn btn--ghost btn--small" data-edit-bank-investment="${h.id}">${t('bankInvestments.editLabel')}</button>
+            <button class="btn btn--danger btn--small" data-delete-bank-investment="${h.id}">${t('action.delete')}</button>
+          </div>
+        </div>
+      </div>
+      <div class="holding-row__detail" style="padding:0.75rem 1rem 1rem">
+        <p class="chart-caption" id="bank-nav-summary-${h.id}" style="margin:0 0 0.5rem"></p>
+        <div class="chart-wrap" style="height:160px"><canvas id="${canvasId}"></canvas></div>
+      </div>
+    </div>`;
+  }).join('');
+  requestAnimationFrame(() => {
+    items.forEach(h => drawBankNavHistoryChart(`bank-nav-${h.id}`, h));
+  });
+}
+
+function drawBankNavHistoryChart(canvasId, holding) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  if (DETAIL_CHARTS[canvasId]) DETAIL_CHARTS[canvasId].destroy();
+  const dailyRows = holding.nav_history || [];
+  const summaryEl = document.getElementById(`bank-nav-summary-${holding.id}`);
+  if (!dailyRows.length) {
+    ctx.getContext('2d').clearRect(0, 0, ctx.width, ctx.height);
+    if (summaryEl) {
+      summaryEl.innerHTML = `<span style="color:var(--color-muted)">${escapeHtml(t('bankInvestments.noHistory'))}</span>`;
+    }
+    return;
+  }
+  const labels = dailyRows.map(r => r.date);
+  const data = dailyRows.map(r => r.close);
+  const first = data[0];
+  const last = data[data.length - 1];
+  const delta = last - first;
+  const pct = first ? delta / first : 0;
+  if (summaryEl) {
+    summaryEl.innerHTML = t('bankInvestments.historySummary', {
+      first: fmtILSPrec.format(first),
+      last: fmtILSPrec.format(last),
+      sign: delta >= 0 ? '+' : '',
+      delta: fmtILSPrec.format(delta),
+      pct: fmtPctSigned(pct),
+    });
+  }
+  const c = chartThemeColors();
+  DETAIL_CHARTS[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: t('bankInvestments.navLabel'),
+        data,
+        borderColor: 'rgba(217,119,6,1)',
+        backgroundColor: 'rgba(217,119,6,0.12)',
+        fill: 'origin',
+        tension: 0.1,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 1.5,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 6, color: c.tick } },
+        y: { grid: { color: c.grid }, ticks: { color: c.tick, callback: (v) => fmtILSPrec.format(v) } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${fmtILSPrec.format(ctx.parsed.y || 0)}`,
+          },
+        },
+      },
+    },
+  });
+}
+
 // ── Cash ──
 function renderCash() {
   const list = document.getElementById('cash-list');
@@ -4533,6 +4699,7 @@ const HELP_TITLE_KEYS = {
   'retirement-sim': 'help.retirementSim.title',
   rsu: 'help.rsu.title',
   espp: 'help.espp.title',
+  bankInvestments: 'help.bankInvestments.title',
   cash: 'help.cash.title',
   settings: 'help.settings.title',
 };
@@ -4544,6 +4711,7 @@ const HELP_BODY_KEYS = {
   'retirement-sim': 'help.retirementSim.body',
   rsu: 'help.rsu.body',
   espp: 'help.espp.body',
+  bankInvestments: 'help.bankInvestments.body',
   cash: 'help.cash.body',
   settings: 'help.settings.body',
 };
@@ -4637,6 +4805,15 @@ const HELP_CONTENT = {
       <p><strong>Sales</strong>: same shape as RSU sales (FIFO across purchase lots). Tick "Auto-sell at period end" on the purchase form for a sell-immediately strategy — it auto-creates a paired sale.</p>
       <p><strong>Forecast on the main chart</strong>: ESPP holdings show as <em>flat at current value</em> across the horizon (no assumption that you keep contributing). To stop tracking, archive the plan.</p>
       <p>Tax: discount is taxed as ordinary income in Israel; long-term holding under §102 capital-gains track moves the appreciation portion to 25%. <strong>The app does not compute Israeli tax.</strong></p>
+    `,
+  },
+  bankInvestments: {
+    title: 'על השקעות בבנק',
+    body: `
+      <p>קרנות נאמנות בבורסה שמוחזקות בחשבון הבנק — נפרד מסעיף <em>קופות</em> (גמל/פנסיה).</p>
+      <p>כל אחזקה מזוהה לפי מספר קרן במאיה. הזינו מספר <strong>יחידות</strong> מהדף בבנק; האפליקציה מושכת שער יחידה יומי ממאיה ומחשבת <code>שווי = יחידות × שער</code>.</p>
+      <p>מאיה מפרסמת שערי יחידה באגורות; האפליקציה ממירה לש״ח (÷100). ערכו יחידות בקנייה או מכירה. השער מתעדכן בסנכרון / בקרון היומי.</p>
+      <p>אין היסטוריית קניות/מכירות או בסיס עלות בגרסה זו. בתחזית האחזקות נשמרות שטוחות (כמו מזומן).</p>
     `,
   },
   cash: {
@@ -5115,6 +5292,7 @@ const NAV_SECTIONS = [
   { id: 'retirement-simulator-card', label: 'section.retirementSim' },
   { id: 'rsu-card', label: 'section.rsu', count: 'rsu-count' },
   { id: 'espp-card', label: 'section.espp', count: 'espp-count' },
+  { id: 'bank-investments-card', label: 'section.bankInvestments', count: 'bank-investments-count' },
   { id: 'cash-card', label: 'section.cash', count: 'cash-count' },
 ];
 let _navSpy = null;
@@ -5552,6 +5730,19 @@ function init() {
   document.getElementById('add-espp-save').addEventListener('click', saveESPPPlan);
   setupESPPTickerSearch();
 
+  // Bank Investments
+  document.getElementById('add-bank-investment-btn').addEventListener('click', () => {
+    const panel = document.getElementById('add-bank-investment-panel');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) document.getElementById('bank-investment-search').focus();
+  });
+  document.getElementById('add-bank-investment-cancel').addEventListener('click', () => {
+    resetAddBankInvestment();
+    document.getElementById('add-bank-investment-panel').hidden = true;
+  });
+  setupBankInvestmentSearch();
+  document.getElementById('add-bank-investment-save').addEventListener('click', saveBankInvestment);
+
   const insightRefresh = document.getElementById('ai-insight-refresh');
   if (insightRefresh) insightRefresh.addEventListener('click', () => loadInsights(true));
   document.getElementById('settings-btn').addEventListener('click', openSettings);
@@ -5955,6 +6146,42 @@ function init() {
       else toast(j.error || t('common.failed'), 'error');
       return;
     }
+    const editBankBtn = e.target.closest('[data-edit-bank-investment]');
+    if (editBankBtn) {
+      const id = editBankBtn.dataset.editBankInvestment;
+      const h = (APP.tase_fund_holdings || []).find(x => x.id === id);
+      if (!h) return;
+      const result = await modalForm({
+        title: t('modal.editBankInvestment.title'),
+        fields: [
+          { id: 'nickname', label: t('common.nickname'), type: 'text', value: h.nickname || '' },
+          { id: 'units', label: t('bankInvestments.units'), type: 'number', step: 'any', value: h.units },
+        ],
+      });
+      if (!result) return;
+      const j = await api('PATCH', `/api/tase-fund-holdings/${id}`, result);
+      if (j.ok) { toast(t('common.updated'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
+      return;
+    }
+    const delBankBtn = e.target.closest('[data-delete-bank-investment]');
+    if (delBankBtn) {
+      const id = delBankBtn.dataset.deleteBankInvestment;
+      const h = (APP.tase_fund_holdings || []).find(x => x.id === id);
+      if (!h) return;
+      const name = h.nickname || h.fund_name_snapshot || h.fund_id;
+      const ok = await modalConfirm({
+        title: t('modal.deleteBankInvestment.title'),
+        description: t('modal.deleteBankInvestment.desc', { name }),
+        okLabel: t('action.delete'),
+        danger: true,
+      });
+      if (!ok) return;
+      const j = await api('DELETE', `/api/tase-fund-holdings/${id}`);
+      if (j.ok) { toast(t('common.deleted'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
+      return;
+    }
     const delCashBtn = e.target.closest('[data-delete-cash]');
     if (delCashBtn) {
       const id = delCashBtn.dataset.deleteCash;
@@ -6277,6 +6504,94 @@ async function saveFundHolding() {
   } else {
     toast(j.error || t('common.failed'), 'error');
     setStatus('error', j.error || t('status.addFailed'));
+  }
+}
+
+// ── Add Bank Investment flow ──
+let bankInvestmentSearchTimer = null;
+
+function setupBankInvestmentSearch() {
+  const inp = document.getElementById('bank-investment-search');
+  if (!inp) return;
+  inp.addEventListener('input', () => {
+    clearTimeout(bankInvestmentSearchTimer);
+    const q = inp.value.trim();
+    if (!q) {
+      document.getElementById('bank-investment-search-results').innerHTML = '';
+      return;
+    }
+    bankInvestmentSearchTimer = setTimeout(async () => {
+      const j = await api('GET', `/api/tase-funds/search?q=${encodeURIComponent(q)}&limit=15`);
+      const box = document.getElementById('bank-investment-search-results');
+      if (!j.ok) {
+        box.innerHTML = `<div class="empty-state">${escapeHtml(j.error || t('search.failed'))}</div>`;
+        return;
+      }
+      const hits = j.results || [];
+      if (!hits.length) {
+        box.innerHTML = `<div class="empty-state">${t('search.noMatches')}</div>`;
+        return;
+      }
+      box.innerHTML = `<div class="search-results">${hits.map(h => `
+        <div class="search-results__item" data-tase-fund-id="${escapeHtml(String(h.fund_id))}">
+          <div class="search-results__title" dir="auto">${escapeHtml(String(h.fund_id))} · ${escapeHtml(h.name || '')}</div>
+          <div class="search-results__sub" dir="auto">${escapeHtml(h.manager_name || '')}</div>
+        </div>`).join('')}</div>`;
+      box.querySelectorAll('[data-tase-fund-id]').forEach(el => {
+        el.addEventListener('click', () => {
+          const fid = el.dataset.taseFundId;
+          SELECTED_BANK_INVESTMENT = hits.find(h => String(h.fund_id) === String(fid));
+          renderSelectedBankInvestment();
+        });
+      });
+    }, 280);
+  });
+}
+
+function renderSelectedBankInvestment() {
+  document.getElementById('bank-investment-search-results').innerHTML = '';
+  document.getElementById('bank-investment-selected-row').hidden = !SELECTED_BANK_INVESTMENT;
+  document.getElementById('add-bank-investment-save').disabled = !SELECTED_BANK_INVESTMENT;
+  if (!SELECTED_BANK_INVESTMENT) return;
+  const pill = document.getElementById('bank-investment-selected-pill');
+  pill.innerHTML = `<span class="selected-pill" dir="auto">${escapeHtml(String(SELECTED_BANK_INVESTMENT.fund_id))} · ${escapeHtml(SELECTED_BANK_INVESTMENT.name || '')}<button class="selected-pill__clear" id="bank-investment-selected-clear" title="${escapeHtml(t('search.clear'))}">×</button></span>`;
+  document.getElementById('bank-investment-selected-clear').addEventListener('click', () => {
+    SELECTED_BANK_INVESTMENT = null;
+    renderSelectedBankInvestment();
+  });
+}
+
+function resetAddBankInvestment() {
+  SELECTED_BANK_INVESTMENT = null;
+  document.getElementById('bank-investment-search').value = '';
+  document.getElementById('bank-investment-nickname').value = '';
+  document.getElementById('bank-investment-units').value = '';
+  document.getElementById('bank-investment-search-results').innerHTML = '';
+  renderSelectedBankInvestment();
+}
+
+async function saveBankInvestment() {
+  if (!SELECTED_BANK_INVESTMENT) return;
+  const units = +document.getElementById('bank-investment-units').value;
+  const nickname = document.getElementById('bank-investment-nickname').value.trim();
+  if (!Number.isFinite(units) || units < 0) {
+    toast(t('toast.unitsNonNegative'), 'error');
+    return;
+  }
+  document.getElementById('add-bank-investment-save').disabled = true;
+  const j = await api('POST', '/api/tase-fund-holdings', {
+    fund_id: SELECTED_BANK_INVESTMENT.fund_id,
+    units,
+    nickname,
+  });
+  document.getElementById('add-bank-investment-save').disabled = false;
+  if (j.ok) {
+    toast(t('toast.bankInvestmentAdded'), 'info');
+    resetAddBankInvestment();
+    document.getElementById('add-bank-investment-panel').hidden = true;
+    fetchData();
+  } else {
+    toast(j.error || t('common.failed'), 'error');
   }
 }
 
