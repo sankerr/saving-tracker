@@ -222,6 +222,166 @@ def test_add_tase_fund_event_updates_units():
         st.save_data = orig
 
 
+def test_tase_fifo_pnl_buy_then_price_rise():
+    st.MARKET["tase_fund_daily"] = {
+        "5123898": {
+            "rows": [
+                {"date": "2026-01-15", "close": 10.0},
+                {"date": "2026-07-31", "close": 11.0},
+            ]
+        }
+    }
+    holding = {
+        "fund_id": "5123898",
+        "units": 100,
+        "events": [{"id": "1", "date": "2026-01-15", "kind": "buy", "units": 100}],
+    }
+    c = st.value_tase_fund(holding)
+    assert c["value_ils"] == 1100.0
+    assert c["cost_basis_ils"] == 1000.0
+    assert c["realized_gain_ils"] == 0.0
+    assert c["profit_ils"] == 100.0
+    assert abs(c["profit_pct"] - 0.1) < 1e-9
+
+
+def test_tase_fifo_pnl_partial_sell_and_remainder():
+    st.MARKET["tase_fund_daily"] = {
+        "5123898": {
+            "rows": [
+                {"date": "2026-01-10", "close": 10.0},
+                {"date": "2026-03-10", "close": 12.0},
+                {"date": "2026-07-31", "close": 15.0},
+            ]
+        }
+    }
+    holding = {
+        "fund_id": "5123898",
+        "units": 60,
+        "events": [
+            {"id": "1", "date": "2026-01-10", "kind": "buy", "units": 100},
+            {"id": "2", "date": "2026-03-10", "kind": "sell", "units": 40},
+        ],
+    }
+    c = st.value_tase_fund(holding)
+    # realized 40*(12-10)=80; remaining cost 60*10=600; value 60*15=900; unrealized 300
+    assert c["realized_gain_ils"] == 80.0
+    assert c["cost_basis_ils"] == 600.0
+    assert c["value_ils"] == 900.0
+    assert c["profit_ils"] == 380.0
+    assert abs(c["profit_pct"] - (380.0 / 1000.0)) < 1e-9
+
+
+def test_tase_fifo_pnl_correction_up_and_down():
+    st.MARKET["tase_fund_daily"] = {
+        "5123898": {
+            "rows": [
+                {"date": "2026-01-10", "close": 10.0},
+                {"date": "2026-02-10", "close": 11.0},
+                {"date": "2026-03-10", "close": 12.0},
+                {"date": "2026-07-31", "close": 12.0},
+            ]
+        }
+    }
+    holding = {
+        "fund_id": "5123898",
+        "units": 80,
+        "events": [
+            {"id": "1", "date": "2026-01-10", "kind": "buy", "units": 100},
+            {"id": "2", "date": "2026-02-10", "kind": "correction", "units": 120},  # +20 @ 11
+            {"id": "3", "date": "2026-03-10", "kind": "correction", "units": 80},   # -40 FIFO
+        ],
+    }
+    c = st.value_tase_fund(holding)
+    # After buy 100@10: cost 1000
+    # Correction up +20@11: gross 1000+220=1220, lots=[100@10, 20@11]
+    # Correction down 40: consume 40@10 → realized (12-10)*40=80; remain 60@10 + 20@11 = 820
+    assert c["cost_basis_ils"] == 820.0
+    assert c["realized_gain_ils"] == 80.0
+    assert c["value_ils"] == 960.0  # 80*12
+    assert c["profit_ils"] == round(960.0 - 820.0 + 80.0, 2)
+
+
+def test_tase_fifo_pnl_weekend_uses_prior_close():
+    st.MARKET["tase_fund_daily"] = {
+        "5123898": {
+            "rows": [
+                {"date": "2026-01-09", "close": 10.0},  # Friday
+                {"date": "2026-01-12", "close": 10.5},  # Monday
+                {"date": "2026-07-31", "close": 11.0},
+            ]
+        }
+    }
+    holding = {
+        "fund_id": "5123898",
+        "units": 100,
+        # Saturday — should price at Friday 10.0
+        "events": [{"id": "1", "date": "2026-01-10", "kind": "buy", "units": 100}],
+    }
+    c = st.value_tase_fund(holding)
+    assert c["cost_basis_ils"] == 1000.0
+    assert c["profit_ils"] == 100.0
+
+
+def test_tase_fifo_pnl_null_without_nav_or_events():
+    st.MARKET["tase_fund_daily"] = {
+        "5123898": {"rows": [{"date": "2026-07-31", "close": 11.0}]}
+    }
+    no_events = st.value_tase_fund({"fund_id": "5123898", "units": 100, "events": []})
+    assert no_events["value_ils"] == 1100.0
+    assert no_events["profit_ils"] is None
+    assert no_events["cost_basis_ils"] is None
+
+    early_buy = st.value_tase_fund({
+        "fund_id": "5123898",
+        "units": 100,
+        "events": [{"id": "1", "date": "2025-01-01", "kind": "buy", "units": 100}],
+    })
+    assert early_buy["profit_ils"] is None
+
+
+def test_compose_portfolio_includes_tase_profit_and_invested():
+    tase = [{
+        "id": "t1",
+        "fund_id": "5123898",
+        "units": 100,
+        "archived": False,
+        "included_in_dashboard": True,
+        "created_at": "2026-01-15T00:00:00",
+        "computed": {
+            "value_ils": 1100.0,
+            "cost_basis_ils": 1000.0,
+            "profit_ils": 100.0,
+        },
+        "nav_history": [],
+    }]
+    port = st.compose_portfolio([], [], 3, None, [], [], tase)
+    assert port["tase_funds_value_ils"] == 1100.0
+    assert port["tase_funds_profit_ils"] == 100.0
+    assert port["total_invested_ils"] == 1000.0
+    assert port["total_profit_ils"] == 100.0
+
+
+def test_cashout_tax_uses_tase_unrealized():
+    tase = [{
+        "id": "t1",
+        "fund_id": "5123898",
+        "nickname": "כספית",
+        "archived": False,
+        "included_in_dashboard": True,
+        "computed": {
+            "value_ils": 1100.0,
+            "cost_basis_ils": 1000.0,
+            "profit_ils": 100.0,
+        },
+    }]
+    est = st.compute_cashout_tax_estimate([], [], [], [], [], tase)
+    assert est["taxable_profit_ils"] == 100.0
+    assert est["estimated_tax_ils"] == 25.0
+    line = next(x for x in est["by_holding"] if x["kind"] == "tase_fund")
+    assert line["taxable_profit_ils"] == 100.0
+    assert line["rate"] == 0.25
+
+
 if __name__ == "__main__":
     test_normalize_tase_fund_id_strips_leading_zeros()
     test_agorot_to_ils()
@@ -235,4 +395,11 @@ if __name__ == "__main__":
     test_tase_units_on_date_from_events()
     test_value_tase_fund_time_series_respects_events()
     test_add_tase_fund_event_updates_units()
+    test_tase_fifo_pnl_buy_then_price_rise()
+    test_tase_fifo_pnl_partial_sell_and_remainder()
+    test_tase_fifo_pnl_correction_up_and_down()
+    test_tase_fifo_pnl_weekend_uses_prior_close()
+    test_tase_fifo_pnl_null_without_nav_or_events()
+    test_compose_portfolio_includes_tase_profit_and_invested()
+    test_cashout_tax_uses_tase_unrealized()
     print("ok")

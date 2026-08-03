@@ -1,7 +1,7 @@
 # Bank Investments (ניירות ערך) Profit/Loss — Design
 
 **Date:** 2026-08-03
-**Status:** Approved (pending implementation plan)
+**Status:** Approved / implemented
 
 ## Overview
 

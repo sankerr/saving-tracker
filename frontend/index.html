@@ -4625,6 +4625,12 @@ function renderBankInvestmentRow(h) {
     lastM != null ? `${t('row.last')} ${fmtPctSigned(lastM / 100)}` : null,
     ytd != null ? `YTD${ytdYear ? ' ' + ytdYear : ''} ${fmtPctSigned(ytd)}` : null,
   ].filter(Boolean).join(` <span class="holding-row__sub-sep">·</span> `);
+  const hasPnL = cv.profit_ils != null;
+  const profitClass = hasPnL && (cv.profit_ils || 0) >= 0 ? 'pos' : 'neg';
+  const profitSign = hasPnL && (cv.profit_ils || 0) >= 0 ? '+' : '';
+  const profitSub = hasPnL
+    ? `<div class="holding-row__value-sub" style="color: var(--color-${profitClass === 'pos' ? 'success' : 'danger'})">${profitSign}${fmtILS.format(cv.profit_ils || 0)} (${fmtPctSigned(cv.profit_pct || 0)})</div>`
+    : '';
   return `
   <div class="holding-row" data-id="${h.id}" data-archived="${!!h.archived}" data-expanded="${expanded}">
     <div class="holding-row__head" data-toggle="tase:${h.id}">
@@ -4635,6 +4641,7 @@ function renderBankInvestmentRow(h) {
       <svg class="holding-row__sparkline" id="spark-tase-${h.id}"></svg>
       <div style="text-align:right">
         <div class="holding-row__value">${cv.value_ils != null ? fmtILS.format(cv.value_ils) : '—'}</div>
+        ${profitSub}
         <span class="holding-row__chev">▾</span>
       </div>
     </div>
@@ -4873,7 +4880,8 @@ const HELP_CONTENT = {
       <p>קרנות נאמנות בבורסה שמוחזקות בחשבון הבנק — נפרד מסעיף <em>קופות</em> (גמל/פנסיה).</p>
       <p>כל אחזקה מזוהה לפי מספר קרן במאיה. הזינו מספר <strong>יחידות</strong> מהדף בבנק; האפליקציה מושכת שער יחידה יומי ממאיה ומחשבת <code>שווי = יחידות × שער</code>.</p>
       <p>מאיה מפרסמת שערי יחידה באגורות; האפליקציה ממירה לש״ח (÷100). ערכו יחידות בקנייה או מכירה. השער מתעדכן בסנכרון / בקרון היומי.</p>
-      <p>רשמו קניות/מכירות כאירועים. הגרף מציג היסטוריית שווי + תחזית ממוצע תשואות מאיה.</p>
+      <p>רשמו קניות/מכירות כאירועים. הרווח/הפסד מחושב FIFO לפי תאריכי האירועים × שערי מאיה — אם תאריך הקנייה הראשונית שגוי, תקנו את האירוע.</p>
+      <p>הגרף מציג היסטוריית שווי + תחזית ממוצע תשואות מאיה.</p>
     `,
   },
   cash: {

@@ -13,12 +13,16 @@ A TASE-listed mutual fund (קרן נאמנות) held directly through a bank bro
 _Avoid_: Stock, TASE fund, "mutual fund" as a UI label
 
 **Units**:
-Quantity of a Bank Investment fund held. User-editable directly; not derived from buy/sell lot history in v1.
+Quantity of a Bank Investment fund held. User-editable directly; buy/sell/correction events drive historical unit counts and FIFO cost basis.
 _Avoid_: Shares (reserved for RSU/ESPP equity holdings)
 
 **NAV (Net Asset Value)**:
 Daily unit price of a Bank Investment fund, in ILS, fetched from Maya.
 _Avoid_: Price (used generically elsewhere in the app), Rate
+
+**Bank Investment P&L**:
+Lifetime profit on a Bank Investment = unrealized (value − remaining FIFO cost) + realized gains from sells. Cost basis = events × Maya NAV on each event date (prior trading day if needed). Included in dashboard `total_profit_ils` / `total_invested_ils`.
+_Avoid_: Average-cost accounting (v1 is FIFO only)
 
 **Bank Investment projection**:
 Forward value path from the mean of ≥6 month-end Maya NAV returns (same `project_returns` engine as gemelnet Funds). The dashboard what-if growth % does **not** compound Bank Investments — they stay flat there (like cash/ESPP).
@@ -48,6 +52,7 @@ _Avoid_: Held shares, cost basis
 
 - A **Bank Investment** holding references exactly one TASE mutual fund via `fund_id`
 - A **Bank Investment** holding's value = **Units** x latest **NAV**
+- A **Bank Investment** holding's P&L uses FIFO lots from dated events × **NAV** on each event date
 - **Bank Investment** is a distinct concept from **Fund (Provident Fund)**, despite the shared English word "fund"
 - An ESPP **Plan** has many **Enrolments** and many **Purchases**
 - An **Enrolment** settles into at most one **Purchase**

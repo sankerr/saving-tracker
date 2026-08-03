@@ -1225,8 +1225,99 @@ def _tase_month_end_date(ym: str) -> str:
     return f"{int(y):04d}-{int(m):02d}-{last:02d}"
 
 
+def _tase_nav_on_or_before(rows: list, day_iso: str):
+    """Maya NAV (ILS) on or before day_iso, or None if no prior close."""
+    _, close = _close_on_or_before(rows, day_iso)
+    if close is None:
+        return None
+    try:
+        return float(close)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tase_fifo_consume(lots: list, units_to_sell: float, sell_nav: float) -> float:
+    """FIFO-consume units from lots; return realized gain at sell_nav."""
+    rem = float(units_to_sell or 0)
+    realized = 0.0
+    while rem > 1e-12 and lots:
+        lot_u, lot_nav = lots[0]
+        take = min(lot_u, rem)
+        realized += (sell_nav - lot_nav) * take
+        lot_u -= take
+        rem -= take
+        if lot_u <= 1e-12:
+            lots.pop(0)
+        else:
+            lots[0][0] = lot_u
+    return realized
+
+
+def _tase_compute_fifo_pnl(holding: dict, rows: list, value_ils):
+    """Lifetime P&L from events × Maya NAV (FIFO). None if unpriceable."""
+    events = _tase_sorted_events(holding)
+    if not events or value_ils is None:
+        return None
+
+    lots = []  # [units_left, unit_nav_ils]
+    realized = 0.0
+    gross_buy_cost = 0.0
+    units_held = 0.0
+
+    for ev in events:
+        ed = str(ev.get("date") or "")[:10]
+        if not ed:
+            return None
+        nav = _tase_nav_on_or_before(rows, ed)
+        if nav is None:
+            return None
+        kind = ev.get("kind")
+        try:
+            amt = float(ev.get("units") or 0)
+        except (TypeError, ValueError):
+            return None
+
+        if kind == "buy":
+            if amt <= 0:
+                continue
+            lots.append([amt, nav])
+            gross_buy_cost += amt * nav
+            units_held += amt
+        elif kind == "sell":
+            if amt <= 0:
+                continue
+            sell_u = min(amt, units_held)
+            realized += _tase_fifo_consume(lots, sell_u, nav)
+            units_held = max(0.0, units_held - sell_u)
+        elif kind == "correction":
+            target = max(0.0, amt)
+            delta = target - units_held
+            if abs(delta) <= 1e-12:
+                continue
+            if delta > 0:
+                lots.append([delta, nav])
+                gross_buy_cost += delta * nav
+                units_held += delta
+            else:
+                realized += _tase_fifo_consume(lots, -delta, nav)
+                units_held = target
+
+    cost_basis = sum(u * n for u, n in lots)
+    unrealized = float(value_ils) - cost_basis
+    profit = unrealized + realized
+    profit_pct = (profit / gross_buy_cost) if gross_buy_cost > 0 else None
+    cost_r = round(cost_basis, 2)
+    return {
+        "cost_basis_ils": cost_r,
+        "invested_ils": cost_r,
+        "realized_gain_ils": round(realized, 2),
+        "profit_ils": round(profit, 2),
+        "profit_pct": profit_pct,
+    }
+
+
 def value_tase_fund(holding: dict) -> dict:
-    """units × latest NAV (ILS), with event-aware monthly value series."""
+    """units × latest NAV (ILS), with event-aware monthly value series + FIFO P&L."""
     fid = str(holding.get("fund_id") or "")
     units = float(holding.get("units") or 0)
     with _market_lock:
@@ -1273,7 +1364,8 @@ def value_tase_fund(holding: dict) -> dict:
         if base and base > 0 and unit_price is not None:
             ytd_return_pct = round((unit_price / base - 1.0), 4)
 
-    return {
+    pnl = _tase_compute_fifo_pnl(holding, rows, value)
+    out = {
         "units": units,
         "unit_price_ils": unit_price,
         "price_date": price_date,
@@ -1285,7 +1377,15 @@ def value_tase_fund(holding: dict) -> dict:
         "ytd_return_pct": ytd_return_pct,
         "ytd_year": ytd_year,
         "time_series": time_series,
+        "cost_basis_ils": None,
+        "invested_ils": None,
+        "realized_gain_ils": None,
+        "profit_ils": None,
+        "profit_pct": None,
     }
+    if pnl:
+        out.update(pnl)
+    return out
 
 
 def project_tase_fund(holding: dict, computed: dict, horizon_months: int) -> dict:
@@ -3193,16 +3293,33 @@ def compute_cashout_tax_estimate(
         c = h.get("computed") or {}
         value = _positive(c.get("value_ils"))
         accessible_value += value
-        # No cost basis in v1 — treat like cash for the educational estimate.
-        tax_free_value += value
+        cost = c.get("cost_basis_ils")
+        label = _tase_fund_display_name(h)
+        if cost is None:
+            tax_free_value += value
+            lines.append({
+                "kind": "tase_fund",
+                "label": label,
+                "value_ils": round(value, 2),
+                "taxable_profit_ils": 0.0,
+                "estimated_tax_ils": 0.0,
+                "rate": 0.0,
+                "note": "Bank Investment: missing cost basis (unpriceable events/NAV)",
+            })
+            continue
+        unrealized = value - float(cost)
+        base = max(0.0, unrealized)
+        tax = round(base * rate, 2)
+        taxable_profit += base
+        estimated_tax += tax
         lines.append({
             "kind": "tase_fund",
-            "label": _tase_fund_display_name(h),
+            "label": label,
             "value_ils": round(value, 2),
-            "taxable_profit_ils": 0.0,
-            "estimated_tax_ils": 0.0,
-            "rate": 0.0,
-            "note": "Bank Investment: no cost basis tracked in v1",
+            "taxable_profit_ils": round(base, 2),
+            "estimated_tax_ils": tax,
+            "rate": rate,
+            "note": "25% on unrealized gain (FIFO cost from events × Maya NAV)",
         })
 
     pension_value = 0.0
@@ -3226,6 +3343,7 @@ def compute_cashout_tax_estimate(
             "קרן השתלמות treated as fully tax-free (no maturity check)",
             "Other funds / savings policies: 25% on lifetime profit",
             "RSU/ESPP: 25% on unrealized gain of held shares",
+            "Bank Investments: 25% on unrealized gain (FIFO cost from events × Maya NAV)",
             "Cash: 0% (assumed after-tax)",
             "Pension excluded from cash-out (locked until retirement)",
             "Ignores CPI adjustment, §102 tracks, withholding, brackets, and penalties",
@@ -3620,6 +3738,10 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "cash_value_ils": 0,
             "tase_funds_value_ils": 0,
             "total_invested_ils": 0,
+            "funds_profit_ils": 0,
+            "rsu_profit_ils": 0,
+            "espp_profit_ils": 0,
+            "tase_funds_profit_ils": 0,
             "total_profit_ils": 0,
             "time_series_ils": [],
             "projection": None,
@@ -3663,6 +3785,10 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
             "cash_value_ils": 0,
             "tase_funds_value_ils": 0,
             "total_invested_ils": 0,
+            "funds_profit_ils": 0,
+            "rsu_profit_ils": 0,
+            "espp_profit_ils": 0,
+            "tase_funds_profit_ils": 0,
             "total_profit_ils": 0,
             "time_series_ils": [],
             "projection": None,
@@ -3808,6 +3934,16 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     funds_profit = sum(h["computed"]["profit_ils"] for h in funds if not h.get("archived"))
     rsu_profit_ils = sum(g["computed"]["profit_ils"] for g in grants if not g.get("archived"))
     espp_profit_ils = sum(p["computed"]["profit_ils"] for p in espp if not p.get("archived"))
+    tase_invested = 0.0
+    tase_profit = 0.0
+    for h in tase:
+        if h.get("archived"):
+            continue
+        c = h.get("computed") or {}
+        if c.get("profit_ils") is None or c.get("cost_basis_ils") is None:
+            continue
+        tase_invested += float(c.get("cost_basis_ils") or 0)
+        tase_profit += float(c.get("profit_ils") or 0)
 
     employee_total = sum(h["computed"].get("total_employee_ils", 0) for h in funds if not h.get("archived"))
     employer_total = sum(h["computed"].get("total_employer_ils", 0) for h in funds if not h.get("archived"))
@@ -3852,11 +3988,12 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         "espp_value_usd": round(espp_now_usd, 2),
         "cash_value_ils": round(cash_now, 2),
         "tase_funds_value_ils": round(tase_now, 2),
-        "total_invested_ils": round(funds_invested, 2),
+        "total_invested_ils": round(funds_invested + tase_invested, 2),
         "funds_profit_ils": round(funds_profit, 2),
         "rsu_profit_ils": round(rsu_profit_ils, 2),
         "espp_profit_ils": round(espp_profit_ils, 2),
-        "total_profit_ils": round(funds_profit + rsu_profit_ils + espp_profit_ils, 2),
+        "tase_funds_profit_ils": round(tase_profit, 2),
+        "total_profit_ils": round(funds_profit + rsu_profit_ils + espp_profit_ils + tase_profit, 2),
         "total_employee_ils": round(employee_total, 2),
         "total_employer_ils": round(employer_total, 2),
         "time_series_ils": series,

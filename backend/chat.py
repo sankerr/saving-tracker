@@ -76,7 +76,7 @@ Cash-out / tax questions (e.g. "how much tax if I cash out everything?"):
 1. Use cashout_tax_estimate from the portfolio JSON only — never invent tax figures.
 2. Report estimated_tax_ils, net_after_tax_ils, taxable_profit_ils, and that tax is on profit/gains only.
 3. Note: קרן השתלמות is treated as tax-free; cash 0%; pension excluded from cash-out; other funds/RSU/ESPP use 25% on gains;
-   Bank Investments have no cost basis in v1 so taxable profit may be 0 for that sleeve.
+   Bank Investments use 25% on unrealized gain (FIFO cost from events × Maya NAV).
 4. Always repeat the disclaimer: rough educational estimate, not tax advice.
 
 When asked what the app can do / how to use it:
@@ -89,7 +89,7 @@ Guidelines:
 - Always reply in Hebrew.
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
 - Dashboard total excludes pension (tracked separately). For tax/cash-out, only use cashout_tax_estimate.
-- Bank Investments are valued as units × daily Maya NAV; no purchase cost basis / true P&L in v1 (not in total_profit_ils)."""
+- Bank Investments are valued as units × daily Maya NAV; P&L is FIFO from buy/sell/correction events × NAV on each event date (included in total_profit_ils)."""
 
 
 BACKEND_API_CATALOG = {
@@ -142,7 +142,7 @@ BACKEND_API_CATALOG = {
         ),
         "cashout_tax_estimate": (
             "Rough educational estimate if liquidating accessible holdings: 25% on profit/gains only; "
-            "קרן השתלמות tax-free; cash 0%; pension excluded; Bank Investments: no cost basis in v1; not tax advice"
+            "קרן השתלמות tax-free; cash 0%; pension excluded; Bank Investments: 25% on unrealized (FIFO); not tax advice"
         ),
     },
 }
@@ -412,8 +412,12 @@ def _tase_fund_summary(h: dict) -> dict:
         "last_month_return_pct": _round_or_none(computed.get("last_month_return_pct"), 4),
         "ytd_return_pct": _round_or_none(computed.get("ytd_return_pct"), 4),
         "ytd_year": computed.get("ytd_year"),
+        "profit_ils": _round_or_none(computed.get("profit_ils")),
+        "profit_pct": _round_or_none(computed.get("profit_pct"), 4),
+        "cost_basis_ils": _round_or_none(computed.get("cost_basis_ils")),
+        "realized_gain_ils": _round_or_none(computed.get("realized_gain_ils")),
         "last_synced": h.get("last_synced"),
-        "note": "units × Maya NAV; no cost basis / profit_ils in v1; what-if does not grow this sleeve",
+        "note": "units × Maya NAV; FIFO P&L from events × NAV; what-if does not grow this sleeve",
     }
     if proj.get("annual_pct") is not None:
         out["projection_annual_pct"] = _round_or_none(proj.get("annual_pct"), 2)
@@ -831,7 +835,7 @@ def summarize_projection_state(
             "interpretation": {
                 "change_from_today": "Projected portfolio total minus today's dashboard total (excludes pension).",
                 "profit_note": (
-                    "Accounting 'profit' today is funds/RSU/ESPP profit fields (Bank Investments have no cost basis). "
+                    "Accounting 'profit' today is funds/RSU/ESPP/Bank Investment profit fields. "
                     "Future 'profit' usually means change_from_today under the stated assumptions — not a tax figure."
                 ),
             },
@@ -1189,7 +1193,7 @@ Write insights for these FIXED SLOTS in order (skip a slot entirely if data is m
    If flows are ~0, you may speak about investment return alone.
 2. allocation — Which sleeve (funds/RSU/ESPP/cash/bank_investments) or concentration stands out vs Total Wealth.
    Prefer insight_slots_hint.slot2_allocation when present.
-3. goal_or_lifetime_pl — If savings_goal.configured: ONE summary of pace/progress vs target (include progress_pct and gap or projected value — pick one framing, not both). Else: lifetime total_profit_ils vs invested (note: Bank Investments are not in total_profit_ils — no cost basis).
+3. goal_or_lifetime_pl — If savings_goal.configured: ONE summary of pace/progress vs target (include progress_pct and gap or projected value — pick one framing, not both). Else: lifetime total_profit_ils vs invested (includes Bank Investment FIFO P&L).
 4. risk — A DIFFERENT topic from slots 1–3. Prefer concentration, single-ticker RSU/ESPP, Bank Investment concentration, or cash-buffer size.
    Do NOT restate that the savings goal is on/off pace, the target amount, progress %, gap, or projected value if slot 3 already covered the goal.
 5. suggestion — One concrete educational next step grounded in the data. Must not repeat slots 1–4; build on them (e.g. what to review next).

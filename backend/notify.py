@@ -116,10 +116,10 @@ def _holding_rows(state: dict, limit: int = 8) -> list[dict]:
         c = h.get("computed") or {}
         rows.append(
             {
-                "kind": "השקעה בבנק",
-                "name": h.get("nickname") or h.get("fund_name_snapshot") or h.get("fund_id") or "השקעה בבנק",
+                "kind": "ניירות ערך",
+                "name": h.get("nickname") or h.get("fund_name_snapshot") or h.get("fund_id") or "ניירות ערך",
                 "value": c.get("value_ils") or c.get("current_value_ils"),
-                "profit": None,
+                "profit": c.get("profit_ils"),
             }
         )
     rows.sort(key=lambda r: float(r.get("value") or 0), reverse=True)
