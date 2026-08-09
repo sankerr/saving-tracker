@@ -1851,6 +1851,14 @@ html[dir="rtl"] .chat-panel {
             <input type="checkbox" id="fund-net-of-fees" checked>
             <label for="fund-net-of-fees" data-i18n="common.netOfFees">MONTHLY_YIELD is net of fees</label>
           </div>
+          <div class="field">
+            <label for="fund-deposit-fee" data-i18n="fees.depositPct">Deposit fee (%)</label>
+            <input type="number" id="fund-deposit-fee" min="0" step="0.01" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="fund-accum-fee" data-i18n="fees.accumulationPctAnnual">Accumulation fee (% / year)</label>
+            <input type="number" id="fund-accum-fee" min="0" step="0.01" placeholder="0">
+          </div>
         </div>
         <p class="chart-caption" id="fund-anchor-hint" data-i18n="funds.anchorHint">
           Pick the month your reported balance is for. Most pension/provident
@@ -1909,6 +1917,14 @@ html[dir="rtl"] .chat-panel {
           <div class="field field--inline">
             <input type="checkbox" id="pension-net-of-fees" checked>
             <label for="pension-net-of-fees" data-i18n="common.netOfFees">MONTHLY_YIELD is net of fees</label>
+          </div>
+          <div class="field">
+            <label for="pension-deposit-fee" data-i18n="fees.depositPct">Deposit fee (%)</label>
+            <input type="number" id="pension-deposit-fee" min="0" step="0.01" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="pension-accum-fee" data-i18n="fees.accumulationPctAnnual">Accumulation fee (% / year)</label>
+            <input type="number" id="pension-accum-fee" min="0" step="0.01" placeholder="0">
           </div>
         </div>
         <p class="chart-caption" data-i18n="pension.anchorHint">
@@ -3399,6 +3415,22 @@ function renderFundDetail(h) {
       <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(h.last_synced)}</dd></div>
     </dl>
 
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('fees.sectionTitle')}</h3>
+    <div class="field-grid" style="margin-bottom:0.75rem">
+      <div class="field">
+        <label for="fee-deposit-${h.id}">${t('fees.depositPct')}</label>
+        <input type="number" id="fee-deposit-${h.id}" min="0" step="0.01" value="${h.deposit_fee_pct == null ? '' : h.deposit_fee_pct}">
+      </div>
+      <div class="field">
+        <label for="fee-accum-${h.id}">${t('fees.accumulationPctAnnual')}</label>
+        <input type="number" id="fee-accum-${h.id}" min="0" step="0.01" value="${h.accumulation_fee_pct_annual == null ? '' : h.accumulation_fee_pct_annual}">
+      </div>
+      <div class="field" style="display:flex; align-items:flex-end">
+        <button class="btn btn--ghost btn--small" data-save-fees="${h.id}">${t('fees.save')}</button>
+      </div>
+    </div>
+    <p class="chart-caption">${t('fees.hint')}</p>
+
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.returnsChained')}</h3>
     <dl class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
       <div><dt>3m</dt><dd>${c.three_m_return_pct !== null && c.three_m_return_pct !== undefined ? fmtPctSigned(c.three_m_return_pct) : '—'}</dd></div>
@@ -3459,6 +3491,7 @@ function renderFundDetail(h) {
       <div class="field"><label>${t('table.date')}</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
       <div class="field"><label>${t('ev.amountIls')}</label><input type="number" id="ev-amount-${h.id}" min="0" step="0.01"></div>
+      <div class="field"><label>${t('ev.feesPaidToDate')}</label><input type="number" id="ev-fees-paid-${h.id}" min="0" step="0.01" placeholder="${t('ev.feesPaidOptional')}"></div>
       <div class="field"><label>${t('common.note')}</label><input type="text" id="ev-note-${h.id}"></div>
       <button class="btn btn--primary btn--small" data-add-event="${h.id}">${t('common.add')}</button>
       <span></span>
@@ -3641,9 +3674,26 @@ function renderPensionDetail(h) {
       <div><dt>${t('detail.anchorBalance')}</dt><dd>${fmtILS.format(h.anchor_balance_ils || 0)}</dd></div>
       <div><dt>${t('detail.depositedTotal')}</dt><dd>${fmtILS.format(c.total_deposited_ils || 0)}</dd></div>
       <div><dt>${t('detail.fromRules')}</dt><dd style="font-size:0.875rem">${fmtILS.format(empTotal)} / ${fmtILS.format(emprTotal)}</dd></div>
+      <div><dt title="${escapeHtml(t('detail.mgmtFeesTitle'))}">${t('detail.mgmtFeesPaid')}</dt><dd>${fmtILS.format(c.cumulative_mgmt_fee_ils || 0)}</dd></div>
       <div><dt>${t('detail.classification')}</dt><dd dir="auto">${escapeHtml(h.classification_snapshot || '—')}</dd></div>
       <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(h.last_synced)}</dd></div>
     </dl>
+
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('fees.sectionTitle')}</h3>
+    <div class="field-grid" style="margin-bottom:0.75rem">
+      <div class="field">
+        <label for="fee-deposit-${h.id}">${t('fees.depositPct')}</label>
+        <input type="number" id="fee-deposit-${h.id}" min="0" step="0.01" value="${h.deposit_fee_pct == null ? '' : h.deposit_fee_pct}">
+      </div>
+      <div class="field">
+        <label for="fee-accum-${h.id}">${t('fees.accumulationPctAnnual')}</label>
+        <input type="number" id="fee-accum-${h.id}" min="0" step="0.01" value="${h.accumulation_fee_pct_annual == null ? '' : h.accumulation_fee_pct_annual}">
+      </div>
+      <div class="field" style="display:flex; align-items:flex-end">
+        <button class="btn btn--ghost btn--small" data-save-fees="${h.id}">${t('fees.save')}</button>
+      </div>
+    </div>
+    <p class="chart-caption">${t('fees.hint')}</p>
 
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.returnsChained')}</h3>
     <dl class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
@@ -3705,6 +3755,7 @@ function renderPensionDetail(h) {
       <div class="field"><label>${t('table.date')}</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
       <div class="field"><label>${t('ev.amountIls')}</label><input type="number" id="ev-amount-${h.id}" min="0" step="0.01"></div>
+      <div class="field"><label>${t('ev.feesPaidToDate')}</label><input type="number" id="ev-fees-paid-${h.id}" min="0" step="0.01" placeholder="${t('ev.feesPaidOptional')}"></div>
       <div class="field"><label>${t('common.note')}</label><input type="text" id="ev-note-${h.id}"></div>
       <button class="btn btn--primary btn--small" data-add-event="${h.id}">${t('common.add')}</button>
       <span></span>
@@ -5964,6 +6015,32 @@ function init() {
       renderAll();
       return;
     }
+    const saveFeesBtn = e.target.closest('[data-save-fees]');
+    if (saveFeesBtn) {
+      const hid = saveFeesBtn.dataset.saveFees;
+      const depositRaw = (document.getElementById(`fee-deposit-${hid}`)?.value || '').trim();
+      const accumRaw = (document.getElementById(`fee-accum-${hid}`)?.value || '').trim();
+      const parseFee = (raw) => {
+        if (raw === '') return null;
+        const n = +raw;
+        return Number.isFinite(n) ? n : NaN;
+      };
+      const deposit_fee_pct = parseFee(depositRaw);
+      const accumulation_fee_pct_annual = parseFee(accumRaw);
+      if (Number.isNaN(deposit_fee_pct) || Number.isNaN(accumulation_fee_pct_annual)
+          || (deposit_fee_pct != null && deposit_fee_pct < 0)
+          || (accumulation_fee_pct_annual != null && accumulation_fee_pct_annual < 0)) {
+        toast(t('toast.feesNonNegative'), 'error');
+        return;
+      }
+      const j = await api('PATCH', `${ruleHoldingBaseUrl(hid)}/${hid}`, {
+        deposit_fee_pct,
+        accumulation_fee_pct_annual,
+      });
+      if (j.ok) { toast(t('toast.feesSaved'), 'info'); fetchData(); }
+      else toast(j.error || t('common.failed'), 'error');
+      return;
+    }
     const addEvBtn = e.target.closest('[data-add-event]');
     if (addEvBtn) {
       const hid = addEvBtn.dataset.addEvent;
@@ -5973,9 +6050,19 @@ function init() {
       const note = document.getElementById(`ev-note-${hid}`).value;
       if (!date) { toast(t('toast.dateRequired'), 'error'); return; }
       if (!amount && kind !== 'correction') { toast(t('toast.enterAmount'), 'error'); return; }
-      const j = await api('POST', `${ruleHoldingBaseUrl(hid)}/${hid}/events`, {
-        date, kind, note, amount_ils: amount,
-      });
+      const payload = { date, kind, note, amount_ils: amount };
+      if (kind === 'correction') {
+        const feesRaw = (document.getElementById(`ev-fees-paid-${hid}`)?.value || '').trim();
+        if (feesRaw !== '') {
+          const feesPaid = +feesRaw;
+          if (!Number.isFinite(feesPaid) || feesPaid < 0) {
+            toast(t('toast.feesPaidNonNegative'), 'error');
+            return;
+          }
+          payload.total_fees_paid_ils = feesPaid;
+        }
+      }
+      const j = await api('POST', `${ruleHoldingBaseUrl(hid)}/${hid}/events`, payload);
       if (j.ok) { toast(t('toast.eventAdded'), 'info'); fetchData(); }
       else toast(j.error || t('common.failed'), 'error');
       return;
@@ -6585,6 +6672,8 @@ function resetAddFund() {
   document.getElementById('fund-nickname').value = '';
   document.getElementById('fund-balance').value = '';
   document.getElementById('fund-net-of-fees').checked = true;
+  document.getElementById('fund-deposit-fee').value = '';
+  document.getElementById('fund-accum-fee').value = '';
   document.getElementById('fund-search-results').innerHTML = '';
   const sel = document.getElementById('fund-anchor-period');
   sel.innerHTML = `<option>${t('search.loading')}</option>`;
@@ -6598,6 +6687,21 @@ async function saveFundHolding() {
   const balanceRaw = document.getElementById('fund-balance').value.trim();
   const balance = balanceRaw === '' ? 0 : +balanceRaw;
   const netOfFees = document.getElementById('fund-net-of-fees').checked;
+  const depositFeeRaw = document.getElementById('fund-deposit-fee').value.trim();
+  const accumFeeRaw = document.getElementById('fund-accum-fee').value.trim();
+  const parseFee = (raw) => {
+    if (raw === '') return null;
+    const n = +raw;
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const deposit_fee_pct = parseFee(depositFeeRaw);
+  const accumulation_fee_pct_annual = parseFee(accumFeeRaw);
+  if (Number.isNaN(deposit_fee_pct) || Number.isNaN(accumulation_fee_pct_annual)
+      || (deposit_fee_pct != null && deposit_fee_pct < 0)
+      || (accumulation_fee_pct_annual != null && accumulation_fee_pct_annual < 0)) {
+    toast(t('toast.feesNonNegative'), 'error');
+    return;
+  }
   const anchorPeriodVal = document.getElementById('fund-anchor-period').value;
   const anchorPeriod = anchorPeriodVal ? +anchorPeriodVal : null;
   if (!Number.isFinite(balance) || balance < 0) { toast(t('toast.balanceNonNegative'), 'error'); return; }
@@ -6610,6 +6714,8 @@ async function saveFundHolding() {
     nickname,
     anchor_balance_ils: balance,
     yield_is_net_of_fees: netOfFees,
+    deposit_fee_pct,
+    accumulation_fee_pct_annual,
     anchor_period: anchorPeriod,
   });
   document.getElementById('add-fund-save').disabled = false;
@@ -6789,6 +6895,8 @@ function resetAddPension() {
   document.getElementById('pension-nickname').value = '';
   document.getElementById('pension-balance').value = '';
   document.getElementById('pension-net-of-fees').checked = true;
+  document.getElementById('pension-deposit-fee').value = '';
+  document.getElementById('pension-accum-fee').value = '';
   document.getElementById('pension-search-results').innerHTML = '';
   const sel = document.getElementById('pension-anchor-period');
   sel.innerHTML = `<option>${t('search.loading')}</option>`;
@@ -6802,6 +6910,21 @@ async function savePensionHolding() {
   const balanceRaw = document.getElementById('pension-balance').value.trim();
   const balance = balanceRaw === '' ? 0 : +balanceRaw;
   const netOfFees = document.getElementById('pension-net-of-fees').checked;
+  const depositFeeRaw = document.getElementById('pension-deposit-fee').value.trim();
+  const accumFeeRaw = document.getElementById('pension-accum-fee').value.trim();
+  const parseFee = (raw) => {
+    if (raw === '') return null;
+    const n = +raw;
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const deposit_fee_pct = parseFee(depositFeeRaw);
+  const accumulation_fee_pct_annual = parseFee(accumFeeRaw);
+  if (Number.isNaN(deposit_fee_pct) || Number.isNaN(accumulation_fee_pct_annual)
+      || (deposit_fee_pct != null && deposit_fee_pct < 0)
+      || (accumulation_fee_pct_annual != null && accumulation_fee_pct_annual < 0)) {
+    toast(t('toast.feesNonNegative'), 'error');
+    return;
+  }
   const anchorPeriodVal = document.getElementById('pension-anchor-period').value;
   const anchorPeriod = anchorPeriodVal ? +anchorPeriodVal : null;
   if (!Number.isFinite(balance) || balance < 0) { toast(t('toast.balanceNonNegative'), 'error'); return; }
@@ -6813,6 +6936,8 @@ async function savePensionHolding() {
     nickname,
     anchor_balance_ils: balance,
     yield_is_net_of_fees: netOfFees,
+    deposit_fee_pct,
+    accumulation_fee_pct_annual,
     anchor_period: anchorPeriod,
   });
   document.getElementById('add-pension-save').disabled = false;

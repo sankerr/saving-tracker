@@ -24,6 +24,18 @@ _Avoid_: Price (used generically elsewhere in the app), Rate
 Lifetime profit on a Bank Investment = unrealized (value − remaining FIFO cost) + realized gains from sells. Cost basis = events × Maya NAV on each event date (prior trading day if needed). Included in dashboard `total_profit_ils` / `total_invested_ils`.
 _Avoid_: Average-cost accounting (v1 is FIFO only)
 
+**Deposit fee (דמי ניהול מהפקדה)**:
+Optional per Fund/Pension holding percentage taken from each deposit (manual and recurring) before it credits the balance. `null`/empty = off; `0` allowed. User-entered — catalog averages are display-only.
+_Avoid_: Catalog `AVG_DEPOSIT_FEE` as the applied rate
+
+**Accumulation fee (דמי ניהול מצבירה)**:
+Optional per Fund/Pension holding annual percentage of start-of-month balance, charged monthly as `/12`, always deducted when set (independent of `yield_is_net_of_fees`). User-entered.
+_Avoid_: Catalog `AVG_ANNUAL_MANAGEMENT_FEE` as the applied rate
+
+**Correction fee seed**:
+Optional `total_fees_paid_ils` on a Fund/Pension correction event. Sets cumulative fees paid to that statement total; omitted → keep summing estimated fees from the anchor. Correction `amount_ils` is the balance after fees.
+_Avoid_: Replaying historical catalog fees after a statement correction
+
 **Bank Investment projection**:
 Forward value path from the mean of ≥6 month-end Maya NAV returns (same `project_returns` engine as gemelnet Funds). The dashboard what-if growth % does **not** compound Bank Investments — they stay flat there (like cash/ESPP).
 _Avoid_: Analyst target (RSU/ESPP only)
