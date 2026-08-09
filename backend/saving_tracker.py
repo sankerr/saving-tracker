@@ -30,8 +30,11 @@ Key behavior:
   - Deposits / rule contributions / withdrawals apply at END of their period
     (they don't earn or lose the same month's yield).
   - gemelnet's MONTHLY_YIELD is typically already NET OF FEES; the default
-    "yield_is_net_of_fees" toggle reflects that. ~Mgmt fees paid is shown
-    informationally per holding (not double-deducted).
+    "yield_is_net_of_fees" toggle reflects that (yield interpretation only).
+  - Optional per-holding user fees (deposit % + accumulation % annual/12) are
+    always deducted from balance when set, independent of yield_is_net_of_fees.
+    Catalog fee metrics stay informational. Corrections set the statement
+    balance (already net of fees) and may optionally seed cumulative fees paid.
   - Hard delete with confirm-modal — no archive flow.
   - Past performance is not indicative of future results.
   - This app is informational only and does NOT compute Israeli tax.
@@ -1739,6 +1742,43 @@ def expand_rule_for_period(rule: dict, period: int) -> dict:
     }
 
 
+# ── Optional holding fees (user-configured) ──────────────────────────────────
+def parse_optional_fee_pct(value, field_name: str):
+    """Parse an optional non-negative fee percentage.
+
+    None / "" → (None, None) meaning the fee is off.
+    Returns (float_or_None, error_or_None).
+    """
+    if value is None or value == "":
+        return None, None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None, f"{field_name} must be a number"
+    if v < 0:
+        return None, f"{field_name} cannot be negative"
+    return v, None
+
+
+def holding_fee_fields_from_payload(payload: dict):
+    """Extract fee fields present in payload. Returns (updates_dict, error)."""
+    updates = {}
+    for key in ("deposit_fee_pct", "accumulation_fee_pct_annual"):
+        if key not in payload:
+            continue
+        parsed, err = parse_optional_fee_pct(payload.get(key), key)
+        if err:
+            return None, err
+        updates[key] = parsed
+    return updates, None
+
+
+def _holding_fee_pct(holding: dict, key: str):
+    """Read a stored optional fee %; invalid values treated as off."""
+    parsed, err = parse_optional_fee_pct(holding.get(key), key)
+    return None if err else parsed
+
+
 # ── Fund valuation ───────────────────────────────────────────────────────────
 def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     fund_id = str(holding["fund_id"])
@@ -1747,7 +1787,8 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     rows_by_period = {int(r["report_period"]): r for r in rows}
     anchor_period = int(holding["anchor_period"])
     anchor_balance = float(holding["anchor_balance_ils"])
-    yield_is_net = holding.get("yield_is_net_of_fees", DATA["settings"].get("yield_is_net_of_fees", True))
+    deposit_fee_pct = _holding_fee_pct(holding, "deposit_fee_pct")
+    accumulation_fee_pct = _holding_fee_pct(holding, "accumulation_fee_pct_annual")
     rules = holding.get("recurring_rules", []) or []
 
     last_actual = max(rows_by_period.keys()) if rows_by_period else 0
@@ -1768,6 +1809,10 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         "deposited_to_date": 0.0,
         "withdrawn_to_date": 0.0,
         "yield_pct": None,
+        "accumulation_fee_ils": 0.0,
+        "deposit_fee_ils": 0.0,
+        "mgmt_fee_ils": 0.0,
+        "mgmt_fee_pct_annual": accumulation_fee_pct,
         "is_anchor": True,
         "is_pending": False,
         "events": [],
@@ -1777,7 +1822,7 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
     withdrawn = 0.0
     employee_total = 0.0
     employer_total = 0.0
-    cumulative_mgmt_fee = 0.0   # estimated דמי ניהול מצבירה paid over the holding
+    cumulative_mgmt_fee = 0.0  # user deposit + accumulation fees (after any correction seeds)
     expanded_events_all = []  # for UI
 
     for period in period_iter(anchor_period, last_period):
@@ -1790,14 +1835,24 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         delta_post = 0.0
         correction = None
         period_events = []
+        period_deposit_fee = 0.0
 
-        # Rule-generated event (employee/employer split tracked here only).
+        def _credit_deposit(gross: float):
+            nonlocal delta_post, deposited, period_deposit_fee
+            deposited += gross
+            if deposit_fee_pct is not None:
+                fee = gross * (deposit_fee_pct / 100.0)
+                period_deposit_fee += fee
+                delta_post += gross - fee
+            else:
+                delta_post += gross
+
+        # Rule-generated event (employee/employer split tracked gross).
         rule = applicable_rule_for_period(rules, period)
         if rule:
             ve = expand_rule_for_period(rule, period)
             if ve["amount_ils"] != 0:
-                delta_post += ve["amount_ils"]
-                deposited += ve["amount_ils"]
+                _credit_deposit(float(ve["amount_ils"]))
                 employee_total += ve["employee"]
                 employer_total += ve["employer"]
                 period_events.append(ve)
@@ -1807,8 +1862,7 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
             kind = ev.get("kind")
             amt = float(ev.get("amount_ils") or 0)
             if kind == "deposit":
-                delta_post += amt
-                deposited += amt
+                _credit_deposit(amt)
             elif kind == "withdrawal":
                 delta_post -= amt
                 withdrawn += amt
@@ -1819,37 +1873,47 @@ def value_fund(holding: dict, source: str = "gemelnet") -> dict:
         start_balance = v
         row = rows_by_period.get(period)
         yield_pct = (row or {}).get("monthly_yield")
-        fee_pct = (row or {}).get("avg_annual_management_fee")
         is_pending = yield_pct is None
-        # Estimated management fee for this period (always tracked,
-        # regardless of yield_is_net_of_fees — when net, fees are already baked
-        # into yield_pct, but the absolute ₪ figure is still informative).
-        period_fee = 0.0
-        if fee_pct is not None and start_balance > 0:
-            period_fee = start_balance * (fee_pct / 100.0) / 12.0
-            cumulative_mgmt_fee += period_fee
+        period_acc_fee = 0.0
+        if accumulation_fee_pct is not None and start_balance > 0:
+            period_acc_fee = start_balance * (accumulation_fee_pct / 100.0) / 12.0
         if yield_pct is not None:
             v = start_balance * (1 + yield_pct / 100.0)
-            if (not yield_is_net) and (fee_pct is not None):
-                v -= period_fee
         else:
             v = start_balance
-        # Apply deposits/withdrawals AFTER compounding (end-of-period semantics).
+        # User accumulation fee is always subtracted when configured (independent
+        # of yield_is_net_of_fees). Catalog fees never change the balance.
+        if accumulation_fee_pct is not None:
+            v -= period_acc_fee
+        # Apply net deposits/withdrawals AFTER compounding (end-of-period semantics).
         v += delta_post
-        # Corrections still override the balance entirely.
+        period_fee_total = period_acc_fee + period_deposit_fee
+        # Corrections still override the balance entirely (statement is net of fees).
         if correction:
             try:
                 v = float(correction["amount_ils"])
             except (TypeError, ValueError):
                 pass
+            seed = correction.get("total_fees_paid_ils", None)
+            if seed is not None and seed != "":
+                try:
+                    cumulative_mgmt_fee = float(seed)
+                except (TypeError, ValueError):
+                    cumulative_mgmt_fee += period_fee_total
+            else:
+                cumulative_mgmt_fee += period_fee_total
+        else:
+            cumulative_mgmt_fee += period_fee_total
         series.append({
             "period": period,
             "value_ils": round(v, 2),
             "deposited_to_date": round(deposited, 2),
             "withdrawn_to_date": round(withdrawn, 2),
             "yield_pct": yield_pct,
-            "mgmt_fee_pct_annual": fee_pct,
-            "mgmt_fee_ils": round(period_fee, 2),
+            "mgmt_fee_pct_annual": accumulation_fee_pct,
+            "accumulation_fee_ils": round(period_acc_fee, 2),
+            "deposit_fee_ils": round(period_deposit_fee, 2),
+            "mgmt_fee_ils": round(period_fee_total, 2),
             "is_anchor": False,
             "is_pending": is_pending,
             "events": period_events,
@@ -2420,10 +2484,13 @@ def value_rsu(grant: dict) -> dict:
 
 # ── Projection (deterministic mean) ──────────────────────────────────────────
 def project_returns(returns: list, current: float, horizon_months: int,
-                    contributions_per_month: list = None) -> dict:
+                    contributions_per_month: list = None,
+                    accumulation_fee_pct_annual=None) -> dict:
     """Project the mean monthly-return path. If contributions_per_month is
     provided (length must equal horizon_months), each future month adds that
-    contribution BEFORE compounding — i.e. dollar-cost-averaging math."""
+    contribution BEFORE compounding — i.e. dollar-cost-averaging math.
+    Optional accumulation_fee_pct_annual subtracts start-of-month fee
+    (annual%/100/12) after compounding each month."""
     if not returns or len(returns) < 6:
         return None
     mu = statistics.mean(returns)
@@ -2431,6 +2498,14 @@ def project_returns(returns: list, current: float, horizon_months: int,
     contribs = contributions_per_month or [0.0] * horizon_months
     if len(contribs) < horizon_months:
         contribs = list(contribs) + [0.0] * (horizon_months - len(contribs))
+    acc_pct = None
+    if accumulation_fee_pct_annual is not None and accumulation_fee_pct_annual != "":
+        try:
+            acc_pct = float(accumulation_fee_pct_annual)
+        except (TypeError, ValueError):
+            acc_pct = None
+        if acc_pct is not None and acc_pct < 0:
+            acc_pct = None
 
     paths = {"mean": []}
     cur_mean = current
@@ -2438,7 +2513,10 @@ def project_returns(returns: list, current: float, horizon_months: int,
     for t in range(horizon_months):
         c = float(contribs[t] or 0.0)
         total_contrib += c
-        cur_mean = (cur_mean + c) * (1 + mu)
+        acc_fee = 0.0
+        if acc_pct is not None and cur_mean > 0:
+            acc_fee = cur_mean * (acc_pct / 100.0) / 12.0
+        cur_mean = (cur_mean + c) * (1 + mu) - acc_fee
         paths["mean"].append(round(cur_mean, 2))
     annual_pct = round(((1 + mu) ** 12 - 1) * 100.0, 2) if returns else None
     return {
@@ -2454,12 +2532,13 @@ def project_returns(returns: list, current: float, horizon_months: int,
 
 def _project_fund_contributions(holding: dict, computed: dict, horizon_months: int) -> list:
     """For each future period (last_period+1 ... +horizon), look up the rule
-    that's active and return employee+employer as the contribution. Periods
-    where no rule applies contribute 0."""
+    that's active and return employee+employer as the contribution, net of
+    deposit fee when configured. Periods where no rule applies contribute 0."""
     rules = holding.get("recurring_rules", []) or []
     if not rules:
         return [0.0] * horizon_months
     last_period = int(computed.get("last_period") or holding["anchor_period"])
+    deposit_fee_pct = _holding_fee_pct(holding, "deposit_fee_pct")
     contribs = []
     p = last_period
     for _ in range(horizon_months):
@@ -2472,6 +2551,8 @@ def _project_fund_contributions(holding: dict, computed: dict, horizon_months: i
         rule = applicable_rule_for_period(rules, p)
         if rule:
             c = float(rule.get("employee") or 0) + float(rule.get("employer") or 0)
+            if deposit_fee_pct is not None:
+                c = c * (1.0 - deposit_fee_pct / 100.0)
         else:
             c = 0.0
         contribs.append(c)
@@ -2483,7 +2564,13 @@ def project_fund(holding: dict, computed: dict, horizon_months: int, source: str
     rows = MARKET.get(monthly_key, {}).get(str(holding["fund_id"]), {}).get("rows", [])
     returns = [r["monthly_yield"] / 100.0 for r in rows if r.get("monthly_yield") is not None]
     contribs = _project_fund_contributions(holding, computed, horizon_months)
-    return project_returns(returns, computed["current_value_ils"], horizon_months, contribs)
+    return project_returns(
+        returns,
+        computed["current_value_ils"],
+        horizon_months,
+        contribs,
+        accumulation_fee_pct_annual=_holding_fee_pct(holding, "accumulation_fee_pct_annual"),
+    )
 
 
 def what_if_fund(holding: dict, computed: dict, annual_pct, horizon_months: int) -> dict:
@@ -2497,6 +2584,7 @@ def what_if_fund(holding: dict, computed: dict, annual_pct, horizon_months: int)
         annual_pct,
         horizon_months,
         contribs,
+        accumulation_fee_pct_annual=_holding_fee_pct(holding, "accumulation_fee_pct_annual"),
     )
 
 
@@ -3675,12 +3763,14 @@ def compose_state(horizon_months: int = 24, assumed_annual_pct=None) -> dict:
 
 def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_months: int,
                               monthly_recurring: list = None,
-                              deterministic_per_month: list = None) -> dict:
+                              deterministic_per_month: list = None,
+                              accumulation_fee_pct_annual=None) -> dict:
     """Deterministic what-if compounding at annual_pct/year on `current_total`,
     with optional per-month recurring contributions added before each month's
     compounding, plus an optional deterministic per-month addition that bypasses
     growth (used to fold RSU vesting into the line without applying the growth
-    rate to it). All list params should be length horizon_months; missing
+    rate to it). Optional accumulation_fee_pct_annual subtracts start-of-month
+    fee after compounding. All list params should be length horizon_months; missing
     entries treated as 0."""
     if annual_pct is None:
         return None
@@ -3698,13 +3788,24 @@ def compose_portfolio_what_if(current_total: float, annual_pct: float, horizon_m
     deterministic = deterministic_per_month or [0.0] * horizon_months
     if len(deterministic) < horizon_months:
         deterministic = list(deterministic) + [0.0] * (horizon_months - len(deterministic))
+    acc_pct = None
+    if accumulation_fee_pct_annual is not None and accumulation_fee_pct_annual != "":
+        try:
+            acc_pct = float(accumulation_fee_pct_annual)
+        except (TypeError, ValueError):
+            acc_pct = None
+        if acc_pct is not None and acc_pct < 0:
+            acc_pct = None
     paths = []
     cur = current_total
     total_contrib = 0.0
     for t in range(horizon_months):
         c = float(contribs[t] or 0.0)
         total_contrib += c
-        cur = (cur + c) * (1 + monthly)
+        acc_fee = 0.0
+        if acc_pct is not None and cur > 0:
+            acc_fee = cur * (acc_pct / 100.0) / 12.0
+        cur = (cur + c) * (1 + monthly) - acc_fee
         paths.append(round(cur + float(deterministic[t] or 0.0), 2))
     return {
         "annual_pct": annual_pct,
@@ -3952,14 +4053,23 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
     proj = compose_portfolio_projection(funds, grants, horizon_months, espp, cash_now, tase)
 
     # Aggregate recurring contributions across all active fund holdings, per
-    # future month, so the what-if line picks them up too.
+    # future month, so the what-if line picks them up too. Contributions are
+    # already net of each holding's deposit fee.
     monthly_recurring = [0.0] * horizon_months
+    weighted_acc_num = 0.0
+    weighted_acc_den = 0.0
     for h in funds:
         if h.get("archived"):
             continue
         contribs = _project_fund_contributions(h, h.get("computed") or {}, horizon_months)
         for i, c in enumerate(contribs):
             monthly_recurring[i] += c
+        val = float((h.get("computed") or {}).get("current_value_ils") or 0)
+        acc = _holding_fee_pct(h, "accumulation_fee_pct_annual")
+        if acc is not None and val > 0:
+            weighted_acc_num += val * acc
+            weighted_acc_den += val
+    portfolio_acc_fee = (weighted_acc_num / weighted_acc_den) if weighted_acc_den > 0 else None
 
     # What-if: growth rate applies to funds only. Cash + Bank Investments + ESPP
     # added flat (Bank Investments still get a separate historical NAV projection
@@ -3973,6 +4083,7 @@ def compose_portfolio(funds: list, grants: list, horizon_months: int, assumed_an
         horizon_months,
         monthly_recurring,
         deterministic_per_month=deterministic_per_month,
+        accumulation_fee_pct_annual=portfolio_acc_fee,
     )
     if what_if:
         # Keep the displayed "today" baseline as the actual portfolio total so
@@ -4147,6 +4258,9 @@ def add_fund_holding(payload: dict) -> dict:
     nickname = (payload.get("nickname") or "").strip()
     anchor_balance = float(payload.get("anchor_balance_ils") or 0)
     yield_is_net = bool(payload.get("yield_is_net_of_fees", DATA["settings"]["yield_is_net_of_fees"]))
+    fee_updates, fee_err = holding_fee_fields_from_payload(payload)
+    if fee_err:
+        return {"ok": False, "error": fee_err}
     requested_period = payload.get("anchor_period")
 
     monthly_key = SOURCE_CONFIG[source]["monthly_cache_key"]
@@ -4190,6 +4304,8 @@ def add_fund_holding(payload: dict) -> dict:
         "classification_snapshot": meta.get("classification", ""),
         "nickname": nickname or meta.get("fund_name", str(fund_id)),
         "yield_is_net_of_fees": yield_is_net,
+        "deposit_fee_pct": fee_updates.get("deposit_fee_pct", None),
+        "accumulation_fee_pct_annual": fee_updates.get("accumulation_fee_pct_annual", None),
         "anchor_period": anchor_period,
         "anchor_balance_ils": anchor_balance,
         "events": [],
@@ -4327,12 +4443,16 @@ def delete_rule(holding_id: str, rule_id: str) -> dict:
 
 
 def update_fund_holding(holding_id: str, patch: dict) -> dict:
+    fee_updates, fee_err = holding_fee_fields_from_payload(patch)
+    if fee_err:
+        return {"ok": False, "error": fee_err}
     with _data_lock:
         for h in DATA["fund_holdings"]:
             if h["id"] == holding_id:
                 for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived", "included_in_dashboard"):
                     if k in patch:
                         h[k] = patch[k]
+                h.update(fee_updates)
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Holding not found"}
@@ -4371,6 +4491,9 @@ def add_pension_holding(payload: dict) -> dict:
     nickname = (payload.get("nickname") or "").strip()
     anchor_balance = float(payload.get("anchor_balance_ils") or 0)
     yield_is_net = bool(payload.get("yield_is_net_of_fees", DATA["settings"]["yield_is_net_of_fees"]))
+    fee_updates, fee_err = holding_fee_fields_from_payload(payload)
+    if fee_err:
+        return {"ok": False, "error": fee_err}
     requested_period = payload.get("anchor_period")
 
     cache_entry = MARKET["pensia_monthly"].get(str(fund_id))
@@ -4411,6 +4534,8 @@ def add_pension_holding(payload: dict) -> dict:
         "classification_snapshot": meta.get("classification", ""),
         "nickname": nickname or meta.get("fund_name", str(fund_id)),
         "yield_is_net_of_fees": yield_is_net,
+        "deposit_fee_pct": fee_updates.get("deposit_fee_pct", None),
+        "accumulation_fee_pct_annual": fee_updates.get("accumulation_fee_pct_annual", None),
         "anchor_period": anchor_period,
         "anchor_balance_ils": anchor_balance,
         "events": [],
@@ -4424,12 +4549,16 @@ def add_pension_holding(payload: dict) -> dict:
 
 
 def update_pension_holding(holding_id: str, patch: dict) -> dict:
+    fee_updates, fee_err = holding_fee_fields_from_payload(patch)
+    if fee_err:
+        return {"ok": False, "error": fee_err}
     with _data_lock:
         for h in DATA["pension_holdings"]:
             if h["id"] == holding_id:
                 for k in ("nickname", "anchor_balance_ils", "yield_is_net_of_fees", "archived"):
                     if k in patch:
                         h[k] = patch[k]
+                h.update(fee_updates)
                 save_data()
                 return {"ok": True}
     return {"ok": False, "error": "Pension holding not found"}
@@ -4465,6 +4594,16 @@ def add_event(holding_id: str, payload: dict) -> dict:
         "note": (payload.get("note") or "").strip(),
         "source": "manual",
     }
+    if kind == "correction" and "total_fees_paid_ils" in payload:
+        raw_seed = payload.get("total_fees_paid_ils")
+        if raw_seed is not None and raw_seed != "":
+            try:
+                seed = float(raw_seed)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": "total_fees_paid_ils must be a number"}
+            if seed < 0:
+                return {"ok": False, "error": "total_fees_paid_ils cannot be negative"}
+            event["total_fees_paid_ils"] = seed
     with _data_lock:
         for h in DATA["fund_holdings"] + DATA.get("pension_holdings", []):
             if h["id"] == holding_id:

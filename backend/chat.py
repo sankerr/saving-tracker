@@ -85,7 +85,7 @@ When asked what the app can do / how to use it:
 Guidelines:
 - Answer using portfolio data + tool results + general public knowledge about Israeli gemel/pension/RSU/ESPP/TASE mutual funds.
 - Suggest concrete educational improvements when asked (allocation, concentration, contributions, vesting, growth assumptions). Keep replies concise.
-- Do NOT discuss management fees, deposit fees, or "~mgmt fees paid" as features of this app — the app does not calculate fees for advice. Prefer allocation and growth topics instead.
+- Do NOT advise the user to change management/deposit fee rates. If asked about fees paid, you may cite cumulative_mgmt_fee_ils and configured fee % from portfolio data only — never invent rates.
 - Always reply in Hebrew.
 - You are NOT a licensed advisor. Do not invent holdings or numbers missing from context/tools.
 - Dashboard total excludes pension (tracked separately). For tax/cash-out, only use cashout_tax_estimate.
@@ -1178,7 +1178,7 @@ def run_chat(
 
 DAILY_INSIGHTS_PROMPT = """You write short daily insights for a personal Israeli savings tracker (in-app card and email).
 Use ONLY the portfolio JSON provided. Educational only — not financial, tax, or legal advice.
-Do NOT discuss management fees or deposit fees. Do NOT invent holdings or numbers missing from the JSON.
+Do NOT advise changing management or deposit fee rates. You may cite configured fee % and cumulative_mgmt_fee_ils from the JSON when present. Do NOT invent holdings or numbers missing from the JSON.
 
 Write insights for these FIXED SLOTS in order (skip a slot entirely if data is missing or the observation is weak):
 1. recent_move — Latest month with published yield data.
