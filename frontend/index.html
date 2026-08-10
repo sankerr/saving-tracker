@@ -1813,7 +1813,7 @@ html[dir="rtl"] .chat-panel {
     <p class="chart-caption" data-i18n="dashboard.caption">Default view shows the last 2 months plus your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.</p>
   </section>
 
-  <section class="card" id="funds-card">
+    <section class="card" id="funds-card">
     <div class="card__header">
       <h2><span data-i18n="section.funds">Funds</span> <span class="h2-count" id="funds-count">0</span> <button class="help-btn" data-help="funds" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.funds.title" title="What is this section?" aria-label="About Funds">?</button></h2>
       <button class="btn btn--primary btn--small" id="add-fund-btn" data-i18n="funds.add">+ Add fund</button>
@@ -1860,6 +1860,175 @@ html[dir="rtl"] .chat-panel {
       <div class="actions-row">
         <button class="btn btn--ghost btn--small" id="add-fund-cancel" data-i18n="common.cancel">Cancel</button>
         <button class="btn btn--primary btn--small" id="add-fund-save" disabled data-i18n="funds.saveHolding">Save holding</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="bank-investments-card">
+    <div class="card__header">
+      <h2><span data-i18n="section.bankInvestments">ניירות ערך</span> <span class="h2-count" id="bank-investments-count">0</span> <button class="help-btn" data-help="bankInvestments" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.bankInvestments.title" title="מה זה החלק הזה?" aria-label="על ניירות ערך">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-bank-investment-btn" data-i18n="bankInvestments.add">+ הוספת השקעה</button>
+    </div>
+    <div id="bank-investments-list" class="holdings-list"></div>
+    <div id="add-bank-investment-panel" class="add-panel" hidden>
+      <div class="field">
+        <label for="bank-investment-search" data-i18n="bankInvestments.searchLabel">חיפוש לפי שם או מספר קרן במאיה</label>
+        <input type="text" id="bank-investment-search" autocomplete="off" data-i18n-placeholder="bankInvestments.searchPlaceholder" placeholder="מיטב כספית, 5123898…">
+        <div style="font-size:0.75rem; color:var(--color-muted); margin-top:0.25rem;" data-i18n="bankInvestments.searchHint">קרנות נאמנות מהבורסה (מאיה). שער יחידה יומי מתעדכן בסנכרון.</div>
+      </div>
+      <div id="bank-investment-search-results"></div>
+      <div id="bank-investment-selected-row" hidden>
+        <div class="field-grid">
+          <div class="field">
+            <label data-i18n="bankInvestments.selectedFund">הקרן שנבחרה</label>
+            <div id="bank-investment-selected-pill"></div>
+          </div>
+          <div class="field">
+            <label for="bank-investment-nickname" data-i18n="common.nickname">כינוי</label>
+            <input type="text" id="bank-investment-nickname" data-i18n-placeholder="bankInvestments.nicknamePlaceholder" placeholder="אופציונלי">
+          </div>
+          <div class="field">
+            <label for="bank-investment-units" data-i18n="bankInvestments.units">יחידות</label>
+            <input type="number" id="bank-investment-units" min="0" step="any" placeholder="1234.56">
+          </div>
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn--ghost btn--small" id="add-bank-investment-cancel" data-i18n="common.cancel">ביטול</button>
+        <button class="btn btn--primary btn--small" id="add-bank-investment-save" disabled data-i18n="bankInvestments.save">שמירת השקעה</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="rsu-card">
+    <div class="card__header">
+      <h2><span data-i18n="section.rsu">RSU Grants</span> <span class="h2-count" id="rsu-count">0</span> <button class="help-btn" data-help="rsu" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.rsu.title" title="What is this section?" aria-label="About RSU Grants">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-rsu-btn" data-i18n="rsu.add">+ Add grant</button>
+    </div>
+    <div id="rsu-list" class="holdings-list"></div>
+    <div id="add-rsu-panel" class="add-panel" hidden>
+      <div class="field-grid">
+        <div class="field" style="grid-column: 1 / -1">
+          <label for="rsu-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
+          <input type="text" id="rsu-ticker-search" data-i18n-placeholder="common.tickerSearchPlaceholder" placeholder="apple, microsoft, AAPL…" autocomplete="off">
+          <div id="rsu-ticker-results"></div>
+          <div id="rsu-ticker-selected" hidden style="margin-top:0.4rem"></div>
+        </div>
+        <div class="field">
+          <label for="rsu-nickname" data-i18n="common.nickname">Nickname</label>
+          <input type="text" id="rsu-nickname" data-i18n-placeholder="rsu.nicknamePlaceholder" placeholder="Q1 2024 grant">
+        </div>
+        <div class="field">
+          <label for="rsu-grant-date" data-i18n="rsu.grantDate">Grant date</label>
+          <input type="date" id="rsu-grant-date">
+        </div>
+        <div class="field">
+          <label for="rsu-shares" data-i18n="rsu.totalShares">Total shares</label>
+          <input type="number" id="rsu-shares" min="1" step="1" placeholder="1200">
+        </div>
+        <div class="field">
+          <label for="rsu-vesting-start" data-i18n="rsu.vestingStart">Vesting start</label>
+          <input type="date" id="rsu-vesting-start">
+        </div>
+        <div class="field">
+          <label for="rsu-vesting-months" data-i18n="rsu.vestingMonths">Vesting months</label>
+          <input type="number" id="rsu-vesting-months" min="1" step="1" value="48">
+        </div>
+        <div class="field">
+          <label for="rsu-cliff-months" data-i18n="rsu.cliffMonths">Cliff months</label>
+          <input type="number" id="rsu-cliff-months" min="0" step="1" value="12">
+        </div>
+        <div class="field">
+          <label for="rsu-cadence" data-i18n="rsu.cadence">Cadence</label>
+          <select id="rsu-cadence">
+            <option value="monthly" selected data-i18n="rsu.cadence.monthly">monthly</option>
+            <option value="quarterly" data-i18n="rsu.cadence.quarterly">quarterly</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rsu-grant-price-override" data-i18n="rsu.grantPriceOverride">Grant price override (USD/share)</label>
+          <input type="number" id="rsu-grant-price-override" min="0" step="0.0001" data-i18n-placeholder="rsu.grantPricePlaceholder" placeholder="blank = market close on grant date">
+        </div>
+      </div>
+      <p class="chart-caption" data-i18n="rsu.overrideHint">Override only if your company reported a different FMV (e.g. 30-day average or board-approved value). Leave blank to use Yahoo's closing price on the grant date — that's the cost basis Yahoo and most US brokers use.</p>
+      <div class="actions-row">
+        <button class="btn btn--ghost btn--small" id="add-rsu-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-rsu-save" data-i18n="rsu.save">Save grant</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="espp-card">
+    <div class="card__header">
+      <h2><span data-i18n="section.espp">ESPP Plans</span> <span class="h2-count" id="espp-count">0</span> <button class="help-btn" data-help="espp" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.espp.title" title="What is this section?" aria-label="About ESPP">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-espp-btn" data-i18n="espp.add">+ Add plan</button>
+    </div>
+    <div id="espp-list" class="holdings-list"></div>
+    <div id="add-espp-panel" class="add-panel" hidden>
+      <div class="field-grid">
+        <div class="field" style="grid-column: 1 / -1">
+          <label for="espp-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
+          <input type="text" id="espp-ticker-search" data-i18n-placeholder="common.tickerSearchPlaceholder" placeholder="apple, microsoft, AAPL…" autocomplete="off">
+          <div id="espp-ticker-results"></div>
+          <div id="espp-ticker-selected" hidden style="margin-top:0.4rem"></div>
+        </div>
+        <div class="field">
+          <label for="espp-nickname" data-i18n="common.nickname">Nickname</label>
+          <input type="text" id="espp-nickname" data-i18n-placeholder="espp.nicknamePlaceholder" placeholder="Employer ESPP">
+        </div>
+        <div class="field">
+          <label for="espp-discount" data-i18n="espp.discount">Discount %</label>
+          <input type="number" id="espp-discount" min="0" max="50" step="0.5" value="15">
+        </div>
+        <div class="field">
+          <label for="espp-offering" data-i18n="espp.offering">Offering length (months)</label>
+          <input type="number" id="espp-offering" min="1" max="24" step="1" value="6">
+        </div>
+        <div class="field" style="grid-column: 1 / -1">
+          <label class="form-checkbox" style="font-size:0.875rem">
+            <input type="checkbox" id="espp-lookback" checked>
+            <span data-i18n="espp.lookback">Plan has lookback (discount applied to lower of period-start / period-end price)</span>
+          </label>
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn--ghost btn--small" id="add-espp-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-espp-save" data-i18n="espp.save">Save plan</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="cash-card">
+    <div class="card__header">
+      <h2><span data-i18n="section.cash">Cash &amp; non-invested</span> <span class="h2-count" id="cash-count">0</span> <button class="help-btn" data-help="cash" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.cash.title" title="What is this section?" aria-label="About Cash">?</button></h2>
+      <button class="btn btn--primary btn--small" id="add-cash-btn" data-i18n="cash.add">+ Add cash</button>
+    </div>
+    <div id="cash-list" class="holdings-list"></div>
+    <div id="add-cash-panel" class="add-panel" hidden>
+      <div class="field-grid">
+        <div class="field">
+          <label for="cash-nickname" data-i18n="common.nickname">Nickname</label>
+          <input type="text" id="cash-nickname" data-i18n-placeholder="cash.nicknamePlaceholder" placeholder="Bank Hapoalim checking">
+        </div>
+        <div class="field">
+          <label for="cash-amount" data-i18n="cash.amount">Amount</label>
+          <input type="number" id="cash-amount" min="0" step="0.01" placeholder="50000">
+        </div>
+        <div class="field">
+          <label for="cash-currency" data-i18n="cash.currency">Currency</label>
+          <select id="cash-currency">
+            <option value="ILS" selected>ILS</option>
+            <option value="USD">USD</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cash-note" data-i18n="cash.note">Note</label>
+          <input type="text" id="cash-note">
+        </div>
+      </div>
+      <div class="actions-row">
+        <button class="btn btn--ghost btn--small" id="add-cash-cancel" data-i18n="common.cancel">Cancel</button>
+        <button class="btn btn--primary btn--small" id="add-cash-save" data-i18n="common.save">Save</button>
       </div>
     </div>
   </section>
@@ -1969,176 +2138,7 @@ html[dir="rtl"] .chat-panel {
     </p>
   </section>
 
-  <section class="card" id="rsu-card">
-    <div class="card__header">
-      <h2><span data-i18n="section.rsu">RSU Grants</span> <span class="h2-count" id="rsu-count">0</span> <button class="help-btn" data-help="rsu" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.rsu.title" title="What is this section?" aria-label="About RSU Grants">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-rsu-btn" data-i18n="rsu.add">+ Add grant</button>
-    </div>
-    <div id="rsu-list" class="holdings-list"></div>
-    <div id="add-rsu-panel" class="add-panel" hidden>
-      <div class="field-grid">
-        <div class="field" style="grid-column: 1 / -1">
-          <label for="rsu-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
-          <input type="text" id="rsu-ticker-search" data-i18n-placeholder="common.tickerSearchPlaceholder" placeholder="apple, microsoft, AAPL…" autocomplete="off">
-          <div id="rsu-ticker-results"></div>
-          <div id="rsu-ticker-selected" hidden style="margin-top:0.4rem"></div>
-        </div>
-        <div class="field">
-          <label for="rsu-nickname" data-i18n="common.nickname">Nickname</label>
-          <input type="text" id="rsu-nickname" data-i18n-placeholder="rsu.nicknamePlaceholder" placeholder="Q1 2024 grant">
-        </div>
-        <div class="field">
-          <label for="rsu-grant-date" data-i18n="rsu.grantDate">Grant date</label>
-          <input type="date" id="rsu-grant-date">
-        </div>
-        <div class="field">
-          <label for="rsu-shares" data-i18n="rsu.totalShares">Total shares</label>
-          <input type="number" id="rsu-shares" min="1" step="1" placeholder="1200">
-        </div>
-        <div class="field">
-          <label for="rsu-vesting-start" data-i18n="rsu.vestingStart">Vesting start</label>
-          <input type="date" id="rsu-vesting-start">
-        </div>
-        <div class="field">
-          <label for="rsu-vesting-months" data-i18n="rsu.vestingMonths">Vesting months</label>
-          <input type="number" id="rsu-vesting-months" min="1" step="1" value="48">
-        </div>
-        <div class="field">
-          <label for="rsu-cliff-months" data-i18n="rsu.cliffMonths">Cliff months</label>
-          <input type="number" id="rsu-cliff-months" min="0" step="1" value="12">
-        </div>
-        <div class="field">
-          <label for="rsu-cadence" data-i18n="rsu.cadence">Cadence</label>
-          <select id="rsu-cadence">
-            <option value="monthly" selected data-i18n="rsu.cadence.monthly">monthly</option>
-            <option value="quarterly" data-i18n="rsu.cadence.quarterly">quarterly</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="rsu-grant-price-override" data-i18n="rsu.grantPriceOverride">Grant price override (USD/share)</label>
-          <input type="number" id="rsu-grant-price-override" min="0" step="0.0001" data-i18n-placeholder="rsu.grantPricePlaceholder" placeholder="blank = market close on grant date">
-        </div>
-      </div>
-      <p class="chart-caption" data-i18n="rsu.overrideHint">Override only if your company reported a different FMV (e.g. 30-day average or board-approved value). Leave blank to use Yahoo's closing price on the grant date — that's the cost basis Yahoo and most US brokers use.</p>
-      <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-rsu-cancel" data-i18n="common.cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-rsu-save" data-i18n="rsu.save">Save grant</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="card" id="espp-card">
-    <div class="card__header">
-      <h2><span data-i18n="section.espp">ESPP Plans</span> <span class="h2-count" id="espp-count">0</span> <button class="help-btn" data-help="espp" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.espp.title" title="What is this section?" aria-label="About ESPP">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-espp-btn" data-i18n="espp.add">+ Add plan</button>
-    </div>
-    <div id="espp-list" class="holdings-list"></div>
-    <div id="add-espp-panel" class="add-panel" hidden>
-      <div class="field-grid">
-        <div class="field" style="grid-column: 1 / -1">
-          <label for="espp-ticker-search" data-i18n="common.tickerSearch">Ticker (search by symbol or company name)</label>
-          <input type="text" id="espp-ticker-search" data-i18n-placeholder="common.tickerSearchPlaceholder" placeholder="apple, microsoft, AAPL…" autocomplete="off">
-          <div id="espp-ticker-results"></div>
-          <div id="espp-ticker-selected" hidden style="margin-top:0.4rem"></div>
-        </div>
-        <div class="field">
-          <label for="espp-nickname" data-i18n="common.nickname">Nickname</label>
-          <input type="text" id="espp-nickname" data-i18n-placeholder="espp.nicknamePlaceholder" placeholder="Employer ESPP">
-        </div>
-        <div class="field">
-          <label for="espp-discount" data-i18n="espp.discount">Discount %</label>
-          <input type="number" id="espp-discount" min="0" max="50" step="0.5" value="15">
-        </div>
-        <div class="field">
-          <label for="espp-offering" data-i18n="espp.offering">Offering length (months)</label>
-          <input type="number" id="espp-offering" min="1" max="24" step="1" value="6">
-        </div>
-        <div class="field" style="grid-column: 1 / -1">
-          <label class="form-checkbox" style="font-size:0.875rem">
-            <input type="checkbox" id="espp-lookback" checked>
-            <span data-i18n="espp.lookback">Plan has lookback (discount applied to lower of period-start / period-end price)</span>
-          </label>
-        </div>
-      </div>
-      <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-espp-cancel" data-i18n="common.cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-espp-save" data-i18n="espp.save">Save plan</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="card" id="bank-investments-card">
-    <div class="card__header">
-      <h2><span data-i18n="section.bankInvestments">ניירות ערך</span> <span class="h2-count" id="bank-investments-count">0</span> <button class="help-btn" data-help="bankInvestments" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.bankInvestments.title" title="מה זה החלק הזה?" aria-label="על ניירות ערך">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-bank-investment-btn" data-i18n="bankInvestments.add">+ הוספת השקעה</button>
-    </div>
-    <div id="bank-investments-list" class="holdings-list"></div>
-    <div id="add-bank-investment-panel" class="add-panel" hidden>
-      <div class="field">
-        <label for="bank-investment-search" data-i18n="bankInvestments.searchLabel">חיפוש לפי שם או מספר קרן במאיה</label>
-        <input type="text" id="bank-investment-search" autocomplete="off" data-i18n-placeholder="bankInvestments.searchPlaceholder" placeholder="מיטב כספית, 5123898…">
-        <div style="font-size:0.75rem; color:var(--color-muted); margin-top:0.25rem;" data-i18n="bankInvestments.searchHint">קרנות נאמנות מהבורסה (מאיה). שער יחידה יומי מתעדכן בסנכרון.</div>
-      </div>
-      <div id="bank-investment-search-results"></div>
-      <div id="bank-investment-selected-row" hidden>
-        <div class="field-grid">
-          <div class="field">
-            <label data-i18n="bankInvestments.selectedFund">הקרן שנבחרה</label>
-            <div id="bank-investment-selected-pill"></div>
-          </div>
-          <div class="field">
-            <label for="bank-investment-nickname" data-i18n="common.nickname">כינוי</label>
-            <input type="text" id="bank-investment-nickname" data-i18n-placeholder="bankInvestments.nicknamePlaceholder" placeholder="אופציונלי">
-          </div>
-          <div class="field">
-            <label for="bank-investment-units" data-i18n="bankInvestments.units">יחידות</label>
-            <input type="number" id="bank-investment-units" min="0" step="any" placeholder="1234.56">
-          </div>
-        </div>
-      </div>
-      <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-bank-investment-cancel" data-i18n="common.cancel">ביטול</button>
-        <button class="btn btn--primary btn--small" id="add-bank-investment-save" disabled data-i18n="bankInvestments.save">שמירת השקעה</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="card" id="cash-card">
-    <div class="card__header">
-      <h2><span data-i18n="section.cash">Cash &amp; non-invested</span> <span class="h2-count" id="cash-count">0</span> <button class="help-btn" data-help="cash" data-i18n-title="help.aboutSection" data-i18n-aria-label="help.cash.title" title="What is this section?" aria-label="About Cash">?</button></h2>
-      <button class="btn btn--primary btn--small" id="add-cash-btn" data-i18n="cash.add">+ Add cash</button>
-    </div>
-    <div id="cash-list" class="holdings-list"></div>
-    <div id="add-cash-panel" class="add-panel" hidden>
-      <div class="field-grid">
-        <div class="field">
-          <label for="cash-nickname" data-i18n="common.nickname">Nickname</label>
-          <input type="text" id="cash-nickname" data-i18n-placeholder="cash.nicknamePlaceholder" placeholder="Bank Hapoalim checking">
-        </div>
-        <div class="field">
-          <label for="cash-amount" data-i18n="cash.amount">Amount</label>
-          <input type="number" id="cash-amount" min="0" step="0.01" placeholder="50000">
-        </div>
-        <div class="field">
-          <label for="cash-currency" data-i18n="cash.currency">Currency</label>
-          <select id="cash-currency">
-            <option value="ILS" selected>ILS</option>
-            <option value="USD">USD</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="cash-note" data-i18n="cash.note">Note</label>
-          <input type="text" id="cash-note">
-        </div>
-      </div>
-      <div class="actions-row">
-        <button class="btn btn--ghost btn--small" id="add-cash-cancel" data-i18n="common.cancel">Cancel</button>
-        <button class="btn btn--primary btn--small" id="add-cash-save" data-i18n="common.save">Save</button>
-      </div>
-    </div>
-  </section>
-
-  <div class="modal" id="settings-modal" hidden role="dialog" aria-modal="true" data-i18n-aria-label="section.settings" aria-label="Settings">
+<div class="modal" id="settings-modal" hidden role="dialog" aria-modal="true" data-i18n-aria-label="section.settings" aria-label="Settings">
     <div class="modal__backdrop" data-settings-close></div>
     <div class="modal__panel modal__panel--wide">
       <button class="modal__close" type="button" data-settings-close aria-label="Close">×</button>
@@ -5356,12 +5356,12 @@ function renderRetirementSimulator() {
 const NAV_SECTIONS = [
   { id: 'dashboard-card', label: 'section.dashboard' },
   { id: 'funds-card', label: 'section.funds', count: 'funds-count' },
-  { id: 'pension-card', label: 'section.pension', count: 'pension-count' },
-  { id: 'retirement-simulator-card', label: 'section.retirementSim' },
+  { id: 'bank-investments-card', label: 'section.bankInvestments', count: 'bank-investments-count' },
   { id: 'rsu-card', label: 'section.rsu', count: 'rsu-count' },
   { id: 'espp-card', label: 'section.espp', count: 'espp-count' },
-  { id: 'bank-investments-card', label: 'section.bankInvestments', count: 'bank-investments-count' },
   { id: 'cash-card', label: 'section.cash', count: 'cash-count' },
+  { id: 'pension-card', label: 'section.pension', count: 'pension-count' },
+  { id: 'retirement-simulator-card', label: 'section.retirementSim' },
 ];
 let _navSpy = null;
 let _navBottomHandler = null;
