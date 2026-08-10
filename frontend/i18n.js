@@ -456,7 +456,7 @@
       'ev.kind.correction': 'correction (set balance)',
       'ev.amountIls': 'Amount (₪)',
       'ev.feesPaidToDate': 'Fees paid to date (₪)',
-      'ev.feesPaidOptional': 'optional',
+      'ev.feesPaidOptional': 'optional, corrections only',
 
       'action.rename': 'Rename',
       'action.delete': 'Delete',
@@ -1191,7 +1191,7 @@
       'ev.kind.correction': 'תיקון (קביעת יתרה)',
       'ev.amountIls': 'סכום (₪)',
       'ev.feesPaidToDate': 'דמי ניהול ששולמו עד כה (₪)',
-      'ev.feesPaidOptional': 'אופציונלי',
+      'ev.feesPaidOptional': 'אופציונלי, לתיקונים בלבד',
 
       'action.rename': 'שינוי שם',
       'action.delete': 'מחיקה',

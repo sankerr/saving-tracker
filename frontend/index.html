@@ -3415,6 +3415,19 @@ function renderFundDetail(h) {
       <div><dt>${t('detail.lastSync')}</dt><dd>${timeAgo(h.last_synced)}</dd></div>
     </dl>
 
+    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.returnsChained')}</h3>
+    <dl class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
+      <div><dt>3m</dt><dd>${c.three_m_return_pct !== null && c.three_m_return_pct !== undefined ? fmtPctSigned(c.three_m_return_pct) : '—'}</dd></div>
+      <div><dt>6m</dt><dd>${c.six_m_return_pct !== null && c.six_m_return_pct !== undefined ? fmtPctSigned(c.six_m_return_pct) : '—'}</dd></div>
+      <div><dt>12m</dt><dd>${c.twelve_m_return_pct !== null && c.twelve_m_return_pct !== undefined ? fmtPctSigned(c.twelve_m_return_pct) : '—'}</dd></div>
+      <div><dt>24m</dt><dd>${c.twentyfour_m_return_pct !== null && c.twentyfour_m_return_pct !== undefined ? fmtPctSigned(c.twentyfour_m_return_pct) : '—'}</dd></div>
+      <div><dt>36m (ann.)</dt><dd>${c.annualized_3y_return_pct !== null && c.annualized_3y_return_pct !== undefined ? fmtPctSigned(c.annualized_3y_return_pct) + '/yr' : '—'}</dd></div>
+      <div><dt>60m (ann.)</dt><dd>${c.annualized_5y_return_pct !== null && c.annualized_5y_return_pct !== undefined ? fmtPctSigned(c.annualized_5y_return_pct) + '/yr' : '—'}</dd></div>
+    </dl>
+
+    ${c.fund_metrics ? renderFundMetrics(c.fund_metrics) : ''}
+    </details>
+
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('fees.sectionTitle')}</h3>
     <div class="field-grid" style="margin-bottom:0.75rem">
       <div class="field">
@@ -3431,18 +3444,6 @@ function renderFundDetail(h) {
     </div>
     <p class="chart-caption">${t('fees.hint')}</p>
 
-    <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('detail.returnsChained')}</h3>
-    <dl class="detail-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));">
-      <div><dt>3m</dt><dd>${c.three_m_return_pct !== null && c.three_m_return_pct !== undefined ? fmtPctSigned(c.three_m_return_pct) : '—'}</dd></div>
-      <div><dt>6m</dt><dd>${c.six_m_return_pct !== null && c.six_m_return_pct !== undefined ? fmtPctSigned(c.six_m_return_pct) : '—'}</dd></div>
-      <div><dt>12m</dt><dd>${c.twelve_m_return_pct !== null && c.twelve_m_return_pct !== undefined ? fmtPctSigned(c.twelve_m_return_pct) : '—'}</dd></div>
-      <div><dt>24m</dt><dd>${c.twentyfour_m_return_pct !== null && c.twentyfour_m_return_pct !== undefined ? fmtPctSigned(c.twentyfour_m_return_pct) : '—'}</dd></div>
-      <div><dt>36m (ann.)</dt><dd>${c.annualized_3y_return_pct !== null && c.annualized_3y_return_pct !== undefined ? fmtPctSigned(c.annualized_3y_return_pct) + '/yr' : '—'}</dd></div>
-      <div><dt>60m (ann.)</dt><dd>${c.annualized_5y_return_pct !== null && c.annualized_5y_return_pct !== undefined ? fmtPctSigned(c.annualized_5y_return_pct) + '/yr' : '—'}</dd></div>
-    </dl>
-
-    ${c.fund_metrics ? renderFundMetrics(c.fund_metrics) : ''}
-    </details>
     <div class="chart-wrap chart-wrap--small"><canvas id="detail-fund-${h.id}"></canvas></div>
     <p class="chart-caption projection-mean-caption" data-projection-caption-for="detail-fund-${h.id}" hidden></p>
 
@@ -3489,9 +3490,9 @@ function renderFundDetail(h) {
     </details>
     <div class="event-form">
       <div class="field"><label>${t('table.date')}</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}" data-ev-kind="${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
+      <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
       <div class="field"><label>${t('ev.amountIls')}</label><input type="number" id="ev-amount-${h.id}" min="0" step="0.01"></div>
-      <div class="field" id="ev-fees-paid-field-${h.id}" hidden><label>${t('ev.feesPaidToDate')}</label><input type="number" id="ev-fees-paid-${h.id}" min="0" step="0.01" placeholder="${t('ev.feesPaidOptional')}"></div>
+      <div class="field"><label>${t('ev.feesPaidToDate')}</label><input type="number" id="ev-fees-paid-${h.id}" min="0" step="0.01" placeholder="${t('ev.feesPaidOptional')}"></div>
       <div class="field"><label>${t('common.note')}</label><input type="text" id="ev-note-${h.id}"></div>
       <button class="btn btn--primary btn--small" data-add-event="${h.id}">${t('common.add')}</button>
       <span></span>
@@ -3753,9 +3754,9 @@ function renderPensionDetail(h) {
     </details>
     <div class="event-form">
       <div class="field"><label>${t('table.date')}</label><input type="date" id="ev-date-${h.id}" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}" data-ev-kind="${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
+      <div class="field"><label>${t('common.kind')}</label><select id="ev-kind-${h.id}"><option value="deposit">${t('ev.kind.deposit')}</option><option value="withdrawal">${t('ev.kind.withdrawal')}</option><option value="correction">${t('ev.kind.correction')}</option></select></div>
       <div class="field"><label>${t('ev.amountIls')}</label><input type="number" id="ev-amount-${h.id}" min="0" step="0.01"></div>
-      <div class="field" id="ev-fees-paid-field-${h.id}" hidden><label>${t('ev.feesPaidToDate')}</label><input type="number" id="ev-fees-paid-${h.id}" min="0" step="0.01" placeholder="${t('ev.feesPaidOptional')}"></div>
+      <div class="field"><label>${t('ev.feesPaidToDate')}</label><input type="number" id="ev-fees-paid-${h.id}" min="0" step="0.01" placeholder="${t('ev.feesPaidOptional')}"></div>
       <div class="field"><label>${t('common.note')}</label><input type="text" id="ev-note-${h.id}"></div>
       <button class="btn btn--primary btn--small" data-add-event="${h.id}">${t('common.add')}</button>
       <span></span>
@@ -5208,15 +5209,6 @@ function ruleHoldingBaseUrl(holdingId) {
   const isPension = (APP && APP.pension_holdings || []).some(h => h.id === holdingId);
   return isPension ? '/api/pension-holdings' : '/api/fund-holdings';
 }
-function syncEventFeesPaidField(holdingId) {
-  const kind = document.getElementById(`ev-kind-${holdingId}`)?.value;
-  const field = document.getElementById(`ev-fees-paid-field-${holdingId}`);
-  const input = document.getElementById(`ev-fees-paid-${holdingId}`);
-  if (!field) return;
-  const isCorrection = kind === 'correction';
-  field.hidden = !isCorrection;
-  if (!isCorrection && input) input.value = '';
-}
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -5994,11 +5986,6 @@ function init() {
   });
 
   // Holding row delegation
-  document.body.addEventListener('change', (e) => {
-    const kindSel = e.target.closest('[data-ev-kind]');
-    if (!kindSel) return;
-    syncEventFeesPaidField(kindSel.dataset.evKind);
-  });
   document.body.addEventListener('click', async (e) => {
     const emptyAddBtn = e.target.closest('[data-empty-add]');
     if (emptyAddBtn) {
