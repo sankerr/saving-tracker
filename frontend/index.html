@@ -3930,7 +3930,7 @@ function renderESPPDetail(plan) {
 
     <h3 style="margin:1.25rem 0 0.4rem; font-family: var(--font-display); font-size: 0.9375rem;">${t('espp.enrollments')} <span class="h2-count">${(c.enrollments || []).length}</span></h3>
     ${(c.enrollments || []).length ? `<div style="overflow-x:auto"><table class="event-table">
-      <thead><tr><th>${t('espp.periodStart')}</th><th>${t('espp.periodEnd')}</th><th>${t('espp.monthlyIls')}</th><th>${t('espp.progress')}</th><th>${t('espp.pendingIls')}</th><th>${t('espp.estBuyPrice')}</th><th>${t('espp.estShares')}</th><th>${t('table.note')}</th><th></th></tr></thead>
+      <thead><tr><th>${t('espp.periodStart')}</th><th>${t('espp.periodEnd')}</th><th>${t('espp.monthlyIls')}</th><th>${t('espp.progress')}</th><th>${t('espp.pendingIls')}</th><th>${t('table.periodStart')}</th><th>${t('table.periodEnd')}</th><th>${t('espp.estBuyPrice')}</th><th>${t('espp.estShares')}</th><th>${t('table.note')}</th><th></th></tr></thead>
       <tbody>${(c.enrollments || []).map(en => {
         const err = en.error ? `<div style="color:var(--color-danger);font-size:0.75rem">${escapeHtml(en.error)}</div>` : '';
         const estHint = en.is_estimate ? ` <small style="color:var(--color-muted)">${t('espp.estimate')}</small>` : '';
@@ -3940,6 +3940,8 @@ function renderESPPDetail(plan) {
           <td>${fmtILS.format(en.monthly_contribution_ils || 0)}</td>
           <td>${en.months_paid != null ? `${en.months_paid}/${en.months_total}` : '—'}${err}</td>
           <td>${fmtILS.format(en.contribution_ils || 0)}</td>
+          <td>${en.period_start_price_usd != null ? fmtUSDPrec.format(en.period_start_price_usd) : '—'}${en.period_start_price_date ? `<br><small style="color:var(--color-muted)">${en.period_start_price_date}</small>` : ''}</td>
+          <td>${en.period_end_price_usd != null ? fmtUSDPrec.format(en.period_end_price_usd) : '—'}${en.period_end_price_date ? `<br><small style="color:var(--color-muted)">${en.period_end_price_date}</small>` : ''}</td>
           <td>${en.purchase_price_usd != null ? fmtUSDPrec.format(en.purchase_price_usd) : '—'}${estHint}</td>
           <td>${en.shares != null ? fmtNum.format(en.shares) : '—'}</td>
           <td dir="auto">${escapeHtml(en.note || '')}</td>
@@ -3968,8 +3970,8 @@ function renderESPPDetail(plan) {
         return `<tr>
           <td>${p.date}</td>
           <td>${fmtUSD.format(p.contribution_usd)}</td>
-          <td>${fmtUSDPrec.format(p.period_start_price_usd)}</td>
-          <td>${fmtUSDPrec.format(p.period_end_price_usd)}</td>
+          <td>${fmtUSDPrec.format(p.period_start_price_usd)}${p.period_start_price_date ? `<br><small style="color:var(--color-muted)">${p.period_start_price_date}</small>` : ''}</td>
+          <td>${fmtUSDPrec.format(p.period_end_price_usd)}${p.period_end_price_date ? `<br><small style="color:var(--color-muted)">${p.period_end_price_date}</small>` : ''}</td>
           <td>${fmtUSDPrec.format(p.purchase_price_usd)}</td>
           <td>${fmtNum.format(p.shares)}</td>
           <td style="color:var(--color-success)">${fmtUSD.format(dc)}</td>
