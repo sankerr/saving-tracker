@@ -51,8 +51,24 @@ def _freeze_today(today_d: date):
 def test_contribution_months_jan_through_jun():
     dates = st._espp_contribution_dates(date(2026, 1, 1), date(2026, 6, 30))
     assert len(dates) == 6
-    assert dates[0] == date(2026, 1, 1)
-    assert dates[-1] == date(2026, 6, 1)
+    assert dates[0] == date(2026, 1, 31)
+    assert dates[-1] == date(2026, 6, 30)
+
+
+def test_contribution_months_payroll_lag_sep_to_feb():
+    # Regression: Sep work is deducted from the Oct 1 payslip, so as of
+    # Oct 5 only one month (accrued Sep 30) counts — not Sep 1 + Oct 1.
+    dates = st._espp_contribution_dates(date(2026, 9, 1), date(2027, 2, 28))
+    assert dates == [
+        date(2026, 9, 30),
+        date(2026, 10, 31),
+        date(2026, 11, 30),
+        date(2026, 12, 31),
+        date(2027, 1, 31),
+        date(2027, 2, 28),
+    ]
+    paid = [d for d in dates if d <= date(2026, 10, 5)]
+    assert paid == [date(2026, 9, 30)]
 
 
 def test_contribution_months_clamps_dom():
@@ -100,14 +116,14 @@ def test_enrollment_breakdown_monthly_fx_and_lookback():
         plan, enrollment, as_of=date(2026, 2, 15), settle=False
     )
     assert br["months_total"] == 3
-    assert br["months_paid"] == 2
-    assert br["contribution_ils"] == 7000.0
-    assert abs(br["contribution_usd"] - 2000.0) < 1e-6
+    assert br["months_paid"] == 1
+    assert br["contribution_ils"] == 3500.0
+    assert abs(br["contribution_usd"] - 1000.0) < 1e-6
     assert br["is_estimate"] is True
     assert br["period_start_price_usd"] == 100.0
     assert br["period_end_price_usd"] == 121.0
     assert abs(br["purchase_price_usd"] - 85.0) < 1e-6
-    assert abs(br["shares"] - (2000.0 / 85.0)) < 1e-3
+    assert abs(br["shares"] - (1000.0 / 85.0)) < 1e-3
 
 
 def test_enrollment_breakdown_settle_uses_period_end_close():
@@ -215,8 +231,8 @@ def test_value_espp_pending_contributions_not_fmv():
     plan = _plan(enrollments=[enrollment])
     with _freeze_today(date(2026, 4, 15)):
         computed = st.value_espp(plan)
-    assert computed["pending_contribution_ils"] == 14000.0
-    assert computed["current_value_ils"] == 14000.0
+    assert computed["pending_contribution_ils"] == 10500.0
+    assert computed["current_value_ils"] == 10500.0
     assert computed["enrollments"]
     en = computed["enrollments"][0]
     assert en["estimated_fmv_usd"] is not None

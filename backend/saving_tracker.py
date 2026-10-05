@@ -2654,19 +2654,21 @@ def _close_on_or_before(rows: list, d) -> tuple:
 def _espp_contribution_dates(period_start: date, period_end: date) -> list:
     """Inclusive calendar months from start through end.
 
-    Contribution date each month = period_start's day-of-month, clamped to the
-    month's last day and to [period_start, period_end].
+    One contribution per calendar month touched by the offering period.
+    The contribution for month M accrues on the last day of M (paid out on
+    the payslip received early in M+1), clamped to [period_start, period_end].
+    This matches payroll reality: September work deducted from the payslip
+    received Oct 1 counts as of Sep 30, not Sep 1 — so mid-period views don't
+    overcount the current partial month.
     """
     if period_end < period_start:
         raise ValueError("period_end must be >= period_start")
     dates = []
     y, m = period_start.year, period_start.month
-    dom = period_start.day
     end_ym = (period_end.year, period_end.month)
     while (y, m) <= end_ym:
         last = monthrange(y, m)[1]
-        day = min(dom, last)
-        contrib = date(y, m, day)
+        contrib = date(y, m, last)
         if contrib < period_start:
             contrib = period_start
         if contrib > period_end:
