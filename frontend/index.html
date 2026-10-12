@@ -1804,6 +1804,12 @@ html[dir="rtl"] .chat-panel {
     <p id="projection-summary" hidden style="margin:0 0 0.75rem 0; padding:0.5rem 0.875rem;
         background:rgb(181 101 216 / 0.08); border-left:3px solid rgb(181 101 216);
         border-radius:var(--radius-sm); font-size:0.875rem;"></p>
+    <details class="collapse-section" id="cashout-tax" style="margin:0 0 0.75rem 0; padding:0.5rem 0.875rem;
+        background:rgb(31 138 76 / 0.06); border-left:3px solid var(--color-success);
+        border-radius:var(--radius-sm); font-size:0.875rem;">
+      <summary class="collapse-summary" style="margin:0;"><span data-i18n="cashout.title">Cash-out tax estimate</span><span id="cashout-tax-headline" style="font-weight:400;"></span></summary>
+      <div id="cashout-tax-body" style="margin-top:0.5rem;"></div>
+    </details>
     <div class="chart-wrap">
       <canvas id="dash-chart" style="cursor: crosshair;"></canvas>
     </div>
@@ -2839,6 +2845,7 @@ function renderDashboard() {
     projBox.hidden = true;
   }
   renderGoal();
+  renderCashoutTax();
   drawDashboardChart();
 }
 
@@ -2961,6 +2968,35 @@ function renderAllocation() {
   } else {
     note.hidden = true;
   }
+}
+
+// Cash-out tax estimate (§102 capital track for RSU/ESPP). Reads the backend
+// APP.cashout_tax_estimate block; headline shows net-after-tax, details show
+// per-holding ordinary/capital split and qualifying status.
+function renderCashoutTax() {
+  const wrap = document.getElementById('cashout-tax');
+  const head = document.getElementById('cashout-tax-headline');
+  const body = document.getElementById('cashout-tax-body');
+  if (!wrap || !head || !body) return;
+  const est = APP.cashout_tax_estimate;
+  if (!est) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  head.textContent = ` — ${t('cashout.netAfterTax')}: ${fmtILS.format(est.net_after_tax_ils || 0)} (${t('cashout.tax')}: ${fmtILS.format(est.estimated_tax_ils || 0)})`;
+  const rows = (est.by_holding || []).filter((r) => (r.value_ils || 0) > 0 || (r.estimated_tax_ils || 0) > 0);
+  const split = (r) => {
+    if (r.ordinary_profit_ils == null && r.capital_profit_ils == null) return '';
+    const q = r.qualifying_102 == null ? '' : (r.qualifying_102 ? ` · ${t('cashout.qualifying')}` : ` · ${t('cashout.disqualifying')}`);
+    return `<br><span style="color:var(--color-muted)">§102: ${t('cashout.ordinary')} ${fmtILS.format(r.ordinary_profit_ils || 0)} @ ${((r.ordinary_rate || 0) * 100).toFixed(2)}% + ${t('cashout.capital')} ${fmtILS.format(r.capital_profit_ils || 0)} @ ${((r.capital_rate || 0) * 100).toFixed(0)}%${q}</span>`;
+  };
+  body.innerHTML =
+    `<div>${t('cashout.accessible')}: <strong>${fmtILS.format(est.accessible_value_ils || 0)}</strong>` +
+    ` · ${t('cashout.taxableProfit')}: <strong>${fmtILS.format(est.taxable_profit_ils || 0)}</strong>` +
+    ` · ${t('cashout.tax')}: <strong>${fmtILS.format(est.estimated_tax_ils || 0)}</strong>` +
+    ` · ${t('cashout.netAfterTax')}: <strong>${fmtILS.format(est.net_after_tax_ils || 0)}</strong></div>` +
+    (rows.length ? `<div style="margin-top:0.4rem; display:flex; flex-direction:column; gap:0.25rem;">${rows.map((r) =>
+      `<div>· ${escapeHtml(r.label || r.kind)} — ${fmtILS.format(r.value_ils || 0)} · ${t('cashout.tax')}: ${fmtILS.format(r.estimated_tax_ils || 0)}${split(r)}<br><span style="color:var(--color-muted)">${escapeHtml(r.note || '')}</span></div>`
+    ).join('')}</div>` : '') +
+    `<p class="chart-caption" style="margin:0.4rem 0 0;">${escapeHtml(est.disclaimer || '')}</p>`;
 }
 
 // In-app AI insight card. Reuses the same Gemini insight generation as the
