@@ -74,8 +74,8 @@ Savings goal questions (e.g. "am I on pace?", "how far from my goal?", "what's m
 
 Cash-out / tax questions (e.g. "how much tax if I cash out everything?"):
 1. Use cashout_tax_estimate from the portfolio JSON only — never invent tax figures.
-2. Report estimated_tax_ils, net_after_tax_ils, taxable_profit_ils, and that tax is on profit/gains only.
-3. Note: קרן השתלמות is treated as tax-free; cash 0%; pension excluded from cash-out; other funds/RSU/ESPP use 25% on gains;
+2. Report estimated_tax_ils, net_after_tax_ils, taxable_profit_ils. Note funds/TASE are 25% on profit, but RSU/ESPP use §102 capital track: 62.17% on the ordinary part + 25% on the capital part (24m holding: RSU from grant date, ESPP from purchase date; else full gain at 62.17%).
+3. Note: קרן השתלמות is treated as tax-free; cash 0%; pension excluded from cash-out; ESPP pending contributions not taxed until purchase;
    Bank Investments use 25% on unrealized gain (FIFO cost from events × Maya NAV).
 4. Always repeat the disclaimer: rough educational estimate, not tax advice.
 
@@ -687,6 +687,8 @@ def _cashout_tax_context(est: Any) -> dict:
         "estimated_tax_ils": _round_or_none(est.get("estimated_tax_ils")),
         "net_after_tax_ils": _round_or_none(est.get("net_after_tax_ils")),
         "capital_gains_rate": est.get("capital_gains_rate"),
+        "ordinary_income_rate": est.get("ordinary_income_rate"),
+        "section102_holding_months": est.get("section102_holding_months"),
         "pension_excluded_value_ils": _round_or_none(est.get("pension_excluded_value_ils")),
         "assumptions": est.get("assumptions") or [],
         "disclaimer": est.get("disclaimer"),
@@ -698,6 +700,11 @@ def _cashout_tax_context(est: Any) -> dict:
                 "taxable_profit_ils": _round_or_none(row.get("taxable_profit_ils")),
                 "estimated_tax_ils": _round_or_none(row.get("estimated_tax_ils")),
                 "rate": row.get("rate"),
+                "ordinary_profit_ils": _round_or_none(row.get("ordinary_profit_ils")),
+                "capital_profit_ils": _round_or_none(row.get("capital_profit_ils")),
+                "ordinary_rate": row.get("ordinary_rate"),
+                "capital_rate": row.get("capital_rate"),
+                "qualifying_102": row.get("qualifying_102"),
                 "note": row.get("note"),
             }
             for row in (est.get("by_holding") or [])[:40]

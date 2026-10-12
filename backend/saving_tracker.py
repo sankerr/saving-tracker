@@ -3152,6 +3152,147 @@ _HISHTALMUT_MARKERS = (
     "קרן השתלמות",
 )
 CASHOUT_CAPITAL_GAINS_RATE = 0.25
+# §102 Capital Gain Track (JFrog elected, via Trustee — Phoenix ESOP deck Jun 2026):
+# ordinary (pituitary) part up to 62.17% incl. social/health, capital part 25%.
+CASHOUT_ORDINARY_RATE = 0.6217
+SECTION102_HOLDING_MONTHS = 24
+
+
+def _add_months(d: date, n: int) -> date:
+    m_idx = d.month - 1 + n
+    y = d.year + m_idx // 12
+    m = m_idx % 12 + 1
+    last = monthrange(y, m)[1]
+    return date(y, m, min(d.day, last))
+
+
+def _is_102_qualifying(base_date_iso: str | None, today: date | None = None) -> bool | None:
+    """24 months from grant (RSU) / purchase (ESPP) date. None if date missing/invalid."""
+    if not base_date_iso:
+        return None
+    try:
+        base = date.fromisoformat(str(base_date_iso)[:10])
+    except ValueError:
+        return None
+    today = today or date.today()
+    return today >= _add_months(base, SECTION102_HOLDING_MONTHS)
+
+
+def _rsu_102_breakdown(grant: dict, computed: dict, today: date | None = None) -> dict | None:
+    """§102 split for held RSU shares. Returns None if data insufficient (caller falls back).
+
+    Qualifying (24m from grant_date): ordinary/share = min(avg30, sale), capital/share = sale - ordinary.
+    Disqualifying: entire sale proceeds ordinary (PDF p.17). avg30 = grant_price_override_usd
+    per user choice (fallback to market grant close).
+    """
+    try:
+        held = float(computed.get("shares_held_now") or 0)
+        sale = float(computed.get("current_price_usd") or 0)
+        fx = float(computed.get("current_usdils") or 0)
+    except (TypeError, ValueError):
+        return None
+    if held <= 0 or sale <= 0 or fx <= 0:
+        return {"ordinary_ils": 0.0, "capital_ils": 0.0, "tax_ils": 0.0,
+                "qualifying": _is_102_qualifying((grant or {}).get("grant_date"), today),
+                "avg_usd": None, "held": held}
+    avg = (grant or {}).get("grant_price_override_usd")
+    if avg is None:
+        avg = computed.get("grant_close_usd")
+    try:
+        avg = float(avg)
+    except (TypeError, ValueError):
+        return None
+    if avg is None or avg <= 0:
+        return None
+    qualifying = _is_102_qualifying(grant.get("grant_date"), today)
+    if qualifying is None:
+        return None
+    if qualifying:
+        ordinary_ps = min(avg, sale)
+        capital_ps = max(0.0, sale - ordinary_ps)
+    else:
+        ordinary_ps = max(0.0, sale)
+        capital_ps = 0.0
+    ordinary_ils = ordinary_ps * held * fx
+    capital_ils = capital_ps * held * fx
+    tax = ordinary_ils * CASHOUT_ORDINARY_RATE + capital_ils * CASHOUT_CAPITAL_GAINS_RATE
+    return {"ordinary_ils": ordinary_ils, "capital_ils": capital_ils, "tax_ils": tax,
+            "qualifying": qualifying, "avg_usd": avg, "held": held}
+
+
+def _espp_102_breakdown(plan: dict, computed: dict, today: date | None = None) -> dict | None:
+    """§102 split across remaining FIFO lots. Returns None if no held shares/price data.
+
+    Per lot (FMV = period_end_price_usd): qualifying → ordinary = min(FMV-pp, sale-pp),
+    capital = max(0, sale-FMV); disqualifying → all gain ordinary (sale-pp). pp portion never taxed.
+    """
+    try:
+        sale = float(computed.get("current_price_usd") or 0)
+        fx = float(computed.get("current_usdils") or 0)
+    except (TypeError, ValueError):
+        return None
+    purchases = sorted(plan.get("purchases", []) or [], key=lambda p: p.get("date") or "")
+    sales = plan.get("sales", []) or []
+    if not purchases or sale <= 0 or fx <= 0:
+        return None
+    try:
+        sold_total = sum(float(s.get("shares_sold") or 0) for s in sales)
+    except (TypeError, ValueError):
+        return None
+    # FIFO remaining lots with (shares, pp, fmv, purchase_date)
+    lots = []
+    rem = sold_total
+    for p in purchases:
+        try:
+            sh = float(p.get("shares") or 0)
+            pp = float(p.get("purchase_price_usd") or 0)
+        except (TypeError, ValueError):
+            continue
+        if sh <= 0 or pp <= 0:
+            continue
+        if rem >= sh:
+            rem -= sh
+            continue
+        if rem > 0:
+            sh -= rem
+            rem = 0
+        fmv = p.get("period_end_price_usd")
+        try:
+            fmv = float(fmv) if fmv is not None else sale
+        except (TypeError, ValueError):
+            fmv = sale
+        lots.append({"shares": sh, "pp": pp, "fmv": fmv, "date": p.get("date")})
+    if not lots or rem > 0:
+        # Oversold / inconsistent — fall back to aggregate unrealized.
+        return None
+    today = today or date.today()
+    ordinary_usd = 0.0
+    capital_usd = 0.0
+    n_qual = 0
+    for lot in lots:
+        sh, pp, fmv = lot["shares"], lot["pp"], lot["fmv"]
+        qualifying = _is_102_qualifying(lot["date"], today)
+        if qualifying is None:
+            return None
+        if sale <= pp:
+            o_ps, c_ps = 0.0, 0.0
+        elif not qualifying:
+            o_ps, c_ps = sale - pp, 0.0
+        elif sale >= fmv:
+            o_ps = max(0.0, min(fmv - pp, sale - pp))
+            c_ps = max(0.0, sale - fmv)
+        else:  # qualifying but sale < FMV (PDF p.23): ordinary = sale - pp, no capital
+            o_ps, c_ps = max(0.0, sale - pp), 0.0
+        ordinary_usd += o_ps * sh
+        capital_usd += c_ps * sh
+        if qualifying:
+            n_qual += 1
+    ordinary_ils = ordinary_usd * fx
+    capital_ils = capital_usd * fx
+    tax = ordinary_ils * CASHOUT_ORDINARY_RATE + capital_ils * CASHOUT_CAPITAL_GAINS_RATE
+    return {"ordinary_ils": ordinary_ils, "capital_ils": capital_ils, "tax_ils": tax,
+            "qualifying_lots": n_qual, "total_lots": len(lots),
+            "all_qualifying": n_qual == len(lots)}
 
 
 def _is_hishtalmut_holding(holding: dict) -> bool:
@@ -3185,11 +3326,16 @@ def compute_cashout_tax_estimate(
 ) -> dict:
     """Rough educational estimate of tax if liquidating accessible holdings today.
 
-    Tax applies to profit/gains only (not principal). קרן השתלמות is treated as
-    tax-free. Pension is excluded from the cash-out total (locked until retirement).
-    Not Israeli Tax Authority advice — no CPI, §102 tracks, withholding, etc.
+    Funds/TASE: 25% on profit. RSU/ESPP: §102 Capital Gain Track via trustee
+    (JFrog elected): ordinary part up to 62.17% + capital part 25% if the
+    24-month holding period is met (RSU: from grant date; ESPP: from purchase
+    date), else the full gain is ordinary. RSU ordinary base = 30-day avg
+    before grant (stored as grant_price_override_usd); ESPP ordinary =
+    FMV (period-end price) minus purchase price. Ignores CPI, surplus tax,
+    withholding. Not tax advice.
     """
     rate = CASHOUT_CAPITAL_GAINS_RATE
+    ord_rate = CASHOUT_ORDINARY_RATE
     lines = []
     tax_free_value = 0.0
     taxable_profit = 0.0
@@ -3236,6 +3382,31 @@ def compute_cashout_tax_estimate(
         c = g.get("computed") or {}
         value = _positive(c.get("current_value_ils"))
         accessible_value += value
+        br = _rsu_102_breakdown(g, c)
+        if br is not None and br.get("avg_usd") is not None:
+            ordinary = max(0.0, br["ordinary_ils"])
+            capital = max(0.0, br["capital_ils"])
+            base = ordinary + capital
+            tax = round(br["tax_ils"], 2)
+            taxable_profit += base
+            estimated_tax += tax
+            blended = round(tax / base, 4) if base > 0 else 0.0
+            tag = "qualifying (24m met)" if br.get("qualifying") else "disqualifying (<24m from grant)"
+            lines.append({
+                "kind": "rsu",
+                "label": g.get("nickname") or g.get("ticker") or "RSU",
+                "value_ils": round(value, 2),
+                "taxable_profit_ils": round(base, 2),
+                "estimated_tax_ils": tax,
+                "rate": blended,
+                "ordinary_profit_ils": round(ordinary, 2),
+                "capital_profit_ils": round(capital, 2),
+                "ordinary_rate": ord_rate,
+                "capital_rate": rate,
+                "qualifying_102": bool(br.get("qualifying")),
+                "note": f"§102 capital track ({tag}): 62.17% on ordinary {round(ordinary, 2):,} ILS + 25% on capital {round(capital, 2):,} ILS; avg30={br.get('avg_usd')}",
+            })
+            continue
         unrealized = c.get("unrealized_gain_ils")
         if unrealized is None:
             unrealized = c.get("profit_ils")
@@ -3250,7 +3421,7 @@ def compute_cashout_tax_estimate(
             "taxable_profit_ils": round(base, 2),
             "estimated_tax_ils": tax,
             "rate": rate,
-            "note": "25% on unrealized gain (held shares)",
+            "note": "25% on unrealized gain (held shares; §102 avg missing — fallback)",
         })
 
     for p in espp_out or []:
@@ -3259,6 +3430,34 @@ def compute_cashout_tax_estimate(
         c = p.get("computed") or {}
         value = _positive(c.get("current_value_ils"))
         accessible_value += value
+        br = _espp_102_breakdown(p, c)
+        held_now = float(c.get("shares_held_now") or 0)
+        if br is not None and held_now > 0:
+            ordinary = max(0.0, br["ordinary_ils"])
+            capital = max(0.0, br["capital_ils"])
+            base = ordinary + capital
+            tax = round(br["tax_ils"], 2)
+            taxable_profit += base
+            estimated_tax += tax
+            blended = round(tax / base, 4) if base > 0 else 0.0
+            tag = (f"all {br['total_lots']} lots qualifying (24m met)"
+                   if br.get("all_qualifying")
+                   else f"{br.get('qualifying_lots')}/{br.get('total_lots')} lots qualifying")
+            lines.append({
+                "kind": "espp",
+                "label": p.get("nickname") or p.get("ticker") or "ESPP",
+                "value_ils": round(value, 2),
+                "taxable_profit_ils": round(base, 2),
+                "estimated_tax_ils": tax,
+                "rate": blended,
+                "ordinary_profit_ils": round(ordinary, 2),
+                "capital_profit_ils": round(capital, 2),
+                "ordinary_rate": ord_rate,
+                "capital_rate": rate,
+                "qualifying_102": bool(br.get("all_qualifying")),
+                "note": f"§102 capital track ({tag}): 62.17% on discount {round(ordinary, 2):,} ILS + 25% on appreciation {round(capital, 2):,} ILS; FMV=period-end price",
+            })
+            continue
         unrealized = c.get("unrealized_gain_ils")
         if unrealized is None:
             unrealized = c.get("profit_ils")
@@ -3266,14 +3465,17 @@ def compute_cashout_tax_estimate(
         tax = round(base * rate, 2)
         taxable_profit += base
         estimated_tax += tax
+        note = ("No held shares yet — pending contributions not taxed until purchase"
+                if held_now <= 0 else
+                "25% on unrealized gain (held shares; §102 lot data missing — fallback)")
         lines.append({
             "kind": "espp",
             "label": p.get("nickname") or p.get("ticker") or "ESPP",
             "value_ils": round(value, 2),
             "taxable_profit_ils": round(base, 2),
             "estimated_tax_ils": tax,
-            "rate": rate,
-            "note": "25% on unrealized gain (held shares)",
+            "rate": rate if held_now > 0 else 0.0,
+            "note": note,
         })
 
     for csh in cash_out or []:
@@ -3343,16 +3545,18 @@ def compute_cashout_tax_estimate(
         "estimated_tax_ils": estimated_tax,
         "net_after_tax_ils": net_after_tax,
         "capital_gains_rate": rate,
+        "ordinary_income_rate": ord_rate,
+        "section102_holding_months": SECTION102_HOLDING_MONTHS,
         "pension_excluded_value_ils": round(pension_value, 2),
         "assumptions": [
-            "Tax on profit/gains only — not principal",
+            "Funds/TASE: 25% on profit/gains only — not principal",
             "קרן השתלמות treated as fully tax-free (no maturity check)",
-            "Other funds / savings policies: 25% on lifetime profit",
-            "RSU/ESPP: 25% on unrealized gain of held shares",
-            "Bank Investments: 25% on unrealized gain (FIFO cost from events × Maya NAV)",
+            "RSU (§102 capital track): 62.17% on min(avg30,sale) + 25% on sale-min(avg30,sale) if 24m from grant met, else full sale at 62.17%; avg30 = grant_price_override_usd",
+            "ESPP (§102 capital track): 62.17% on discount (FMV-purchase) + 25% on sale-FMV if 24m from purchase met, else full gain at 62.17%; FMV = period-end price; purchase principal not taxed",
+            "ESPP pending contributions: not taxed until purchase",
             "Cash: 0% (assumed after-tax)",
             "Pension excluded from cash-out (locked until retirement)",
-            "Ignores CPI adjustment, §102 tracks, withholding, brackets, and penalties",
+            "Ignores CPI adjustment, surplus tax, withholding, brackets, and penalties",
         ],
         "disclaimer": (
             "Rough educational estimate only — not tax, financial, or legal advice. "
