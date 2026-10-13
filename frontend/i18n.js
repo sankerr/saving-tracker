@@ -152,16 +152,6 @@
       'dashboard.pensionNote': '<span>🔒</span><span><strong>Pension ({amount})</strong> is tracked separately below — not included in this total or the chart. The growth assumption above still applies to it, shown per row.</span>',
       'dashboard.caption': 'Default view shows the last 2 months plus your chosen horizon. Drag horizontally on the chart, or pick start/end months above to focus on a sub-range — any month works: past months pull in history, and picking far into the future automatically extends the projection (up to 50 years). Press Esc while dragging to cancel; click a horizon chip to reset.',
 
-      'cashout.title': 'Cash-out tax estimate',
-      'cashout.accessible': 'Accessible',
-      'cashout.taxableProfit': 'Taxable profit',
-      'cashout.tax': 'Tax',
-      'cashout.netAfterTax': 'Net after tax',
-      'cashout.ordinary': 'ordinary',
-      'cashout.capital': 'capital',
-      'cashout.qualifying': '24m met',
-      'cashout.disqualifying': '<24m',
-
       'chat.title': 'Portfolio chat',
       'chat.panelAria': 'AI portfolio chat',
       'chat.clear': 'Clear',
@@ -886,16 +876,6 @@
       'insights.disclaimer': 'נוצר על ידי AI מהנתונים שלך — לא ייעוץ פיננסי.',
       'dashboard.pensionNote': '<span>🔒</span><span><strong>פנסיה ({amount})</strong> מנוהלת בנפרד למטה — לא נכללת בסך זה או בגרף. הנחת הצמיחה למעלה עדיין חלה עליה, לפי שורה.</span>',
       'dashboard.caption': 'ברירת המחדל מציגה את שני החודשים האחרונים בתוספת האופק שבחרתם. גררו אופקית בגרף או בחרו חודשי התחלה/סיום למיקוד — כל חודש אפשרי: חודשים בעבר מושכים היסטוריה, ובחירה רחוקה בעתיד מרחיבה אוטומטית את התחזית (עד 50 שנה). לחצו Esc תוך כדי גרירה לביטול; לחצו על שבב אופק לאיפוס.',
-
-      'cashout.title': 'הערכת מס במשיכה',
-      'cashout.accessible': 'סכום נגיש',
-      'cashout.taxableProfit': 'רווח חייב',
-      'cashout.tax': 'מס',
-      'cashout.netAfterTax': 'נטו אחרי מס',
-      'cashout.ordinary': 'פירותי',
-      'cashout.capital': 'הוני',
-      'cashout.qualifying': '24 חודשים הושלמו',
-      'cashout.disqualifying': 'פחות מ-24 חודשים',
 
       'chat.title': 'צ׳אט על התיק',
       'chat.panelAria': 'צ׳אט AI על התיק',
