@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "frontend",
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{backend/tests/**,backend/__pycache__/**,**/__pycache__/**,scripts/**,docs/**}"
+    }
+  },
+  "rewrites": [{ "source": "/api/:path*", "destination": "/api" }]
+}

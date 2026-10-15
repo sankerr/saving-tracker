@@ -1,1 +1,1 @@
-window.API_BASE = 'https://saving-tracker-qw3n.onrender.com';
+window.API_BASE = ''; // same-origin on Vercel (frontend + /api share one domain)

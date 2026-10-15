@@ -18,6 +18,9 @@ backend/local.db
 # OS
 .DS_Store
 
+# Vercel
+.vercel/
+
 # Env secrets
 .env
 .env.*

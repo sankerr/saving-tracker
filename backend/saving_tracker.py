@@ -5620,8 +5620,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "error": None,
                 "results": None,
             })
-            threading.Thread(target=_run_cron_job, args=(send_email,), daemon=True).start()
-            self._json(202, {"ok": True, "status": "started"})
+            # Serverless (Vercel): background threads do not survive the
+            # response and status is per-instance, so the old 202 + poll
+            # contract cannot work. Run inline and return full results (200).
+            _run_cron_job(send_email)
+            results = _cron_status.get("results")
+            if _cron_status.get("error"):
+                self._json(500, {"ok": False, "error": _cron_status["error"], "results": results})
+                return
+            self._json(200, {"ok": True, "results": results})
             return
 
         if method == "POST" and path == "/api/login":

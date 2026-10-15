@@ -22,24 +22,24 @@ jobs:
             echo "ERROR: GitHub secret CRON_SECRET is not set."
             exit 1
           fi
-          if [ -z "${{ secrets.RENDER_API_URL }}" ]; then
-            echo "ERROR: GitHub secret RENDER_API_URL is not set."
+          if [ -z "${{ secrets.API_URL }}" ]; then
+            echo "ERROR: GitHub secret API_URL is not set."
             exit 1
           fi
           echo "CRON_SECRET is set (${#CRON_SECRET} chars)"
-          echo "RENDER_API_URL=${{ secrets.RENDER_API_URL }}"
+          echo "API_URL=${{ secrets.API_URL }}"
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
       - name: Wake API and trigger sync
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+          API_URL: ${{ secrets.API_URL }}
           # Scheduled runs always send; manual runs honor the send_email input.
           SEND_EMAIL: ${{ github.event.inputs.send_email == 'false' && 'false' || 'true' }}
         run: |
           set -euo pipefail
-          BASE="${RENDER_API_URL%/}"
+          BASE="${API_URL%/}"
           if [ "${SEND_EMAIL}" = "false" ]; then
             EMAIL_QS="0"
           else
@@ -61,11 +61,10 @@ jobs:
             exit 1
           fi
 
-          echo "== Trigger cron sync =="
+          echo "== Trigger cron sync (runs inline, up to ~5 min) =="
           SYNC_CODE=$(curl -sS -o /tmp/cron-sync.txt -w '%{http_code}' \
             -X POST \
             -H "Authorization: Bearer ${CRON_SECRET}" \
-            --retry 3 --retry-delay 30 --retry-all-errors \
             --connect-timeout 30 --max-time 600 \
             "${BASE}/api/cron/sync?email=${EMAIL_QS}" || true)
           echo "POST /api/cron/sync -> HTTP ${SYNC_CODE}"
@@ -73,15 +72,15 @@ jobs:
           echo
 
           case "${SYNC_CODE}" in
-            202)
-              echo "Cron sync accepted."
+            200)
+              echo "Cron sync finished."
               ;;
             401)
-              echo "ERROR: Unauthorized — CRON_SECRET on Render does not match GitHub secret."
+              echo "ERROR: Unauthorized — CRON_SECRET on Vercel does not match GitHub secret."
               exit 1
               ;;
             503)
-              echo "ERROR: Cron not configured — set CRON_SECRET on Render and redeploy."
+              echo "ERROR: Cron not configured — set CRON_SECRET on Vercel and redeploy."
               exit 1
               ;;
             409)
@@ -94,53 +93,14 @@ jobs:
               ;;
           esac
 
-      - name: Poll cron status
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
-        run: |
-          set -euo pipefail
-          BASE="${RENDER_API_URL%/}"
-
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            STATUS_CODE=$(curl -sS -o /tmp/cron-status.txt -w '%{http_code}' \
-              -H "Authorization: Bearer ${CRON_SECRET}" \
-              --connect-timeout 30 --max-time 60 \
-              "${BASE}/api/cron/status" || true)
-            echo "Poll ${attempt}: GET /api/cron/status -> HTTP ${STATUS_CODE}"
-            python3 - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path("/tmp/cron-status.txt").read_text())
-          status = data.get("status", {})
-          print(f"running={status.get('running')} error={status.get('error')}")
-          PY
-            echo
-
-            if [ "${STATUS_CODE}" != "200" ]; then
-              echo "WARN: status poll failed; retrying in 30s..."
-              sleep 30
-              continue
-            fi
-
-            RUNNING=$(python3 - <<'PY'
-          import json
-          from pathlib import Path
-          data = json.loads(Path("/tmp/cron-status.txt").read_text())
-          print(data.get("status", {}).get("running", True))
-          PY
-            )
-            if [ "${RUNNING}" = "False" ] || [ "${RUNNING}" = "false" ]; then
-              echo "Cron job finished."
-              python3 - <<'PY'
+          python3 - <<'PY'
           import json, sys
           from pathlib import Path
-          data = json.loads(Path("/tmp/cron-status.txt").read_text())
-          status = data.get("status", {})
-          if status.get("error"):
-              print(f"ERROR: cron job error: {status['error']}", file=sys.stderr)
+          data = json.loads(Path("/tmp/cron-sync.txt").read_text())
+          if not data.get("ok"):
+              print(f"ERROR: cron sync failed: {data.get('error')}", file=sys.stderr)
               sys.exit(1)
-          results = (status.get("results") or {}).get("users") or []
+          results = (data.get("results") or {}).get("users") or []
           failed_notify = False
           for row in results:
               print(
@@ -165,12 +125,3 @@ jobs:
           if failed_notify:
               sys.exit(1)
           PY
-              exit 0
-            fi
-
-            echo "Cron still running; waiting 30s..."
-            sleep 30
-          done
-
-          echo "ERROR: cron job did not finish within poll window."
-          exit 1
